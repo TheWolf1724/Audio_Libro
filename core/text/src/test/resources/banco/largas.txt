@@ -1,0 +1,8 @@
+# Frases largas: cortes solo en puntos naturales (CLAUSE con coma final).
+> Caminaron durante horas por el bosque oscuro y frío sin encontrar a nadie, cansados y hambrientos, y al final, cuando ya casi no les quedaban fuerzas para seguir adelante, llegaron a la casa del molino viejo, donde una anciana que vivía sola desde hacía muchos años les ofreció pan, queso y un poco de vino caliente para que recuperasen el ánimo antes de la noche.
+= SENTENCE|NARRATOR|CLAUSE|es|Caminaron durante horas por el bosque oscuro y frío sin encontrar a nadie, cansados y hambrientos, y al final, cuando ya casi no les quedaban fuerzas para seguir adelante, llegaron a la casa del molino viejo,
+= SENTENCE|NARRATOR|CHAPTER|es|donde una anciana que vivía sola desde hacía muchos años les ofreció pan, queso y un poco de vino caliente para que recuperasen el ánimo antes de la noche.
+
+> El informe del año pasado recogía que la empresa había facturado exactamente 7 000 000 de euros en el ejercicio, una cifra que el consejo de administración presidido por don Rodrigo de Triana Fernández consideró insuficiente para cubrir las inversiones previstas en las nuevas plantas de producción de Valladolid y Burgos.
+= SENTENCE|NARRATOR|CLAUSE|es|El informe del año pasado recogía que la empresa había facturado exactamente siete millones de euros en el ejercicio,
+= SENTENCE|NARRATOR|CHAPTER|es|una cifra que el consejo de administración presidido por don Rodrigo de Triana Fernández consideró insuficiente para cubrir las inversiones previstas en las nuevas plantas de producción de Valladolid y Burgos.

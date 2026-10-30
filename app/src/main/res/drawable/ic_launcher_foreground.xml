@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Icono propio de LectorVoz: libro abierto sobrio con una onda de voz. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Pagina izquierda -->
+    <path
+        android:fillColor="#F5EFE3"
+        android:pathData="M52,46 C46,42 38,41 32,42 L32,72 C38,71 46,72 52,76 Z" />
+    <!-- Pagina derecha -->
+    <path
+        android:fillColor="#F5EFE3"
+        android:pathData="M56,46 C62,42 70,41 76,42 L76,72 C70,71 62,72 56,76 Z" />
+    <!-- Lineas de texto -->
+    <path
+        android:strokeColor="#9DB1C9"
+        android:strokeWidth="1.6"
+        android:strokeLineCap="round"
+        android:pathData="M37,51 L47,52.5 M37,57 L47,58.5 M37,63 L47,64.5 M61,52.5 L71,51 M61,58.5 L71,57 M61,64.5 L71,63" />
+    <!-- Onda de voz -->
+    <path
+        android:strokeColor="#F2B84B"
+        android:strokeWidth="2.6"
+        android:strokeLineCap="round"
+        android:pathData="M44,36 C48,32 60,32 64,36 M48,31 C51,28.5 57,28.5 60,31" />
+</vector>

@@ -1,0 +1,24 @@
+# Mezcla de espanol e ingles: idioma por frase; los nombres propios no cambian el idioma.
+> Martín habló con John Smith en Nueva York sobre el proyecto.
+= SENTENCE|NARRATOR|CHAPTER|es|Martín habló con John Smith en Nueva York sobre el proyecto.
+
+> Then she said: «Hasta luego». The meeting was over and everybody went home.
+= SENTENCE|NARRATOR|CLAUSE|en|Then she said:
+= SENTENCE|DIALOG|SENTENCE|es|Hasta luego.
+= SENTENCE|NARRATOR|CHAPTER|en|The meeting was over and everybody went home.
+
+> Ella sonrió. «Good morning, my dear friend», dijo en inglés. Después se fue a casa.
+= SENTENCE|NARRATOR|SENTENCE|es|Ella sonrió.
+= SENTENCE|DIALOG|CLAUSE|en|Good morning, my dear friend,
+= SENTENCE|NARRATOR|SENTENCE|es|dijo en inglés.
+= SENTENCE|NARRATOR|CHAPTER|es|Después se fue a casa.
+
+> El libro se titula The Catcher in the Rye y lo leí en el colegio.
+= SENTENCE|NARRATOR|CHAPTER|es|El libro se titula The Catcher in the Rye y lo leí en el colegio.
+
+> Mr. Smith arrived at 3:30 pm on October 12, 2021. He was very late.
+= SENTENCE|NARRATOR|SENTENCE|en|Mister Smith arrived at three thirty p m on October twelfth, twenty twenty-one.
+= SENTENCE|NARRATOR|CHAPTER|en|He was very late.
+
+> OK.
+= SENTENCE|NARRATOR|CHAPTER|es|o ka.

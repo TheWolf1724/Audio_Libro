@@ -1,0 +1,21 @@
+# Preguntas y exclamaciones: se conservan ¿? y ¡!, punto final siempre.
+> ¿De verdad crees que vendrá? ¡Claro que sí! Bueno, quizá
+= SENTENCE|NARRATOR|SENTENCE|es|¿De verdad crees que vendrá?
+= SENTENCE|NARRATOR|SENTENCE|es|¡Claro que sí!
+= SENTENCE|NARRATOR|CHAPTER|es|Bueno, quizá.
+
+> ¿Y tú? ¿Y ella? ¡Ay!
+= SENTENCE|NARRATOR|SENTENCE|es|¿Y tú?
+= SENTENCE|NARRATOR|SENTENCE|es|¿Y ella?
+= SENTENCE|NARRATOR|CHAPTER|es|¡Ay!
+
+> Le preguntó si vendría mañana
+= SENTENCE|NARRATOR|CHAPTER|es|Le preguntó si vendría mañana.
+
+> ¡¿Cómo es posible?!
+= SENTENCE|NARRATOR|CHAPTER|es|¡¿Cómo es posible?!
+
+> Pensó... y calló. Después… Nada.
+= SENTENCE|NARRATOR|SENTENCE|es|Pensó... y calló.
+= SENTENCE|NARRATOR|VERSE|es|Después…
+= SENTENCE|NARRATOR|CHAPTER|es|Nada.

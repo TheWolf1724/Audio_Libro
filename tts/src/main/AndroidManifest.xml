@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Servicio en primer plano de reproduccion multimedia (Android 14+ exige el tipo). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- WakeLock parcial solo mientras lee la voz neuronal (ver WakeLockHolder). -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Descarga de voces desde las releases oficiales de sherpa-onnx. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Ver los motores TTS del sistema (visibilidad de paquetes, API 30+). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
+    <application>
+        <!-- Un MediaSessionService debe ir exported para que lo controlen SystemUI, la
+             notificacion, Android Auto y los botones Bluetooth; los comandos propios
+             sensibles se limitan a controladores de confianza en SessionCallback.onConnect
+             (ControllerTrust), asi que no necesita permiso. -->
+        <service
+            android:name="com.lectorvoz.tts.playback.PlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

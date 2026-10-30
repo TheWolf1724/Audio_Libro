@@ -1,0 +1,72 @@
+# Secretos y credenciales
+.env*
+*.key
+*.pem
+*.pfx
+*.p12
+*.jks
+*.keystore
+id_rsa*
+id_ed25519*
+credentials.*
+secrets.*
+.secrets*
+*.token
+token.json
+keystore.properties
+signing.properties
+
+# Datos reales del usuario y pruebas locales
+datos/
+muestras-privadas/
+
+# Gradle / Android
+.gradle/
+build/
+**/build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+output-metadata.json
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.kotlin/
+
+# Varios
+*.log
+.DS_Store
+bin/
+obj/
+dist/
+__pycache__/
+node_modules/
+venv/
+.venv/
+.claude/settings.local.json
+
+# Muestras de audio de voces TTS (pesadas, regenerables)
+docs/investigacion/muestras-voz/*.wav
+.claude/worktrees/
+
+# :tts - voces neuronales (tools/descargar-voces.sh) y binarios de prueba
+# (tools/descargar-dependencias.sh): pesados, se descargan con SHA-256 verificado
+tts/src/main/assets/voces/
+tools/cache/
+docs/investigacion/muestras-voz/30s/
+entregas/
+
+# Notas internas de trabajo: solo en el equipo del autor, nunca en el repositorio publico.
+CLAUDE.md
+.claude/
+docs/ESTADO.md
+docs/memoria/
+docs/revisiones/
+docs/investigacion/

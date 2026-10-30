@@ -1,0 +1,10 @@
+# Llamadas de nota: superindices, [n] y (n) pegado a palabra se omiten; (n) suelto no.
+> Era un hecho cierto.¹ Lo dijo el autor[3] y otros(4) también.
+= SENTENCE|NARRATOR|SENTENCE|es|Era un hecho cierto.
+= SENTENCE|NARRATOR|CHAPTER|es|Lo dijo el autor y otros también.
+
+> Tenía (12) años y medía 3 m² de alto².
+= SENTENCE|NARRATOR|CHAPTER|es|Tenía (doce) años y medía tres metros cuadrados de alto.
+
+> Una cita final[12].
+= SENTENCE|NARRATOR|CHAPTER|es|Una cita final.

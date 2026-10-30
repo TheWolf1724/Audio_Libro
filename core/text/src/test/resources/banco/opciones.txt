@@ -1,0 +1,30 @@
+# Opciones: idioma forzado, tablas omitidas y anuncio de capitulo.
+@ readingLanguage=ENGLISH
+> Hola, ¿qué tal? Muy bien.
+= SENTENCE|NARRATOR|SENTENCE|en|Hola, ¿qué tal?
+= SENTENCE|NARRATOR|CHAPTER|en|Muy bien.
+
+@ readingLanguage=SPANISH
+> The house is red.
+= SENTENCE|NARRATOR|CHAPTER|es|The house is red.
+
+@ readTables=false
+> Antes de la tabla.\nNombre | Edad\nAna | 30\nDespués.
+= SENTENCE|NARRATOR|PARAGRAPH|es|Antes de la tabla.
+= SENTENCE|NARRATOR|CHAPTER|es|Después.
+
+@ announce=3:El_viaje
+> Era de noche.
+= CHAPTER_ANNOUNCE|NARRATOR|SECTION|es|Capítulo tres. El viaje.
+= SENTENCE|NARRATOR|CHAPTER|es|Era de noche.
+
+@ announce=3:El_viaje
+> El viaje\nEra de noche.
+= CHAPTER_ANNOUNCE|NARRATOR|SECTION|es|Capítulo tres.
+= SENTENCE|NARRATOR|PARAGRAPH|es|El viaje.
+= SENTENCE|NARRATOR|CHAPTER|es|Era de noche.
+
+@ announce=:Prólogo
+> Todo empezó un martes.
+= CHAPTER_ANNOUNCE|NARRATOR|SECTION|es|Prólogo.
+= SENTENCE|NARRATOR|CHAPTER|es|Todo empezó un martes.

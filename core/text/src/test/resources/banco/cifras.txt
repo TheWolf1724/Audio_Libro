@@ -1,0 +1,15 @@
+# Cifras, fechas, horas, monedas y unidades en espanol.
+> Costó 1.250 € el 12/10/2023 a las 14:05 h, es decir, un 15 % más que en 2022.
+= SENTENCE|NARRATOR|CHAPTER|es|Costó mil doscientos cincuenta euros el doce de octubre de dos mil veintitrés a las catorce horas y cinco minutos, es decir, un quince por ciento más que en dos mil veintidós.
+
+> Llegaron 3.000.000 de personas en el siglo XV y Felipe II reinó.
+= SENTENCE|NARRATOR|CHAPTER|es|Llegaron tres millones de personas en el siglo quince y Felipe segundo reinó.
+
+> Mide 1,5 m y pesa 72,3 kg; corre a 12 km/h.
+= SENTENCE|NARRATOR|CHAPTER|es|Mide uno coma cinco metros y pesa setenta y dos coma tres kilos; corre a doce kilómetros por hora.
+
+> Tengo ３ gatos y ٣ perros.
+= SENTENCE|NARRATOR|CHAPTER|es|Tengo tres gatos y tres perros.
+
+> La 1.ª edición salió el 2.º año, entre 1914-1918.
+= SENTENCE|NARRATOR|CHAPTER|es|La primera edición salió el segundo año, entre mil novecientos catorce a mil novecientos dieciocho.

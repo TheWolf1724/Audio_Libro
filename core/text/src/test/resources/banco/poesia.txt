@@ -1,0 +1,13 @@
+# Poesia: lineas cortas sin unir, VERSE_LINE con pausa VERSE y PARAGRAPH al final de estrofa.
+> En el silencio de la noche\nla luna canta sola\nsobre el mar dormido\ny nadie la escucha.\n\nOtra estrofa breve\nde dos versos\ny un tercero
+= VERSE_LINE|NARRATOR|VERSE|es|En el silencio de la noche,
+= VERSE_LINE|NARRATOR|VERSE|es|la luna canta sola,
+= VERSE_LINE|NARRATOR|VERSE|es|sobre el mar dormido,
+= VERSE_LINE|NARRATOR|PARAGRAPH|es|y nadie la escucha.
+= VERSE_LINE|NARRATOR|VERSE|es|Otra estrofa breve,
+= VERSE_LINE|NARRATOR|VERSE|es|de dos versos,
+= VERSE_LINE|NARRATOR|CHAPTER|es|y un tercero.
+
+> Esto es prosa normal con una linea larga que no es poesia de ningun modo posible.\nY otra linea larga que tampoco es poesia porque cuenta cosas con detalle.
+= SENTENCE|NARRATOR|PARAGRAPH|es|Esto es prosa normal con una linea larga que no es poesia de ningun modo posible.
+= SENTENCE|NARRATOR|CHAPTER|es|Y otra linea larga que tampoco es poesia porque cuenta cosas con detalle.

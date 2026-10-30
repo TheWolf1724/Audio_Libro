@@ -1,0 +1,42 @@
+# Dialogos con raya y comillas: papel DIALOG/NARRATOR, la raya y las comillas no se leen.
+> —¿Qué hora es? —preguntó Martín—. Ya es tarde.
+= SENTENCE|DIALOG|CLAUSE|es|¿Qué hora es?
+= SENTENCE|NARRATOR|SENTENCE|es|preguntó Martín.
+= SENTENCE|DIALOG|CHAPTER|es|Ya es tarde.
+
+> —Las tres —respondió ella. Luego se marchó.
+= SENTENCE|DIALOG|CLAUSE|es|Las tres,
+= SENTENCE|NARRATOR|SENTENCE|es|respondió ella.
+= SENTENCE|NARRATOR|CHAPTER|es|Luego se marchó.
+
+> —Ven aquí —dijo—, y no tardes.
+= SENTENCE|DIALOG|CLAUSE|es|Ven aquí,
+= SENTENCE|NARRATOR|CLAUSE|es|dijo,
+= SENTENCE|DIALOG|CHAPTER|es|y no tardes.
+
+> Martín dijo: —Vámonos ya.
+= SENTENCE|NARRATOR|CLAUSE|es|Martín dijo:
+= SENTENCE|DIALOG|CHAPTER|es|Vámonos ya.
+
+> —¿Vienes? —Sí, ahora mismo —contestó Ana.
+= SENTENCE|DIALOG|SENTENCE|es|¿Vienes?
+= SENTENCE|DIALOG|CLAUSE|es|Sí, ahora mismo,
+= SENTENCE|NARRATOR|CHAPTER|es|contestó Ana.
+
+> «Ven aquí», dijo su madre. Leí «Cien años de soledad» en verano.
+= SENTENCE|DIALOG|CLAUSE|es|Ven aquí,
+= SENTENCE|NARRATOR|SENTENCE|es|dijo su madre.
+= SENTENCE|NARRATOR|CHAPTER|es|Leí Cien años de soledad en verano.
+
+> Pedro gritó: «¡Fuego en la cocina!». Todos corrieron.
+= SENTENCE|NARRATOR|CLAUSE|es|Pedro gritó:
+= SENTENCE|DIALOG|SENTENCE|es|¡Fuego en la cocina!
+= SENTENCE|NARRATOR|CHAPTER|es|Todos corrieron.
+
+> La palabra «hola» tiene cuatro letras.
+= SENTENCE|NARRATOR|CHAPTER|es|La palabra hola tiene cuatro letras.
+
+> “I don't know,” she said. “Maybe tomorrow.”
+= SENTENCE|DIALOG|CLAUSE|en|I don't know,
+= SENTENCE|NARRATOR|SENTENCE|en|she said.
+= SENTENCE|DIALOG|CHAPTER|en|Maybe tomorrow.

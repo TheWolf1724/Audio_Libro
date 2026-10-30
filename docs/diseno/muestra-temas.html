@@ -1,0 +1,945 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LectorVoz: temas</title>
+<style>
+/* Colores de los temas: bloque generado por tools/contraste.py desde las mismas
+   definiciones que temas.json. No editar a mano. */
+/* TOKENS-INICIO */
+.tema-claro {
+  --primary: #325CAA;
+  --onPrimary: #FFFFFF;
+  --primaryContainer: #DCE1FF;
+  --onPrimaryContainer: #001B3F;
+  --inversePrimary: #B6C4FF;
+  --secondary: #565E75;
+  --onSecondary: #FFFFFF;
+  --secondaryContainer: #DAE2FD;
+  --onSecondaryContainer: #121B2E;
+  --tertiary: #00696C;
+  --onTertiary: #FFFFFF;
+  --tertiaryContainer: #9EF0F2;
+  --onTertiaryContainer: #002021;
+  --error: #AF2F27;
+  --onError: #FFFFFF;
+  --errorContainer: #FFDAD3;
+  --onErrorContainer: #3A0B00;
+  --background: #FCF9F4;
+  --onBackground: #1D1B18;
+  --surface: #FCF9F4;
+  --onSurface: #1D1B18;
+  --surfaceVariant: #E8E2D7;
+  --onSurfaceVariant: #4B463D;
+  --surfaceTint: #325CAA;
+  --inverseSurface: #32302D;
+  --inverseOnSurface: #F3F0EC;
+  --outline: #7C766D;
+  --outlineVariant: #CCC6BB;
+  --scrim: #000000;
+  --surfaceBright: #FCF9F4;
+  --surfaceDim: #DCDAD5;
+  --surfaceContainerLowest: #FFFFFF;
+  --surfaceContainerLow: #F6F3EF;
+  --surfaceContainer: #F0EDE9;
+  --surfaceContainerHigh: #EBE8E3;
+  --surfaceContainerHighest: #E5E2DE;
+  --primaryFixed: #DCE1FF;
+  --primaryFixedDim: #B6C4FF;
+  --onPrimaryFixed: #001B3F;
+  --onPrimaryFixedVariant: #00458F;
+  --secondaryFixed: #DAE2FD;
+  --secondaryFixedDim: #BEC6E0;
+  --onSecondaryFixed: #121B2E;
+  --onSecondaryFixedVariant: #3E465C;
+  --tertiaryFixed: #9EF0F2;
+  --tertiaryFixedDim: #82D4D6;
+  --onTertiaryFixed: #002021;
+  --onTertiaryFixedVariant: #004F51;
+  --readerBackground: #FDFAF6;
+  --readerText: #211F1D;
+  --readerSecondaryText: #514D47;
+  --readerLink: #154C97;
+  --readerLinkVisited: #73376E;
+  --ttsSentenceHighlight: #D5E7FF;
+  --ttsSentenceIndicator: #0078B8;
+  --ttsWordHighlight: #F3D25A;
+  --ttsWordText: #211F1D;
+  --ttsWordIndicator: #7F4F0F;
+  --selection: #CAC0F0;
+  --selectionHandle: #325CAA;
+  --searchHighlight: #FFBDA0;
+  --searchOutline: #B9442C;
+  --searchCurrentHighlight: #FB8F4F;
+  --searchCurrentText: #211F1D;
+  --readerPageBack: #F1EDE8;
+  --readerBarBackground: #F0EDE9;
+  --readerBarContent: #1D1B18;
+  --readerProgressTrack: #CCC6BB;
+  --readerProgressIndicator: #325CAA;
+  --readerDivider: #CCC6BB;
+  --pageEdgeShadow: rgba(0,0,0,0.12);
+}
+.tema-claro-hc {
+  --primary: #003A7A;
+  --onPrimary: #FFFFFF;
+  --primaryContainer: #DCE1FF;
+  --onPrimaryContainer: #001B3F;
+  --inversePrimary: #B6C4FF;
+  --secondary: #333B50;
+  --onSecondary: #FFFFFF;
+  --secondaryContainer: #DAE2FD;
+  --onSecondaryContainer: #121B2E;
+  --tertiary: #004345;
+  --onTertiary: #FFFFFF;
+  --tertiaryContainer: #9EF0F2;
+  --onTertiaryContainer: #002021;
+  --error: #7D000A;
+  --onError: #FFFFFF;
+  --errorContainer: #FFDAD3;
+  --onErrorContainer: #3A0B00;
+  --background: #FCF9F4;
+  --onBackground: #1D1B18;
+  --surface: #FCF9F4;
+  --onSurface: #1D1B18;
+  --surfaceVariant: #E8E2D7;
+  --onSurfaceVariant: #2A251D;
+  --surfaceTint: #003A7A;
+  --inverseSurface: #32302D;
+  --inverseOnSurface: #F3F0EC;
+  --outline: #4B463D;
+  --outlineVariant: #706A61;
+  --scrim: #000000;
+  --surfaceBright: #FCF9F4;
+  --surfaceDim: #DCDAD5;
+  --surfaceContainerLowest: #FFFFFF;
+  --surfaceContainerLow: #F6F3EF;
+  --surfaceContainer: #F0EDE9;
+  --surfaceContainerHigh: #EBE8E3;
+  --surfaceContainerHighest: #E5E2DE;
+  --primaryFixed: #DCE1FF;
+  --primaryFixedDim: #B6C4FF;
+  --onPrimaryFixed: #001B3F;
+  --onPrimaryFixedVariant: #00458F;
+  --secondaryFixed: #DAE2FD;
+  --secondaryFixedDim: #BEC6E0;
+  --onSecondaryFixed: #121B2E;
+  --onSecondaryFixedVariant: #3E465C;
+  --tertiaryFixed: #9EF0F2;
+  --tertiaryFixedDim: #82D4D6;
+  --onTertiaryFixed: #002021;
+  --onTertiaryFixedVariant: #004F51;
+  --readerBackground: #FDFAF6;
+  --readerText: #000000;
+  --readerSecondaryText: #2F2C26;
+  --readerLink: #00336E;
+  --readerLinkVisited: #73376E;
+  --ttsSentenceHighlight: #D5E7FF;
+  --ttsSentenceIndicator: #004A75;
+  --ttsWordHighlight: #F3D25A;
+  --ttsWordText: #000000;
+  --ttsWordIndicator: #7F4F0F;
+  --selection: #CAC0F0;
+  --selectionHandle: #325CAA;
+  --searchHighlight: #FFBDA0;
+  --searchOutline: #B9442C;
+  --searchCurrentHighlight: #FB8F4F;
+  --searchCurrentText: #211F1D;
+  --readerPageBack: #F1EDE8;
+  --readerBarBackground: #F0EDE9;
+  --readerBarContent: #1D1B18;
+  --readerProgressTrack: #706A61;
+  --readerProgressIndicator: #325CAA;
+  --readerDivider: #706A61;
+  --pageEdgeShadow: rgba(0,0,0,0.12);
+}
+.tema-oscuro {
+  --primary: #B6C4FF;
+  --onPrimary: #002F66;
+  --primaryContainer: #00458F;
+  --onPrimaryContainer: #DCE1FF;
+  --inversePrimary: #325CAA;
+  --secondary: #BEC6E0;
+  --onSecondary: #283044;
+  --secondaryContainer: #3E465C;
+  --onSecondaryContainer: #DAE2FD;
+  --tertiary: #82D4D6;
+  --onTertiary: #003738;
+  --tertiaryContainer: #004F51;
+  --onTertiaryContainer: #9EF0F2;
+  --error: #FFB4A6;
+  --onError: #690003;
+  --errorContainer: #900C12;
+  --onErrorContainer: #FFDAD3;
+  --background: #15130F;
+  --onBackground: #E5E2DE;
+  --surface: #15130F;
+  --onSurface: #E5E2DE;
+  --surfaceVariant: #4B463D;
+  --onSurfaceVariant: #CCC6BB;
+  --surfaceTint: #B6C4FF;
+  --inverseSurface: #E5E2DE;
+  --inverseOnSurface: #32302D;
+  --outline: #969086;
+  --outlineVariant: #4B463D;
+  --scrim: #000000;
+  --surfaceBright: #3B3935;
+  --surfaceDim: #15130F;
+  --surfaceContainerLowest: #110E09;
+  --surfaceContainerLow: #1D1B18;
+  --surfaceContainer: #211F1C;
+  --surfaceContainerHigh: #2C2A26;
+  --surfaceContainerHighest: #373431;
+  --primaryFixed: #DCE1FF;
+  --primaryFixedDim: #B6C4FF;
+  --onPrimaryFixed: #001B3F;
+  --onPrimaryFixedVariant: #00458F;
+  --secondaryFixed: #DAE2FD;
+  --secondaryFixedDim: #BEC6E0;
+  --onSecondaryFixed: #121B2E;
+  --onSecondaryFixedVariant: #3E465C;
+  --tertiaryFixed: #9EF0F2;
+  --tertiaryFixedDim: #82D4D6;
+  --onTertiaryFixed: #002021;
+  --onTertiaryFixedVariant: #004F51;
+  --readerBackground: #191715;
+  --readerText: #E0DCD7;
+  --readerSecondaryText: #B4B0A9;
+  --readerLink: #AEBEFF;
+  --readerLinkVisited: #E5B1DD;
+  --ttsSentenceHighlight: #1F3951;
+  --ttsSentenceIndicator: #5DA6E7;
+  --ttsWordHighlight: #E9C256;
+  --ttsWordText: #191715;
+  --ttsWordIndicator: #774806;
+  --selection: #5E3869;
+  --selectionHandle: #B6C4FF;
+  --searchHighlight: #5D3620;
+  --searchOutline: #F28A5B;
+  --searchCurrentHighlight: #FA985F;
+  --searchCurrentText: #191715;
+  --readerPageBack: #252321;
+  --readerBarBackground: #211F1C;
+  --readerBarContent: #E5E2DE;
+  --readerProgressTrack: #4B463D;
+  --readerProgressIndicator: #B6C4FF;
+  --readerDivider: #4B463D;
+  --pageEdgeShadow: rgba(0,0,0,0.40);
+}
+.tema-oscuro-hc {
+  --primary: #D5DBFF;
+  --onPrimary: #002F66;
+  --primaryContainer: #00458F;
+  --onPrimaryContainer: #DCE1FF;
+  --inversePrimary: #325CAA;
+  --secondary: #D4DCF7;
+  --onSecondary: #283044;
+  --secondaryContainer: #3E465C;
+  --onSecondaryContainer: #DAE2FD;
+  --tertiary: #98EBED;
+  --onTertiary: #003738;
+  --tertiaryContainer: #004F51;
+  --onTertiaryContainer: #9EF0F2;
+  --error: #FFD3CA;
+  --onError: #690003;
+  --errorContainer: #900C12;
+  --onErrorContainer: #FFDAD3;
+  --background: #15130F;
+  --onBackground: #E5E2DE;
+  --surface: #15130F;
+  --onSurface: #E5E2DE;
+  --surfaceVariant: #4B463D;
+  --onSurfaceVariant: #EEE7DD;
+  --surfaceTint: #D5DBFF;
+  --inverseSurface: #E5E2DE;
+  --inverseOnSurface: #32302D;
+  --outline: #BEB8AE;
+  --outlineVariant: #898379;
+  --scrim: #000000;
+  --surfaceBright: #3B3935;
+  --surfaceDim: #15130F;
+  --surfaceContainerLowest: #110E09;
+  --surfaceContainerLow: #1D1B18;
+  --surfaceContainer: #211F1C;
+  --surfaceContainerHigh: #2C2A26;
+  --surfaceContainerHighest: #373431;
+  --primaryFixed: #DCE1FF;
+  --primaryFixedDim: #B6C4FF;
+  --onPrimaryFixed: #001B3F;
+  --onPrimaryFixedVariant: #00458F;
+  --secondaryFixed: #DAE2FD;
+  --secondaryFixedDim: #BEC6E0;
+  --onSecondaryFixed: #121B2E;
+  --onSecondaryFixedVariant: #3E465C;
+  --tertiaryFixed: #9EF0F2;
+  --tertiaryFixedDim: #82D4D6;
+  --onTertiaryFixed: #002021;
+  --onTertiaryFixedVariant: #004F51;
+  --readerBackground: #191715;
+  --readerText: #F8F6F3;
+  --readerSecondaryText: #E1DCD5;
+  --readerLink: #D5DBFF;
+  --readerLinkVisited: #E5B1DD;
+  --ttsSentenceHighlight: #1F3951;
+  --ttsSentenceIndicator: #8FC5FF;
+  --ttsWordHighlight: #E9C256;
+  --ttsWordText: #191715;
+  --ttsWordIndicator: #774806;
+  --selection: #5E3869;
+  --selectionHandle: #B6C4FF;
+  --searchHighlight: #5D3620;
+  --searchOutline: #F28A5B;
+  --searchCurrentHighlight: #FA985F;
+  --searchCurrentText: #191715;
+  --readerPageBack: #252321;
+  --readerBarBackground: #211F1C;
+  --readerBarContent: #E5E2DE;
+  --readerProgressTrack: #898379;
+  --readerProgressIndicator: #B6C4FF;
+  --readerDivider: #898379;
+  --pageEdgeShadow: rgba(0,0,0,0.40);
+}
+.tema-oscuroAmoled {
+  --primary: #B6C4FF;
+  --onPrimary: #002F66;
+  --primaryContainer: #00458F;
+  --onPrimaryContainer: #DCE1FF;
+  --inversePrimary: #325CAA;
+  --secondary: #BEC6E0;
+  --onSecondary: #283044;
+  --secondaryContainer: #3E465C;
+  --onSecondaryContainer: #DAE2FD;
+  --tertiary: #82D4D6;
+  --onTertiary: #003738;
+  --tertiaryContainer: #004F51;
+  --onTertiaryContainer: #9EF0F2;
+  --error: #FFB4A6;
+  --onError: #690003;
+  --errorContainer: #900C12;
+  --onErrorContainer: #FFDAD3;
+  --background: #000000;
+  --onBackground: #E5E2DE;
+  --surface: #000000;
+  --onSurface: #E5E2DE;
+  --surfaceVariant: #4B463D;
+  --onSurfaceVariant: #CCC6BB;
+  --surfaceTint: #B6C4FF;
+  --inverseSurface: #E5E2DE;
+  --inverseOnSurface: #32302D;
+  --outline: #969086;
+  --outlineVariant: #4B463D;
+  --scrim: #000000;
+  --surfaceBright: #32302D;
+  --surfaceDim: #000000;
+  --surfaceContainerLowest: #000000;
+  --surfaceContainerLow: #15130F;
+  --surfaceContainer: #1B1916;
+  --surfaceContainerHigh: #23211E;
+  --surfaceContainerHighest: #2E2C28;
+  --primaryFixed: #DCE1FF;
+  --primaryFixedDim: #B6C4FF;
+  --onPrimaryFixed: #001B3F;
+  --onPrimaryFixedVariant: #00458F;
+  --secondaryFixed: #DAE2FD;
+  --secondaryFixedDim: #BEC6E0;
+  --onSecondaryFixed: #121B2E;
+  --onSecondaryFixedVariant: #3E465C;
+  --tertiaryFixed: #9EF0F2;
+  --tertiaryFixedDim: #82D4D6;
+  --onTertiaryFixed: #002021;
+  --onTertiaryFixedVariant: #004F51;
+  --readerBackground: #000000;
+  --readerText: #D7D4CF;
+  --readerSecondaryText: #AAA59F;
+  --readerLink: #AEBEFF;
+  --readerLinkVisited: #E5B1DD;
+  --ttsSentenceHighlight: #17324A;
+  --ttsSentenceIndicator: #5DA6E7;
+  --ttsWordHighlight: #E9C256;
+  --ttsWordText: #000000;
+  --ttsWordIndicator: #774806;
+  --selection: #573162;
+  --selectionHandle: #B6C4FF;
+  --searchHighlight: #553019;
+  --searchOutline: #F28A5B;
+  --searchCurrentHighlight: #FA985F;
+  --searchCurrentText: #000000;
+  --readerPageBack: #191715;
+  --readerBarBackground: #15130F;
+  --readerBarContent: #E5E2DE;
+  --readerProgressTrack: #4B463D;
+  --readerProgressIndicator: #B6C4FF;
+  --readerDivider: #4B463D;
+  --pageEdgeShadow: rgba(0,0,0,0.60);
+}
+.tema-oscuroAmoled-hc {
+  --primary: #D5DBFF;
+  --onPrimary: #002F66;
+  --primaryContainer: #00458F;
+  --onPrimaryContainer: #DCE1FF;
+  --inversePrimary: #325CAA;
+  --secondary: #D4DCF7;
+  --onSecondary: #283044;
+  --secondaryContainer: #3E465C;
+  --onSecondaryContainer: #DAE2FD;
+  --tertiary: #98EBED;
+  --onTertiary: #003738;
+  --tertiaryContainer: #004F51;
+  --onTertiaryContainer: #9EF0F2;
+  --error: #FFD3CA;
+  --onError: #690003;
+  --errorContainer: #900C12;
+  --onErrorContainer: #FFDAD3;
+  --background: #000000;
+  --onBackground: #E5E2DE;
+  --surface: #000000;
+  --onSurface: #E5E2DE;
+  --surfaceVariant: #4B463D;
+  --onSurfaceVariant: #EEE7DD;
+  --surfaceTint: #D5DBFF;
+  --inverseSurface: #E5E2DE;
+  --inverseOnSurface: #32302D;
+  --outline: #BEB8AE;
+  --outlineVariant: #898379;
+  --scrim: #000000;
+  --surfaceBright: #32302D;
+  --surfaceDim: #000000;
+  --surfaceContainerLowest: #000000;
+  --surfaceContainerLow: #15130F;
+  --surfaceContainer: #1B1916;
+  --surfaceContainerHigh: #23211E;
+  --surfaceContainerHighest: #2E2C28;
+  --primaryFixed: #DCE1FF;
+  --primaryFixedDim: #B6C4FF;
+  --onPrimaryFixed: #001B3F;
+  --onPrimaryFixedVariant: #00458F;
+  --secondaryFixed: #DAE2FD;
+  --secondaryFixedDim: #BEC6E0;
+  --onSecondaryFixed: #121B2E;
+  --onSecondaryFixedVariant: #3E465C;
+  --tertiaryFixed: #9EF0F2;
+  --tertiaryFixedDim: #82D4D6;
+  --onTertiaryFixed: #002021;
+  --onTertiaryFixedVariant: #004F51;
+  --readerBackground: #000000;
+  --readerText: #F8F6F3;
+  --readerSecondaryText: #E1DCD5;
+  --readerLink: #D5DBFF;
+  --readerLinkVisited: #E5B1DD;
+  --ttsSentenceHighlight: #17324A;
+  --ttsSentenceIndicator: #8FC5FF;
+  --ttsWordHighlight: #E9C256;
+  --ttsWordText: #000000;
+  --ttsWordIndicator: #774806;
+  --selection: #573162;
+  --selectionHandle: #B6C4FF;
+  --searchHighlight: #553019;
+  --searchOutline: #F28A5B;
+  --searchCurrentHighlight: #FA985F;
+  --searchCurrentText: #000000;
+  --readerPageBack: #191715;
+  --readerBarBackground: #15130F;
+  --readerBarContent: #E5E2DE;
+  --readerProgressTrack: #898379;
+  --readerProgressIndicator: #B6C4FF;
+  --readerDivider: #898379;
+  --pageEdgeShadow: rgba(0,0,0,0.60);
+}
+.tema-proteccionOcular {
+  --primary: #833F24;
+  --onPrimary: #FFF4F0;
+  --primaryContainer: #FFAD8C;
+  --onPrimaryContainer: #391500;
+  --inversePrimary: #FFAD8C;
+  --secondary: #664D3D;
+  --onSecondary: #FFF4EE;
+  --secondaryContainer: #DABBA8;
+  --onSecondaryContainer: #2F1B0A;
+  --tertiary: #515624;
+  --onTertiary: #F8FBBF;
+  --tertiaryContainer: #C2C58C;
+  --onTertiaryContainer: #202100;
+  --error: #9E2127;
+  --onError: #FFF4F3;
+  --errorContainer: #FFB4AB;
+  --onErrorContainer: #490000;
+  --background: #EBDAC5;
+  --onBackground: #281E0C;
+  --surface: #EBDAC5;
+  --onSurface: #281E0C;
+  --surfaceVariant: #DBC3A8;
+  --onSurfaceVariant: #4C3B25;
+  --surfaceTint: #833F24;
+  --inverseSurface: #3E3322;
+  --inverseOnSurface: #EBDAC5;
+  --outline: #746048;
+  --outlineVariant: #C4AD93;
+  --scrim: #000000;
+  --surfaceBright: #F4E3CD;
+  --surfaceDim: #D2C1AC;
+  --surfaceContainerLowest: #F7E6D0;
+  --surfaceContainerLow: #F1E0CA;
+  --surfaceContainer: #E5D5BF;
+  --surfaceContainerHigh: #E0CFBA;
+  --surfaceContainerHighest: #DACAB4;
+  --primaryFixed: #FFDBCD;
+  --primaryFixedDim: #FFB598;
+  --onPrimaryFixed: #311300;
+  --onPrimaryFixedVariant: #753319;
+  --secondaryFixed: #FCDCC8;
+  --secondaryFixedDim: #DFC0AD;
+  --onSecondaryFixed: #2B1703;
+  --onSecondaryFixedVariant: #5A4232;
+  --tertiaryFixed: #E3E7AC;
+  --tertiaryFixedDim: #C7CA91;
+  --onTertiaryFixed: #1C1D00;
+  --onTertiaryFixedVariant: #454A18;
+  --readerBackground: #EBDAC5;
+  --readerText: #2E2118;
+  --readerSecondaryText: #4E3C30;
+  --readerLink: #752415;
+  --readerLinkVisited: #6A2B39;
+  --ttsSentenceHighlight: #EAC9A8;
+  --ttsSentenceIndicator: #914C22;
+  --ttsWordHighlight: #C59716;
+  --ttsWordText: #120903;
+  --ttsWordIndicator: #743417;
+  --selection: #B0B5CF;
+  --selectionHandle: #833F24;
+  --searchHighlight: #F29498;
+  --searchOutline: #A42F30;
+  --searchCurrentHighlight: #E47665;
+  --searchCurrentText: #20150C;
+  --readerPageBack: #DACAB4;
+  --readerBarBackground: #E5D5BF;
+  --readerBarContent: #281E0C;
+  --readerProgressTrack: #C4AD93;
+  --readerProgressIndicator: #833F24;
+  --readerDivider: #C4AD93;
+  --pageEdgeShadow: rgba(48,28,0,0.16);
+}
+.tema-proteccionOcular-hc {
+  --primary: #67280E;
+  --onPrimary: #FFF4F0;
+  --primaryContainer: #FFAD8C;
+  --onPrimaryContainer: #391500;
+  --inversePrimary: #FFAD8C;
+  --secondary: #4D3627;
+  --onSecondary: #FFF4EE;
+  --secondaryContainer: #DABBA8;
+  --onSecondaryContainer: #2F1B0A;
+  --tertiary: #393F0D;
+  --onTertiary: #F8FBBF;
+  --tertiaryContainer: #C2C58C;
+  --onTertiaryContainer: #202100;
+  --error: #7D0015;
+  --onError: #FFF4F3;
+  --errorContainer: #FFB4AB;
+  --onErrorContainer: #490000;
+  --background: #EBDAC5;
+  --onBackground: #281E0C;
+  --surface: #EBDAC5;
+  --onSurface: #281E0C;
+  --surfaceVariant: #DBC3A8;
+  --onSurfaceVariant: #32230D;
+  --surfaceTint: #67280E;
+  --inverseSurface: #3E3322;
+  --inverseOnSurface: #EBDAC5;
+  --outline: #56442D;
+  --outlineVariant: #7B674F;
+  --scrim: #000000;
+  --surfaceBright: #F4E3CD;
+  --surfaceDim: #D2C1AC;
+  --surfaceContainerLowest: #F7E6D0;
+  --surfaceContainerLow: #F1E0CA;
+  --surfaceContainer: #E5D5BF;
+  --surfaceContainerHigh: #E0CFBA;
+  --surfaceContainerHighest: #DACAB4;
+  --primaryFixed: #FFDBCD;
+  --primaryFixedDim: #FFB598;
+  --onPrimaryFixed: #311300;
+  --onPrimaryFixedVariant: #753319;
+  --secondaryFixed: #FCDCC8;
+  --secondaryFixedDim: #DFC0AD;
+  --onSecondaryFixed: #2B1703;
+  --onSecondaryFixedVariant: #5A4232;
+  --tertiaryFixed: #E3E7AC;
+  --tertiaryFixedDim: #C7CA91;
+  --onTertiaryFixed: #1C1D00;
+  --onTertiaryFixedVariant: #454A18;
+  --readerBackground: #EBDAC5;
+  --readerText: #190F06;
+  --readerSecondaryText: #33251C;
+  --readerLink: #5A0F00;
+  --readerLinkVisited: #6A2B39;
+  --ttsSentenceHighlight: #EAC9A8;
+  --ttsSentenceIndicator: #6F3005;
+  --ttsWordHighlight: #C59716;
+  --ttsWordText: #190F06;
+  --ttsWordIndicator: #743417;
+  --selection: #B0B5CF;
+  --selectionHandle: #833F24;
+  --searchHighlight: #F29498;
+  --searchOutline: #A42F30;
+  --searchCurrentHighlight: #E47665;
+  --searchCurrentText: #20150C;
+  --readerPageBack: #DACAB4;
+  --readerBarBackground: #E5D5BF;
+  --readerBarContent: #281E0C;
+  --readerProgressTrack: #7B674F;
+  --readerProgressIndicator: #833F24;
+  --readerDivider: #7B674F;
+  --pageEdgeShadow: rgba(48,28,0,0.16);
+}
+.tema-proteccionOcularNoche {
+  --primary: #E5A35A;
+  --onPrimary: #382100;
+  --primaryContainer: #613900;
+  --onPrimaryContainer: #FFCB97;
+  --inversePrimary: #784700;
+  --secondary: #CAAB93;
+  --onSecondary: #36210E;
+  --secondaryContainer: #553D29;
+  --onSecondaryContainer: #EFCEB6;
+  --tertiary: #B1B57D;
+  --onTertiary: #252800;
+  --tertiaryContainer: #404614;
+  --onTertiaryContainer: #D5D89F;
+  --error: #FF8A77;
+  --onError: #520500;
+  --errorContainer: #831514;
+  --onErrorContainer: #FFC7BD;
+  --background: #1E1308;
+  --onBackground: #D3C4B9;
+  --surface: #1E1308;
+  --onSurface: #D3C4B9;
+  --surfaceVariant: #533E2C;
+  --onSurfaceVariant: #C7AB96;
+  --surfaceTint: #E5A35A;
+  --inverseSurface: #D3C4B9;
+  --inverseOnSurface: #2E241C;
+  --outline: #997F6B;
+  --outlineVariant: #533E2C;
+  --scrim: #000000;
+  --surfaceBright: #3E322A;
+  --surfaceDim: #1E1308;
+  --surfaceContainerLowest: #180B00;
+  --surfaceContainerLow: #241912;
+  --surfaceContainer: #281D16;
+  --surfaceContainerHigh: #31261E;
+  --surfaceContainerHighest: #3A2E26;
+  --primaryFixed: #FFDCBC;
+  --primaryFixedDim: #FEB96F;
+  --onPrimaryFixed: #291800;
+  --onPrimaryFixedVariant: #683D00;
+  --secondaryFixed: #FDDCC4;
+  --secondaryFixedDim: #E0C1A8;
+  --onSecondaryFixed: #2A1700;
+  --onSecondaryFixedVariant: #5A422E;
+  --tertiaryFixed: #E3E7AC;
+  --tertiaryFixedDim: #C7CA91;
+  --onTertiaryFixed: #1C1D00;
+  --onTertiaryFixedVariant: #454A18;
+  --readerBackground: #1B140F;
+  --readerText: #E4BA84;
+  --readerSecondaryText: #C59F76;
+  --readerLink: #F5A273;
+  --readerLinkVisited: #E19991;
+  --ttsSentenceHighlight: #3E2716;
+  --ttsSentenceIndicator: #C78140;
+  --ttsWordHighlight: #DDA041;
+  --ttsWordText: #1B140F;
+  --ttsWordIndicator: #763B17;
+  --selection: #383D52;
+  --selectionHandle: #E5A35A;
+  --searchHighlight: #723338;
+  --searchOutline: #EA7B6A;
+  --searchCurrentHighlight: #DE7B59;
+  --searchCurrentText: #1B140F;
+  --readerPageBack: #251E1A;
+  --readerBarBackground: #281D16;
+  --readerBarContent: #D3C4B9;
+  --readerProgressTrack: #533E2C;
+  --readerProgressIndicator: #E5A35A;
+  --readerDivider: #533E2C;
+  --pageEdgeShadow: rgba(0,0,0,0.50);
+}
+.tema-proteccionOcularNoche-hc {
+  --primary: #FFD5AE;
+  --onPrimary: #382100;
+  --primaryContainer: #613900;
+  --onPrimaryContainer: #FFCB97;
+  --inversePrimary: #784700;
+  --secondary: #F7D7BE;
+  --onSecondary: #36210E;
+  --secondaryContainer: #553D29;
+  --onSecondaryContainer: #EFCEB6;
+  --tertiary: #DEE1A7;
+  --onTertiary: #252800;
+  --tertiaryContainer: #404614;
+  --onTertiaryContainer: #D5D89F;
+  --error: #FFD3CA;
+  --onError: #520500;
+  --errorContainer: #831514;
+  --onErrorContainer: #FFC7BD;
+  --background: #1E1308;
+  --onBackground: #D3C4B9;
+  --surface: #1E1308;
+  --onSurface: #D3C4B9;
+  --surfaceVariant: #533E2C;
+  --onSurfaceVariant: #FFE3CE;
+  --surfaceTint: #FFD5AE;
+  --inverseSurface: #D3C4B9;
+  --inverseOnSurface: #2E241C;
+  --outline: #CFB49E;
+  --outlineVariant: #997F6B;
+  --scrim: #000000;
+  --surfaceBright: #3E322A;
+  --surfaceDim: #1E1308;
+  --surfaceContainerLowest: #180B00;
+  --surfaceContainerLow: #241912;
+  --surfaceContainer: #281D16;
+  --surfaceContainerHigh: #31261E;
+  --surfaceContainerHighest: #3A2E26;
+  --primaryFixed: #FFDCBC;
+  --primaryFixedDim: #FEB96F;
+  --onPrimaryFixed: #291800;
+  --onPrimaryFixedVariant: #683D00;
+  --secondaryFixed: #FDDCC4;
+  --secondaryFixedDim: #E0C1A8;
+  --onSecondaryFixed: #2A1700;
+  --onSecondaryFixedVariant: #5A422E;
+  --tertiaryFixed: #E3E7AC;
+  --tertiaryFixedDim: #C7CA91;
+  --onTertiaryFixed: #1C1D00;
+  --onTertiaryFixedVariant: #454A18;
+  --readerBackground: #1B140F;
+  --readerText: #FFDEAE;
+  --readerSecondaryText: #EBC699;
+  --readerLink: #FFC9A6;
+  --readerLinkVisited: #E19991;
+  --ttsSentenceHighlight: #3E2716;
+  --ttsSentenceIndicator: #F4A865;
+  --ttsWordHighlight: #DDA041;
+  --ttsWordText: #1B140F;
+  --ttsWordIndicator: #763B17;
+  --selection: #383D52;
+  --selectionHandle: #E5A35A;
+  --searchHighlight: #723338;
+  --searchOutline: #EA7B6A;
+  --searchCurrentHighlight: #DE7B59;
+  --searchCurrentText: #1B140F;
+  --readerPageBack: #251E1A;
+  --readerBarBackground: #281D16;
+  --readerBarContent: #D3C4B9;
+  --readerProgressTrack: #997F6B;
+  --readerProgressIndicator: #E5A35A;
+  --readerDivider: #997F6B;
+  --pageEdgeShadow: rgba(0,0,0,0.50);
+}
+/* TOKENS-FIN */
+
+/* Pagina de la muestra (independiente de los temas) */
+:root {
+  --m-bg: #F4F2EE; --m-fg: #1E1D1B; --m-sub: #55524D; --m-line: #D6D2CB;
+  --lectura: "Literata", "Source Serif 4", "Source Serif Pro", Georgia, "Noto Serif", serif;
+  --ui: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", Roboto, "Noto Sans", system-ui, sans-serif;
+  --dislexia: "OpenDyslexic", "Atkinson Hyperlegible", Verdana, sans-serif;
+  --tam: 18px; --interlineado: 1.6;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --m-bg: #121110; --m-fg: #E6E2DC; --m-sub: #B3AEA6; --m-line: #3A3733; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--m-bg); color: var(--m-fg); font-family: var(--ui);
+  font-size: 15px; line-height: 1.45; }
+header.pagina { max-width: 1400px; margin: 0 auto; padding: 28px 16px 8px; }
+header.pagina h1 { font-size: 22px; margin: 0 0 4px; font-weight: 700; letter-spacing: -0.01em; }
+header.pagina p { margin: 0; color: var(--m-sub); max-width: 70ch; }
+.controles { max-width: 1400px; margin: 0 auto; padding: 14px 16px; display: flex; flex-wrap: wrap;
+  gap: 10px 22px; align-items: center; border-bottom: 1px solid var(--m-line); }
+.controles label { display: inline-flex; gap: 8px; align-items: center; cursor: pointer; }
+.controles select, .controles input[type=range] { font: inherit; }
+.rejilla { max-width: 1400px; margin: 0 auto; padding: 20px 16px 40px; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 20px; }
+
+/* Tarjeta = una pantalla del lector con un tema */
+.tel { border-radius: 22px; overflow: hidden; border: 1px solid var(--m-line);
+  background: var(--readerBackground); color: var(--readerText); display: flex; flex-direction: column;
+  box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 6px 18px rgba(0,0,0,.08); }
+.barra { background: var(--readerBarBackground); color: var(--readerBarContent);
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; font-family: var(--ui); }
+.barra .titulo { font-weight: 700; font-size: 15px; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.barra .sub { font-size: 12px; color: var(--onSurfaceVariant); }
+.icono { width: 22px; height: 22px; flex: none; }
+.icono path, .icono rect, .icono circle { fill: currentColor; }
+
+.pag { position: relative; padding: 20px 22px 14px; font-family: var(--lectura);
+  font-size: var(--tam); line-height: var(--interlineado); hyphens: auto; text-align: start;
+  box-shadow: inset -10px 0 12px -10px var(--pageEdgeShadow); flex: 1; }
+.pag h2 { font-size: 1.25em; line-height: 1.25; margin: 0 0 .6em; font-weight: 600; }
+.pag p { margin: 0 0 .8em; }
+.pag .nota { color: var(--readerSecondaryText); font-size: .85em; }
+.pag a { color: var(--readerLink); text-decoration: underline; text-underline-offset: .18em;
+  text-decoration-thickness: 1.5px; }
+.pag a.visitado { color: var(--readerLinkVisited); }
+/* Frase leida en voz alta: fondo + barra lateral (senal no cromatica) */
+.frase { background: var(--ttsSentenceHighlight); box-shadow: -6px 0 0 var(--ttsSentenceHighlight),
+  6px 0 0 var(--ttsSentenceHighlight); border-radius: 3px;
+  -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+.p-frase { position: relative; }
+.p-frase::before { content: ""; position: absolute; left: -14px; top: .25em; bottom: .25em; width: 3px;
+  border-radius: 2px; background: var(--ttsSentenceIndicator); }
+/* Palabra pronunciada: fondo fuerte + texto propio + subrayado grueso */
+.palabra { background: var(--ttsWordHighlight); color: var(--ttsWordText); border-radius: 3px;
+  padding: 0 2px; text-decoration: underline; text-decoration-color: var(--ttsWordIndicator);
+  text-decoration-thickness: 2.5px; text-underline-offset: .2em; }
+.sel { background: var(--selection); }
+.asa { display: inline-block; width: 10px; height: 10px; background: var(--selectionHandle);
+  border-radius: 0 50% 50% 50%; vertical-align: -0.35em; }
+.asa.fin { border-radius: 50% 0 50% 50%; }
+.busq { background: var(--searchHighlight); outline: 1.5px solid var(--searchOutline);
+  border-radius: 2px; }
+.busq.actual { background: var(--searchCurrentHighlight); color: var(--searchCurrentText);
+  outline-width: 2.5px; }
+.pie { display: flex; justify-content: space-between; font-family: var(--ui); font-size: 12px;
+  color: var(--readerSecondaryText); padding: 0 22px 10px; }
+
+.mandos { background: var(--surfaceContainer); color: var(--onSurface); padding: 12px 14px 14px;
+  font-family: var(--ui); border-top: 1px solid var(--readerDivider); }
+.progreso { height: 4px; border-radius: 2px; background: var(--readerProgressTrack); overflow: hidden;
+  margin-bottom: 12px; }
+.progreso > div { width: 38%; height: 100%; background: var(--readerProgressIndicator); }
+.fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { font: 600 14px/1 var(--ui); border-radius: 20px; padding: 10px 16px; border: 0; cursor: pointer;
+  min-height: 40px; display: inline-flex; align-items: center; gap: 6px; }
+.btn.lleno { background: var(--primary); color: var(--onPrimary); }
+.btn.tonal { background: var(--secondaryContainer); color: var(--onSecondaryContainer); }
+.btn.borde { background: transparent; color: var(--primary); border: 1px solid var(--outline); }
+.btn.texto { background: transparent; color: var(--primary); padding: 10px 10px; }
+.btn:focus-visible { outline: 3px solid var(--primary); outline-offset: 2px; }
+.chip { font: 500 13px/1 var(--ui); border-radius: 8px; padding: 8px 10px; border: 1px solid var(--outline);
+  color: var(--onSurfaceVariant); }
+.chip.on { background: var(--secondaryContainer); color: var(--onSecondaryContainer); border-color: transparent; }
+.error { margin-top: 10px; background: var(--errorContainer); color: var(--onErrorContainer);
+  border-radius: 12px; padding: 8px 10px; font-size: 13px; display: flex; gap: 8px; align-items: center; }
+.muestras { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; margin-top: 10px; }
+.muestras span { height: 18px; border-radius: 4px; border: 1px solid var(--outlineVariant); }
+.leyenda { font-size: 12px; color: var(--onSurfaceVariant); margin-top: 6px; }
+
+.dislexia .pag { font-family: var(--dislexia); letter-spacing: .02em; word-spacing: .08em; }
+footer.pagina { max-width: 1400px; margin: 0 auto; padding: 0 16px 40px; color: var(--m-sub); font-size: 13px; }
+@media (max-width: 400px) { .rejilla { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header class="pagina">
+  <h1>LectorVoz: temas de lectura</h1>
+  <p>Muestra local de los tres temas (claro, oscuro, proteccion ocular) y sus dos variantes
+  (AMOLED y proteccion ocular noche). Cada tarjeta usa solo los tokens de <code>temas.json</code>,
+  verificados con <code>tools/contraste.py</code>. Las fuentes se usan si estan instaladas en el
+  equipo; si no, se sustituyen por una serif del sistema.</p>
+</header>
+
+<div class="controles" role="group" aria-label="Ajustes de la muestra">
+  <label><input type="checkbox" id="hc"> Aumento de contraste</label>
+  <label><input type="checkbox" id="dis"> Fuente para dislexia</label>
+  <label>Tamano <input type="range" id="tam" min="14" max="32" step="1" value="18"> <span id="tamv">18 px</span></label>
+  <label>Interlineado <input type="range" id="lh" min="1.2" max="2.0" step="0.05" value="1.6"> <span id="lhv">1,60</span></label>
+</div>
+
+<main class="rejilla" id="rejilla"></main>
+
+<template id="plantilla">
+  <article class="tel">
+    <div class="barra">
+      <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>
+      <div style="flex:1;min-width:0">
+        <div class="titulo">El camino del faro</div>
+        <div class="sub">Capítulo 3 · <span class="nombre-tema"></span></div>
+      </div>
+      <svg class="icono" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3a6.5 6.5 0 0 1 5.2 10.4l5.4 5.4-1.4 1.4-5.4-5.4A6.5 6.5 0 1 1 9.5 3zm0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9z"/></svg>
+    </div>
+    <div class="pag">
+      <h2>III. La bajamar</h2>
+      <p>Cuando la marea se retiró, el pueblo entero bajó a la playa a buscar lo que el mar había dejado.
+      Nadie hablaba; solo se oía el <span class="busq">viento</span> entre las barcas varadas.</p>
+      <p class="p-frase"><span class="frase">Elena caminó hasta el final del espigón y miró el
+      <span class="palabra">horizonte</span>, donde la luz del faro se encendía a intervalos regulares.</span>
+      Pensó en su abuelo y en el <span class="busq actual">viento</span> de aquel invierno.</p>
+      <p>Había leído en <a href="#" onclick="return false">las notas del farero</a> que la
+      <span class="asa"></span><span class="sel">primera lámpara funcionaba con aceite de ballena</span><span class="asa fin"></span>
+      y que su luz se veía a <a class="visitado" href="#" onclick="return false">veinte millas</a>.</p>
+      <p class="nota">Nota 4. Los faros de la costa norte se electrificaron entre 1918 y 1925.</p>
+    </div>
+    <div class="pie"><span>Página 47 de 212</span><span>22 %</span></div>
+    <div class="mandos">
+      <div class="progreso" role="progressbar" aria-valuenow="38" aria-valuemin="0" aria-valuemax="100"><div></div></div>
+      <div class="fila">
+        <button class="btn lleno" type="button">
+          <svg class="icono" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></svg>Pausa</button>
+        <button class="btn tonal" type="button">1,2x</button>
+        <button class="btn borde" type="button">Voz</button>
+        <button class="btn texto" type="button">Temporizador</button>
+      </div>
+      <div class="fila" style="margin-top:10px">
+        <span class="chip on">Paginas</span><span class="chip">Scroll</span>
+      </div>
+      <div class="error"><svg class="icono" viewBox="0 0 24 24" aria-hidden="true" style="width:18px;height:18px"><path d="M12 2a10 10 0 1 1 0 20 10 10 0 0 1 0-20zm-1 5v7h2V7zm0 9v2h2v-2z"/></svg>
+        Voz neuronal no descargada</div>
+      <div class="muestras" aria-hidden="true">
+        <span style="background:var(--readerBackground)"></span>
+        <span style="background:var(--ttsSentenceHighlight)"></span>
+        <span style="background:var(--ttsWordHighlight)"></span>
+        <span style="background:var(--selection)"></span>
+        <span style="background:var(--searchHighlight)"></span>
+        <span style="background:var(--searchCurrentHighlight)"></span>
+      </div>
+      <div class="leyenda">fondo · frase · palabra · selección · búsqueda · búsqueda actual</div>
+    </div>
+  </article>
+</template>
+
+<footer class="pagina">
+  Senales no cromaticas: frase con barra lateral, palabra con subrayado grueso, busqueda con contorno
+  (mas grueso en la actual), seleccion con tiradores, enlaces siempre subrayados, errores con icono y texto.
+</footer>
+
+<script>
+(function () {
+  var temas = [
+    ["claro", "Claro"], ["oscuro", "Oscuro"], ["oscuroAmoled", "Oscuro AMOLED"],
+    ["proteccionOcular", "Proteccion ocular"], ["proteccionOcularNoche", "Proteccion ocular noche"]
+  ];
+  var rejilla = document.getElementById("rejilla");
+  var tpl = document.getElementById("plantilla");
+  temas.forEach(function (t) {
+    var n = tpl.content.firstElementChild.cloneNode(true);
+    n.dataset.tema = t[0];
+    n.classList.add("tema-" + t[0]);
+    n.querySelector(".nombre-tema").textContent = t[1];
+    n.setAttribute("aria-label", "Tema " + t[1]);
+    rejilla.appendChild(n);
+  });
+  function aplicar() {
+    var hc = document.getElementById("hc").checked;
+    document.querySelectorAll(".tel").forEach(function (n) {
+      n.className = "tel tema-" + n.dataset.tema + (hc ? " tema-" + n.dataset.tema + "-hc" : "");
+    });
+    document.body.classList.toggle("dislexia", document.getElementById("dis").checked);
+    var tam = document.getElementById("tam").value, lh = document.getElementById("lh").value;
+    document.documentElement.style.setProperty("--tam", tam + "px");
+    document.documentElement.style.setProperty("--interlineado", lh);
+    document.getElementById("tamv").textContent = tam + " px";
+    document.getElementById("lhv").textContent = Number(lh).toFixed(2).replace(".", ",");
+  }
+  ["hc", "dis", "tam", "lh"].forEach(function (id) {
+    document.getElementById(id).addEventListener("input", aplicar);
+  });
+  aplicar();
+})();
+</script>
+</body>
+</html>

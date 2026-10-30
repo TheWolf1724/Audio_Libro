@@ -1,0 +1,25 @@
+# Listas, encabezados, separadores, numeros de pagina sueltos y tablas.
+> 1. Primero\n2. Segundo\n• Tercero\na) Cuarto
+= LIST_ITEM|NARRATOR|PARAGRAPH|es|uno. Primero.
+= LIST_ITEM|NARRATOR|PARAGRAPH|es|dos. Segundo.
+= LIST_ITEM|NARRATOR|PARAGRAPH|es|Tercero.
+= LIST_ITEM|NARRATOR|CHAPTER|es|a) Cuarto.
+
+> Capítulo 3\nEl viaje\nEra de noche. Llovía...\n* * *\nAl día siguiente salió.\n12\nFin.
+= HEADING|NARRATOR|SECTION|es|Capítulo tres.
+= SENTENCE|NARRATOR|PARAGRAPH|es|El viaje.
+= SENTENCE|NARRATOR|SENTENCE|es|Era de noche.
+= SENTENCE|NARRATOR|SECTION|es|Llovía...
+= SENTENCE|NARRATOR|PARAGRAPH|es|Al día siguiente salió.
+= SENTENCE|NARRATOR|CHAPTER|es|Fin.
+
+> CAPÍTULO PRIMERO\nTexto del capítulo.\n- 14 -\nMás texto.\nxii\n~~~\nFinal.
+= HEADING|NARRATOR|SECTION|es|CAPÍTULO PRIMERO.
+= SENTENCE|NARRATOR|PARAGRAPH|es|Texto del capítulo.
+= SENTENCE|NARRATOR|SECTION|es|Más texto.
+= SENTENCE|NARRATOR|CHAPTER|es|Final.
+
+> Nombre | Edad\nAna | 30\nLuis | 41
+= TABLE|NARRATOR|SENTENCE|es|Nombre, Edad.
+= TABLE|NARRATOR|SENTENCE|es|Ana, treinta.
+= TABLE|NARRATOR|CHAPTER|es|Luis, cuarenta y uno.

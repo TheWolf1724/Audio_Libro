@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copia automatica en Android 11 y anteriores: igual que data_extraction_rules.xml. -->
+<full-backup-content>
+    <exclude domain="file" path="libros/" />
+    <exclude domain="file" path="portadas/" />
+</full-backup-content>

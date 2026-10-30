@@ -1,0 +1,17 @@
+# Libro en ingles (pista "en"): normalizador ingles.
+@ lang=en
+> Chapter IV\nMr. Brown met Dr. Jones on 4 July 1776, e.g. at 10:05 pm.
+= HEADING|NARRATOR|SECTION|en|Chapter four.
+= SENTENCE|NARRATOR|CHAPTER|en|Mister Brown met Doctor Jones on the fourth of July seventeen seventy-six, for example at ten oh five p m.
+
+@ lang=en
+> “Where are you going?” asked Henry VIII. “Nowhere,” she replied.
+= SENTENCE|DIALOG|CLAUSE|en|Where are you going?
+= SENTENCE|NARRATOR|SENTENCE|en|asked Henry the Eighth.
+= SENTENCE|DIALOG|CLAUSE|en|Nowhere,
+= SENTENCE|NARRATOR|CHAPTER|en|she replied.
+
+@ lang=en
+> El niño dijo «gracias» y se fue a su casa con su madre. The end.
+= SENTENCE|NARRATOR|SENTENCE|es|El niño dijo gracias y se fue a su casa con su madre.
+= SENTENCE|NARRATOR|CHAPTER|en|The end.

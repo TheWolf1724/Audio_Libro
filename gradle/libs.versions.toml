@@ -1,0 +1,132 @@
+# Catalogo de versiones de LectorVoz.
+# Todas las coordenadas comprobadas el 2026-10-28 contra maven-metadata.xml de
+# Google Maven y Maven Central.
+# No actualizar sin compilar y pasar las pruebas.
+
+[versions]
+# Construccion
+agp = "9.5.0"
+kotlin = "2.4.21"
+ksp = "2.3.12"
+
+# SDK de Android (compileSdk se declara con la DSL de AGP 9: release(37))
+compileSdk = "37"
+targetSdk = "37"
+minSdk = "26"
+jvmTarget = "17"
+
+# AndroidX / Compose
+composeBom = "2026.09.00"
+coreKtx = "1.19.1"
+activityCompose = "1.13.0"
+lifecycle = "2.11.0"
+navigation = "2.10.2"
+media3 = "1.11.1"
+androidxMedia = "1.8.0"
+# Room 2 (no Room 3: demasiado reciente, ver ARQUITECTURA.md)
+room = "2.8.5"
+datastore = "1.3.0"
+profileinstaller = "1.4.1"
+
+# Kotlin
+coroutines = "1.11.0"
+
+# Formatos
+jsoup = "1.23.2"
+pdfium = "2.0.3"
+
+# :format:pdf / :reader
+# RecyclerView (Apache-2.0) para el modo scroll; 1.4.0 comprobada en
+# dl.google.com/android/maven2/androidx/recyclerview/recyclerview/maven-metadata.xml (28-10-2026).
+recyclerview = "1.4.0"
+# :tts
+# sherpa-onnx 2.0.1 (ultima estable 2.0.x, 26-10-2026; sin espeak-ng ni GPL). Solo se usa
+# Supertonic 3 (no necesita fonemizador). AAR de JitPack, SHA-256
+# a8d09d1d32f3eb8520482c6d3d43fae674681c5b050385967c70a3c2c9bf0ee7 (igual al de GitHub
+# Releases v2.0.1, comprobado el 29-10-2026). API Kotlin verificada con javap y Tts.kt del tag.
+sherpaOnnx = "v2.0.1"
+# Descompresion .tar.bz2 de voces descargables (Apache-2.0).
+commonsCompress = "1.28.0"
+
+# Pruebas
+junit = "4.13.2"
+robolectric = "4.17"
+truth = "1.4.5"
+androidxTestCore = "1.7.0"
+androidxTestExtJunit = "1.3.0"
+
+[libraries]
+# AndroidX base
+androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version.ref = "lifecycle" }
+androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version.ref = "navigation" }
+androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
+
+# Compose (versiones gobernadas por el BOM)
+androidx-compose-bom = { module = "androidx.compose:compose-bom", version.ref = "composeBom" }
+androidx-compose-ui = { module = "androidx.compose.ui:ui" }
+androidx-compose-ui-graphics = { module = "androidx.compose.ui:ui-graphics" }
+androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
+androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview" }
+androidx-compose-foundation = { module = "androidx.compose.foundation:foundation" }
+androidx-compose-material3 = { module = "androidx.compose.material3:material3" }
+
+# Multimedia
+androidx-media3-session = { module = "androidx.media3:media3-session", version.ref = "media3" }
+androidx-media3-common = { module = "androidx.media3:media3-common", version.ref = "media3" }
+androidx-media = { module = "androidx.media:media", version.ref = "androidxMedia" }
+
+# Persistencia
+androidx-room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
+androidx-room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
+androidx-room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
+androidx-room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
+androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
+
+# Kotlin
+kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
+kotlinx-coroutines-android = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
+
+# Formatos
+jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
+pdfium = { module = "io.legere:pdfiumandroid", version.ref = "pdfium" }
+
+# :format:pdf / :reader
+androidx-recyclerview = { module = "androidx.recyclerview:recyclerview", version.ref = "recyclerview" }
+# :tts
+sherpa-onnx = { module = "com.github.k2-fsa.sherpa-onnx:sherpa-onnx", version.ref = "sherpaOnnx" }
+commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
+
+# :app / :core:data
+# Pruebas de UI de Compose con Robolectric (versiones gobernadas por el BOM de Compose).
+androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
+
+# Pruebas
+junit = { module = "junit:junit", version.ref = "junit" }
+robolectric = { module = "org.robolectric:robolectric", version.ref = "robolectric" }
+truth = { module = "com.google.truth:truth", version.ref = "truth" }
+androidx-test-core = { module = "androidx.test:core", version.ref = "androidxTestCore" }
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version.ref = "androidxTestExtJunit" }
+
+# Plugins para build-logic (solo compileOnly)
+android-gradlePlugin = { module = "com.android.tools.build:gradle", version.ref = "agp" }
+kotlin-gradlePlugin = { module = "org.jetbrains.kotlin:kotlin-gradle-plugin", version.ref = "kotlin" }
+compose-gradlePlugin = { module = "org.jetbrains.kotlin:compose-compiler-gradle-plugin", version.ref = "kotlin" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
+ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
+
+# Convention plugins propios (build-logic)
+lectorvoz-android-application = { id = "lectorvoz.android.application" }
+lectorvoz-android-library = { id = "lectorvoz.android.library" }
+lectorvoz-android-compose = { id = "lectorvoz.android.compose" }
+lectorvoz-jvm-library = { id = "lectorvoz.jvm.library" }

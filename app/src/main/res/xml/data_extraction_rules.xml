@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Copia de seguridad y traspaso entre dispositivos (Android 12+). Se guardan la base de datos
+  (biblioteca, progreso, marcadores, diccionario, estadisticas) y los ajustes (DataStore).
+  Se excluyen las copias de los libros y las portadas: pesan mucho (la copia automatica se
+  omite entera al pasar de 25 MB) y son del usuario; tras restaurar se vuelven a importar.
+-->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="libros/" />
+        <exclude domain="file" path="portadas/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="libros/" />
+        <exclude domain="file" path="portadas/" />
+    </device-transfer>
+</data-extraction-rules>

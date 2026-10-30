@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="tts_frase_anterior">Frase anterior</string>
+    <string name="tts_frase_siguiente">Frase siguiente</string>
+    <string name="tts_capitulo_anterior">Capitulo anterior</string>
+    <string name="tts_capitulo_siguiente">Capitulo siguiente</string>
+    <string name="tts_temporizador">Temporizador de apagado</string>
+    <string name="tts_marcar">Marcar</string>
+</resources>

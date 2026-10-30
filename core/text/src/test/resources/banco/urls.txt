@@ -1,0 +1,13 @@
+# URL (solo el dominio), correos y caracteres decorativos.
+> Visita https://www.ejemplo.com/una/ruta/muy/larga?x=1 o escribe a info@ejemplo.es para saber más…
+= SENTENCE|NARRATOR|CHAPTER|es|Visita enlace a ejemplo punto com o escribe a info arroba ejemplo punto es para saber más…
+
+> Más en www.rae.es/diccionario y en http://dle.rae.es.
+= SENTENCE|NARRATOR|CHAPTER|es|Más en enlace a rae punto es y en enlace a dle punto rae punto es.
+
+> Hola ✦✦✦ adiós ★ fin.
+= SENTENCE|NARRATOR|CHAPTER|es|Hola adiós fin.
+
+> ***\nTexto tras separador.\n───────\nOtro texto.
+= SENTENCE|NARRATOR|SECTION|es|Texto tras separador.
+= SENTENCE|NARRATOR|CHAPTER|es|Otro texto.
