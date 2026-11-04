@@ -44,4 +44,32 @@ class PauseSplitterTest {
         val pcm = tone(1.0)
         assertThat(PauseSplitter.split(pcm, fs, intArrayOf(0), 10)).containsExactly(pcm.indices)
     }
+
+    @Test
+    fun repartoDesproporcionadoDevuelveNulo() {
+        // Dos frases: la primera corta (10 de 50 caracteres) y la segunda larga. El silencio mas
+        // profundo NO esta en la frontera entre frases, sino DENTRO de la primera (una pausa
+        // dramatica a 0,1-0,25 s). El buscador lo elige y la primera parte sale "muerta de hambre"
+        // (~0,24 s para 10 caracteres): la validacion de proporcion lo detecta y devuelve nulo para
+        // que el motor sintetice cada frase por separado. Antes se devolvia este reparto erroneo.
+        val pcm = tone(0.1) + silence(0.15) + tone(2.75)
+        val parts = PauseSplitter.split(pcm, fs, intArrayOf(0, 10), 50)
+        assertThat(parts).isNull()
+    }
+
+    @Test
+    fun frasePropocionalmenteCortaSeMantiene() {
+        // Tres frases de 18, 6 y 12 caracteres con audio proporcional (~30 ms/caracter): la del
+        // medio es corta pero su audio esta por encima del suelo (60 ms) y en proporcion, asi que
+        // el reparto es fiable y NO se descarta (la validacion no es excesivamente severa).
+        val a = tone(18 * 0.03); val b = tone(6 * 0.03); val c = tone(12 * 0.03); val gap = silence(0.1)
+        val pcm = a + gap + b + gap + c + silence(0.1)
+        val parts = PauseSplitter.split(pcm, fs, intArrayOf(0, 18, 24), 36)!!
+        assertThat(parts).hasSize(3)
+        // La parte corta del medio esta claramente por encima del suelo de 60 ms.
+        val middle = parts[1].last - parts[1].first + 1
+        assertThat(middle).isGreaterThan(fs * 60 / 1000)
+        assertThat(parts.first().first).isEqualTo(0)
+        assertThat(parts.last().last).isEqualTo(pcm.size - 1)
+    }
 }

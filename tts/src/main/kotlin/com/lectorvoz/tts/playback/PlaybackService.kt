@@ -120,6 +120,11 @@ class PlaybackService : MediaSessionService() {
             diskCache = diskCache,
             // Peticion del usuario (30-10-2026): frases cortas juntas en una llamada (menos CPU
             // en dialogos) y precarga adaptada al terminal.
+            // INTERRUPTOR DE SEGURIDAD: poner groupMaxChars = 0 desactiva por completo la
+            // agrupacion (cada frase se sintetiza sola, siempre correcta). El reparto por pausas
+            // ya se autovalida y cae al fallback por frase si no es fiable (ver PauseSplitter), por
+            // lo que no deberia saltarse ninguna frase; si aun asi se detectara riesgo, basta con
+            // poner este valor a 0.
             groupMaxChars = 180,
             // Precarga segun el terminal (30-10-2026): alta = ~la pagina siguiente (2 parrafos +
             // 60 s), media = el parrafo siguiente + 30 s, baja = las frases siguientes (~15 s).
