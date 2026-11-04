@@ -499,7 +499,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
      * Aplica "forzar OCR" a las instancias abiertas del PDF: la del lector y la compartida
      * (voz, busqueda, exportacion). La apertura ya fija el valor, asi que la primera llamada
      * solo lo recuerda; un cambio posterior limpia las caches de texto y, si la voz suena,
-     * re-lee desde su posicion.
+     * re-lee desde el inicio de la pagina actual (los offsets no son estables entre pdfium y OCR).
      *
      * El flag debe llegar SIEMPRE a la instancia compartida (A1): si la voz lee este libro se
      * adquiere (abriendola si hace falta); si no, se actualiza solo la que ya exista (p. ej. de
@@ -516,7 +516,14 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         if (first) return
         // El texto de las paginas ha cambiado: repaginar lo visible y re-leer la voz.
         (readerContent as? BookContent.Pdf)?.cleaner?.prefetch(controller.currentLocator.value.chapter)
-        if (voiceHere()) graph.playback.seekTo(graph.playback.state.value.position ?: controller.currentLocator.value)
+        if (voiceHere()) {
+            // Reanclar al INICIO de la pagina actual: el offset de la posicion es un indice de
+            // caracter del texto pdfium anterior y no corresponde al texto OCR nuevo (de otra
+            // longitud); reanclar al offset crudo podria caer en otra frase de la pagina y
+            // repetir o saltar una (S2-4).
+            val page = (graph.playback.state.value.position ?: controller.currentLocator.value).chapter
+            graph.playback.seekTo(Locator(page, 0))
+        }
         _state.update { it.copy(message = if (force) "Este PDF se leera con OCR" else "Este PDF se leera con su texto") }
     }
 
