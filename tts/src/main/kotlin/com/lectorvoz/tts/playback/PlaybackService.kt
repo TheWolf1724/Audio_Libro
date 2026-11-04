@@ -72,6 +72,30 @@ object TtsConfig {
     /** Limite de la cache de audio en disco (preparar mientras carga), en bytes. */
     @Volatile var audioCacheMaxBytes: Long = AudioDiskCache.DEFAULT_MAX_BYTES
 
+    /**
+     * Modo diagnostico de lectura: registra la secuencia real de frases que genera y reproduce
+     * la voz (para investigar saltos). Apagado por defecto y sin coste cuando esta off (quien
+     * registra comprueba este flag antes de construir el mensaje; [diag] lo vuelve a comprobar).
+     */
+    @Volatile var diagnostics: Boolean = false
+
+    /** Sumidero de los mensajes de diagnostico (lo conecta `:app`); nulo = no se registra nada. */
+    @Volatile var diagnosticSink: ((String) -> Unit)? = null
+
+    /**
+     * Registra [msg] con una marca de tiempo (ms de reloj monotono) delante, solo si el
+     * diagnostico esta activo y hay sumidero. No construye nada cuando esta apagado.
+     */
+    fun diag(msg: String) {
+        if (!diagnostics) return
+        val sink = diagnosticSink ?: return
+        sink("${SystemClock.elapsedRealtime()} $msg")
+    }
+
+    /** Primeros 40 caracteres de [text] en una linea (diagnostico), sin saltos ni comillas. */
+    fun text40(text: String): String =
+        text.take(40).replace('\n', ' ').replace('\r', ' ').replace('\'', '`')
+
     /** Carpeta de la cache de audio en disco. */
     fun audioCacheDir(context: Context): File = File(context.cacheDir, "audio-voz")
 

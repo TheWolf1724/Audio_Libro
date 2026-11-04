@@ -22,6 +22,7 @@ import com.lectorvoz.tts.engine.SpeechEngineException
 import com.lectorvoz.tts.engine.SpeechLanguage
 import com.lectorvoz.tts.engine.SpeechListener
 import com.lectorvoz.tts.engine.UtteranceRenderer
+import com.lectorvoz.tts.playback.TtsConfig
 import com.lectorvoz.tts.voice.VoiceCatalog
 import com.lectorvoz.tts.voice.VoiceInfo
 import com.lectorvoz.tts.voice.VoiceRef
@@ -521,7 +522,10 @@ class NeuralTtsEngine(
         preempted: () -> Boolean,
     ): FloatArray {
         val key = RawKey(ref.voiceId, params, u.spokenText)
-        memory[key]?.let { return it }
+        memory[key]?.let {
+            if (TtsConfig.diagnostics) TtsConfig.diag("NEURAL-RAW id=${u.id} origen=memoria muestras=${it.size}")
+            return it
+        }
         val book = bookId
         val chapter = u.range.start.chapter
         val fromDisk = if (diskCache != null && book != null) {
@@ -529,6 +533,9 @@ class NeuralTtsEngine(
                 ?.takeIf { it.sampleRate == active.sampleRate }?.pcm
         } else {
             null
+        }
+        if (TtsConfig.diagnostics) {
+            TtsConfig.diag("NEURAL-RAW id=${u.id} origen=${if (fromDisk != null) "disco" else "modelo"}")
         }
         val pcm = fromDisk ?: synthesizeComplete(active, u.spokenText, params, isCancelled)
             ?: run {
@@ -634,9 +641,11 @@ class NeuralTtsEngine(
             val s = settings
             val cur: Utterance = u
             val t0 = System.nanoTime()
+            var grouped = false
             if (groupMaxChars > 0) {
                 val group = groupFrom(cur, s, next)
                 if (group.size > 1) {
+                    grouped = true
                     withContext(synthDispatcher) {
                         if (synth !== active) throw SpeechEngineException("El modelo de voz se libero durante la lectura")
                         synthesizeGroup(active, group, s, { !job.isActive })
@@ -649,6 +658,9 @@ class NeuralTtsEngine(
                 voice(active, cur, s, { !job.isActive })
             }
             if (pcm.isNotEmpty()) recordSynthesis((System.nanoTime() - t0) / 1e9, pcm.size.toDouble() / sampleRate)
+            if (TtsConfig.diagnostics) {
+                TtsConfig.diag("NEURAL id=${cur.id} cap=${cur.range.start.chapter} muestras=${pcm.size} grupo=$grouped")
+            }
             val silence = Pauses.samples(Pauses.afterMs(cur, s), sampleRate)
             val chunk = Chunk(cur, pcm, WordTimings.estimate(cur.spokenText, pcm), silence, paragraph)
             val endsParagraph = cur.pauseAfter >= PauseKind.PARAGRAPH

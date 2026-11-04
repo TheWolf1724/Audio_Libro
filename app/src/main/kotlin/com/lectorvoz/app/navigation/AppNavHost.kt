@@ -2,6 +2,9 @@ package com.lectorvoz.app.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -149,6 +152,7 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
             val vm = settingsVm(graph)
             val s by vm.state.collectAsStateWithLifecycle()
             val manual by graph.updates.manual.collectAsStateWithLifecycle()
+            var diagOn by rememberSaveable { mutableStateOf(graph.readingDiagnostics.isEnabled) }
             AboutScreen(
                 onBack = back,
                 checkUpdates = s.app.checkUpdates,
@@ -156,6 +160,17 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
                 onCheckNow = { graph.checkUpdatesNowManual() },
                 manual = manual,
                 onManualDismiss = { graph.updates.clearManual() },
+                diagnosticsEnabled = diagOn,
+                onDiagnosticsChange = { on ->
+                    diagOn = on
+                    if (on) {
+                        val v = s.voice
+                        graph.readingDiagnostics.enable("${v.engine} voz=${v.voiceId ?: "(sistema)"}")
+                    } else {
+                        graph.readingDiagnostics.disable()
+                    }
+                },
+                diagnosticsFile = { graph.readingDiagnostics.currentFile() },
             )
         }
         composable(SettingsRoutes.HISTORY) {

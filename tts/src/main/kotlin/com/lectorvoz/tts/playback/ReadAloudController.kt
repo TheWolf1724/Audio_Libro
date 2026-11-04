@@ -517,16 +517,23 @@ class ReadAloudController(
         val wanted = if (lowSwitch) TtsEngineType.SYSTEM else s.engine
         if (lowSwitch) hub.mutableState.update { it.copy(lowBattery = true, switchedToSystemForBattery = true) }
         val engine = engineFor(wanted)
+        if (TtsConfig.diagnostics) {
+            TtsConfig.diag("MOTOR pedido=${s.engine} usar=$wanted voz=${s.voiceId}" + if (lowSwitch) " (cambio a sistema por bateria baja)" else "")
+        }
         return try {
             engine.prepare(if (lowSwitch) s.copy(engine = TtsEngineType.SYSTEM, voiceId = null) else s)
             engine
         } catch (e: SpeechEngineException) {
             if (wanted != TtsEngineType.NEURAL) throw e
+            if (TtsConfig.diagnostics) TtsConfig.diag("MOTOR fallback NEURAL->SYSTEM motivo='${e.message}'")
             hub.mutableEvents.tryEmit(PlaybackEvent.Error("${e.message}. Se usa la voz del sistema.", null, e))
             val fallback = engineFor(TtsEngineType.SYSTEM)
             fallback.prepare(s.copy(engine = TtsEngineType.SYSTEM, voiceId = null))
             fallback
-        }.also { activeEngine = it }
+        }.also {
+            activeEngine = it
+            if (TtsConfig.diagnostics) TtsConfig.diag("MOTOR activo=${it.type}")
+        }
     }
 
     private fun engineFor(type: TtsEngineType): SpeechEngine = engines.getOrPut(type) {
@@ -665,6 +672,7 @@ class ReadAloudController(
     }
 
     private fun fail(message: String, cause: Throwable?) {
+        if (TtsConfig.diagnostics) TtsConfig.diag("ERROR id=${current?.id} '$message'")
         hub.mutableEvents.tryEmit(PlaybackEvent.Error(message, current?.id, cause))
         hub.mutableState.update {
             it.copy(playWhenReady = false, isPlaying = false, isPreparing = false, error = message)
@@ -768,6 +776,10 @@ class ReadAloudController(
                 if (session != mySession) return
                 current = utterance
             }
+            if (TtsConfig.diagnostics) {
+                val loc = utterance.range.start
+                TtsConfig.diag("START id=${utterance.id} cap=${loc.chapter} off=${loc.offset} '${TtsConfig.text40(utterance.displayText)}'")
+            }
             measure(utterance)
             publishPosition(utterance)
             hub.mutableEvents.tryEmit(PlaybackEvent.UtteranceStarted(utterance.id, utterance.range))
@@ -793,6 +805,7 @@ class ReadAloudController(
 
         override fun onUtteranceDone(utterance: Utterance) {
             if (session != mySession) return
+            if (TtsConfig.diagnostics) TtsConfig.diag("DONE id=${utterance.id}")
             hub.mutableEvents.tryEmit(PlaybackEvent.UtteranceDone(utterance.id))
             boundaries.remove(utterance.id)?.let { hub.mutableEvents.tryEmit(PlaybackEvent.ChapterFinished(it)) }
         }
