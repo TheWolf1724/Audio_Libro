@@ -71,13 +71,13 @@ class ChapterLayout internal constructor(
  * entre fases. Las imagenes solo aportan su tamano ([ImageLoader.size]); no se decodifican
  * al maquetar, asi que contar paginas en fondo da exactamente el mismo corte.
  */
-class EpubPaginator(
+open class EpubPaginator(
     private val fonts: FontProvider = FontProvider.Default,
     private val images: ImageLoader? = null,
 ) {
     internal val colorHolder = ColorHolder()
 
-    suspend fun paginate(
+    open suspend fun paginate(
         chapter: ChapterDocument,
         settings: LayoutSettings,
         viewport: Viewport,

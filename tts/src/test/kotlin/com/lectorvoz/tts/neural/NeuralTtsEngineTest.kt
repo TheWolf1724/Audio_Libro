@@ -431,6 +431,36 @@ class NeuralTtsEngineTest {
         assertThat(synth.calls).hasSize(1)
     }
 
+    /** M6: setVolume/updateSettings desde el hilo de foco no se propagan si el sink ya se libero. */
+    @Test
+    fun setVolumenNoCrashSiElSinkYaSeLibero() = runTest {
+        val d = StandardTestDispatcher(testScheduler)
+        // Sink que, "liberado", lanza desde setVolume/setPitch (como un AudioTrack invalido).
+        val sink = object : PcmSink {
+            @Volatile var broken = false
+            override fun open(sampleRate: Int) {}
+            override fun write(data: FloatArray, offset: Int, length: Int): Int = length
+            override fun playedFrames(): Long = 0
+            override fun setVolume(volume: Float) { if (broken) throw IllegalStateException("liberado") }
+            override fun setPitch(pitch: Float): Boolean { if (broken) throw IllegalStateException("liberado"); return true }
+            override fun release() {}
+        }
+        val engine = NeuralTtsEngine(
+            loader = { _, _ -> FakeSynth { 0 } }, sinkFactory = { sink },
+            synthDispatcher = d, audioDispatcher = d, tickDispatcher = d, tickMs = 5,
+        )
+        engine.prepare(VoiceSettings(engine = TtsEngineType.NEURAL, speed = SIN_ESTIRAR, punctuationPause = 0f))
+        val long = FakeUtteranceProvider(listOf(List(50) { "Frase $it." }))
+        val job = launch { engine.speak(long.all.first(), long::next, RecordingListener()) }
+        advanceTimeBy(20)
+        runCurrent() // consume ha arrancado: currentSink = sink.
+        sink.broken = true
+        // No deben propagar aunque el sink lance (antes podia tumbar el hilo de foco).
+        engine.setVolume(0.3f)
+        engine.updateSettings(VoiceSettings(engine = TtsEngineType.NEURAL, pitch = 1.5f))
+        job.cancel()
+    }
+
     @Test
     fun volumenSeAplicaALaSalida() = runTest {
         val d = StandardTestDispatcher(testScheduler)

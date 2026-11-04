@@ -309,6 +309,73 @@ class ReadAloudControllerTest {
         assertThat(engine.spoken.size).isEqualTo(spokenAtExpiry)
     }
 
+    /** A2: navegar mientras funde el fin de capitulo cancela el fundido y restaura el volumen. */
+    @Test
+    fun navegarDuranteElFundidoDeFinDeCapituloRestauraElVolumen() = runTest {
+        // Motor lento: la ultima frase suena lo bastante para que el fundido llegue al suelo.
+        val engine = FakeEngine(TtsEngineType.SYSTEM, msPerUtterance = 20_000)
+        val focus = FakeAudioFocus()
+        val c = ReadAloudController(backgroundScope, { engine }, focus, PlaybackHub())
+        c.open(BookInfo("l", "L"), book, Locator.START)
+        c.setSleepTimer(SleepTimerMode.EndOfChapter)
+        c.play()
+        // Hasta la ultima frase del capitulo 0 (frase 3) con el fundido ya en el suelo.
+        advanceTimeBy(43_000)
+        runCurrent()
+        assertThat(c.state.value.position).isEqualTo(book.all[2].range.start)
+        assertThat(engine.lastVolume).isLessThan(0.5f)
+        // El usuario pulsa "frase anterior" en pleno fundido.
+        c.previousSentence()
+        advanceTimeBy(300)
+        runCurrent()
+        // El fundido se cancela y el volumen vuelve a 1: la voz no se queda casi muda.
+        assertThat(engine.lastVolume).isEqualTo(1f)
+        assertThat(c.state.value.playWhenReady).isTrue()
+    }
+
+    /** B7: navegar tras el fin del libro limpia `ended` y play lee desde la frase navegada. */
+    @Test
+    fun navegarTrasFinDelLibroLeeDesdeLaPosicionNavegada() = runTest {
+        val e = env()
+        e.controller.play()
+        settle()
+        assertThat(e.state.ended).isTrue()
+        e.controller.seekTo(book.all[1].range.start) // frase 2
+        runCurrent()
+        assertThat(e.state.ended).isFalse()
+        assertThat(e.state.position).isEqualTo(book.all[1].range.start)
+        val spokenBefore = e.system.spoken.size
+        e.controller.play()
+        runCurrent()
+        // Reanuda desde la frase navegada (id 2), no desde el principio (id 1).
+        assertThat(e.system.spoken[spokenBefore]).isEqualTo(2L)
+    }
+
+    /** B8: el temporizador por minutos programado durante una llamada no cuenta hasta recuperar foco. */
+    @Test
+    fun temporizadorPorMinutosNoCuentaSiSeProgramaDuranteUnaLlamada() = runTest {
+        val e = env()
+        e.controller.play()
+        runCurrent()
+        e.focus.emit(FocusChange.LOSS_TRANSIENT)
+        runCurrent()
+        assertThat(e.state.focusSuppressed).isTrue()
+        assertThat(e.state.playWhenReady).isTrue()
+        e.controller.setSleepTimer(SleepTimerMode.Minutes(1))
+        val remaining = e.state.sleepTimerRemainingMs
+        assertThat(remaining).isEqualTo(60_000L)
+        advanceTimeBy(30_000)
+        runCurrent()
+        // Durante la llamada la cuenta esta pausada.
+        assertThat(e.state.sleepTimerRemainingMs).isEqualTo(remaining)
+        e.focus.emit(FocusChange.GAIN)
+        // El restante solo se publica cada 10 s: hay que avanzar lo suficiente para verlo bajar.
+        advanceTimeBy(11_000)
+        runCurrent()
+        // Al recuperar el foco, arranca.
+        assertThat(e.state.sleepTimerRemainingMs!!).isLessThan(remaining!!)
+    }
+
     @Test
     fun rangoDePalabraSeTraduceATextoVisible() {
         val u = com.lectorvoz.core.model.Utterance(

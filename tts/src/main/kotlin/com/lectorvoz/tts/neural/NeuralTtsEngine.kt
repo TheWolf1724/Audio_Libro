@@ -237,12 +237,26 @@ class NeuralTtsEngine(
     override fun updateSettings(settings: VoiceSettings) {
         val old = this.settings
         this.settings = settings
-        if (old.pitch != settings.pitch) currentSink?.setPitch(settings.pitch)
+        // Se llama desde el hilo de foco/temporizador: el de audio puede estar liberando el sink
+        // (consume -> finally). Se guarda la referencia y se ignora un fallo si ya se libero (M6).
+        if (old.pitch != settings.pitch) {
+            val sink = currentSink
+            try {
+                sink?.setPitch(settings.pitch)
+            } catch (_: RuntimeException) {
+            }
+        }
     }
 
     override fun setVolume(volume: Float) {
         this.volume = volume.coerceIn(0f, 1f)
-        currentSink?.setVolume(this.volume)
+        // Carrera con la liberacion del sink en el hilo de audio: referencia local y sin lanzar
+        // si el AudioTrack ya no es valido (M6).
+        val sink = currentSink
+        try {
+            sink?.setVolume(this.volume)
+        } catch (_: RuntimeException) {
+        }
     }
 
     override fun setBook(bookId: String?) {

@@ -159,7 +159,7 @@ class Revision3DatosTest {
         val zone = TimeZone.getTimeZone("Europe/Madrid")
         // 2026-03-30 12:00 (lunes tras el cambio de hora del domingo 29) en Madrid.
         val now = java.util.GregorianCalendar(zone).apply { clear(); set(2026, 2, 30, 12, 0) }.timeInMillis
-        val stats = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = zone)
+        val stats = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = { zone })
         val day29at0030 = java.util.GregorianCalendar(zone).apply { clear(); set(2026, 2, 29, 0, 30) }.timeInMillis
         val day28at2330 = java.util.GregorianCalendar(zone).apply { clear(); set(2026, 2, 28, 23, 30) }.timeInMillis
         stats.record(1, SessionKind.LISTEN, day29at0030, 60_000, 100)
@@ -172,6 +172,25 @@ class Revision3DatosTest {
         assertThat(d28.listenMs).isEqualTo(120_000)
         // Todos los inicios de dia son medianoche local.
         days.forEach { assertThat(java.util.GregorianCalendar(zone).apply { timeInMillis = it.dayStart }.get(java.util.Calendar.HOUR_OF_DAY)).isEqualTo(0) }
+    }
+
+    /** M5: la zona horaria se relee en cada consulta; cambiarla mueve el limite de "hoy". */
+    @Test
+    fun estadisticasRecalculanLaZonaHorariaEnCadaConsulta() = runTest {
+        var zone = TimeZone.getTimeZone("UTC")
+        // 2026-06-15 02:00 UTC.
+        val now = java.util.GregorianCalendar(TimeZone.getTimeZone("UTC")).apply { clear(); set(2026, 5, 15, 2, 0) }.timeInMillis
+        val stats = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = { zone })
+        stats.record(1, SessionKind.LISTEN, now, 60_000, 100)
+        // En UTC "hoy" es el dia 15.
+        val dayUtc = stats.summary.first().lastDays.last().dayStart
+        assertThat(java.util.GregorianCalendar(TimeZone.getTimeZone("UTC")).apply { timeInMillis = dayUtc }
+            .get(java.util.Calendar.DAY_OF_MONTH)).isEqualTo(15)
+        // En Nueva York (UTC-4 en junio) las 02:00 UTC son las 22:00 del dia 14: "hoy" cambia.
+        zone = TimeZone.getTimeZone("America/New_York")
+        val dayNy = stats.summary.first().lastDays.last().dayStart
+        assertThat(java.util.GregorianCalendar(zone).apply { timeInMillis = dayNy }
+            .get(java.util.Calendar.DAY_OF_MONTH)).isEqualTo(14)
     }
 }
 
