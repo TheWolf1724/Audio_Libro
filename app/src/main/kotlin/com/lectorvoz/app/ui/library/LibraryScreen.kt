@@ -1,5 +1,6 @@
 package com.lectorvoz.app.ui.library
 
+import com.lectorvoz.app.ui.components.LoadingHint
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -247,6 +248,16 @@ fun LibraryScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (state.importing > 0) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().testTag("importando").semantics { contentDescription = "Importando ${state.importing} libros" })
+                Text(
+                    if (state.importing == 1) "Anadiendo el libro a la biblioteca..." else "Anadiendo ${state.importing} libros a la biblioteca...",
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
+            if (state.loading) {
+                Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
+                    LoadingHint("Cargando tu biblioteca...")
+                }
             }
             update?.let { UpdateBanner(it, onUpdateAction) }
             if (!state.loading && state.totalCount == 0) {

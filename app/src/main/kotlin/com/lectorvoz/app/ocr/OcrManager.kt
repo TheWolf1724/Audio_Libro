@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.debounce
@@ -91,6 +92,14 @@ class OcrManager(
 
     val status: StateFlow<OcrStatus> = mutableStatus
 
+    private val mutableRecognizing = MutableStateFlow<Set<Long>>(emptySet())
+
+    /** Paginas reconociendose ahora ((libro shl 24) or pagina): el lector lo avisa en la suya. */
+    val recognizing: StateFlow<Set<Long>> = mutableRecognizing
+
+    /** true si la pagina [index] de [bookId] se esta reconociendo. */
+    fun isRecognizing(set: Set<Long>, bookId: Long, index: Int): Boolean = ((bookId shl 24) or index.toLong()) in set
+
     private var started = false
 
     fun start() {
@@ -147,6 +156,7 @@ class OcrManager(
         val key = (book.id shl 24) or index.toLong()
         val job = inFlight.computeIfAbsent(key) {
             scope.async(Dispatchers.IO, start = CoroutineStart.LAZY) {
+                mutableRecognizing.update { it + key }
                 try {
                     val r = recognizer.recognize(pdf, index, OcrEngine.languageFor(book.language), urgent)
                     if (r != null) {
@@ -158,6 +168,7 @@ class OcrManager(
                     r
                 } finally {
                     inFlight.remove(key)
+                    mutableRecognizing.update { it - key }
                 }
             }
         }

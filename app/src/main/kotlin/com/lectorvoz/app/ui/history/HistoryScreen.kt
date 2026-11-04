@@ -1,5 +1,7 @@
 package com.lectorvoz.app.ui.history
 
+import androidx.compose.foundation.layout.Box
+import com.lectorvoz.app.ui.components.LoadingHint
 import androidx.compose.foundation.ExperimentalFoundationApi
 import com.lectorvoz.app.history.HistoryRecorder
 import androidx.compose.ui.semantics.Role
@@ -170,6 +172,11 @@ fun HistoryContent(
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(16.dp),
                 )
+            }
+            if (s.loading) {
+                Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
+                    LoadingHint("Cargando el historial...")
+                }
             }
             if (!s.loading && shown.isEmpty()) {
                 Text(

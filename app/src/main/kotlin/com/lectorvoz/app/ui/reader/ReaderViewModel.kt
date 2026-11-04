@@ -78,6 +78,10 @@ data class ReaderUiState(
     val textAction: TextAction? = null,
     val nextInSeries: Book? = null,
     val message: String? = null,
+    /** Lo que se prepara mientras se espera (paginas, salto, pagina actual). */
+    val busy: com.lectorvoz.reader.ReaderBusy? = null,
+    /** La pagina actual (PDF escaneado) se esta reconociendo. */
+    val recognizingPage: Boolean = false,
 ) {
     /** La voz esta leyendo (o preparada para leer) este libro. */
     val voiceOnThisBook: Boolean get() = book != null && playback.bookId == book.id
@@ -208,6 +212,11 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         viewModelScope.launch { graph.settings.overrides(bookId).collect { o -> _state.update { it.copy(overrides = o) } } }
         viewModelScope.launch { graph.bookmarks.observe(bookId).collect { b -> _state.update { it.copy(bookmarks = b) } } }
         viewModelScope.launch { controller.pageInfo.collect { p -> _state.update { it.copy(pageInfo = p) } } }
+        viewModelScope.launch { controller.busy.collect { b -> _state.update { it.copy(busy = b) } } }
+        viewModelScope.launch {
+            kotlinx.coroutines.flow.combine(graph.ocr.recognizing, controller.currentLocator) { set, l -> graph.ocr.isRecognizing(set, bookId, l.chapter) }
+                .collect { r -> _state.update { it.copy(recognizingPage = r && it.book?.format == com.lectorvoz.core.model.BookFormat.PDF) } }
+        }
         viewModelScope.launch { controller.currentSentence.collect { s -> if (renderActive || !voiceHere()) _state.update { it.copy(sentence = s) } } }
         viewModelScope.launch {
             controller.currentLocator.collect { l -> _state.update { it.copy(locator = l) } }

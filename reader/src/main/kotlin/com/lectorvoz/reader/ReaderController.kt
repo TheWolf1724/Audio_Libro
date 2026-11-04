@@ -131,6 +131,14 @@ class ReaderController(
     private val _settings = MutableStateFlow(ReaderSettings())
     val settings: StateFlow<ReaderSettings> = _settings.asStateFlow()
 
+    private val _busy = MutableStateFlow<ReaderBusy?>(null)
+
+    /** Lo que se esta preparando mientras el usuario espera (nulo: nada). */
+    val busy: StateFlow<ReaderBusy?> = _busy.asStateFlow()
+
+    /** Hay un salto en curso (indice, buscar, marcador) aun sin su pagina. */
+    private var navigating = false
+
     private val _pageInfo = MutableStateFlow(PageInfo())
     val pageInfo: StateFlow<PageInfo> = _pageInfo.asStateFlow()
 
@@ -239,6 +247,8 @@ class ReaderController(
         content = null
         currentKey = null
         repaginating = false
+        navigating = false
+        _busy.value = null
         highlights = Highlights.NONE
         _sentence.value = null
         if (c != null) {
@@ -376,6 +386,8 @@ class ReaderController(
         val target = anchor
         val token = ++repaginateToken
         repaginating = true
+        navigating = false // el salto que hubiera queda dentro de la repaginacion (va al ancla)
+        refreshBusy()
         navJob = contentScope.launch {
             try {
                 val key = try {
@@ -396,6 +408,7 @@ class ReaderController(
             } finally {
                 // Cancelado por goTo u otra causa: no dejar el render bloqueado.
                 if (token == repaginateToken) repaginating = false
+                refreshBusy()
             }
         }
     }
@@ -442,16 +455,23 @@ class ReaderController(
         val c = content ?: return
         if (viewport == null) return
         navJob?.cancel()
+        navigating = true
+        refreshBusy()
         navJob = contentScope.launch {
-            val key = try {
-                c.keyFor(locator)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "No se pudo ir a $locator", e)
-                return@launch
+            try {
+                val key = try {
+                    c.keyFor(locator)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "No se pudo ir a $locator", e)
+                    return@launch
+                }
+                if (key != currentKey) show(key, animated && isNeighbor(key)) else updatePageInfo()
+            } finally {
+                if (navJob === coroutineContext.job || navJob == null) navigating = false
+                refreshBusy()
             }
-            if (key != currentKey) show(key, animated && isNeighbor(key)) else updatePageInfo()
         }
     }
 
@@ -707,6 +727,7 @@ class ReaderController(
             if (!ok || gen != renderGen) { pool.put(b); return@launch }
             if (hl == highlights) dirty.remove(key)
             cache.put(key, b)
+            if (key == currentKey) refreshBusy()
             if (key == transitionalKey) dropTransitional()
             // PDF en scroll: el alto real solo se conoce tras leer la pagina.
             if (c.bitmapSize(key) != (b.width to b.height)) dirty += key
@@ -775,6 +796,7 @@ class ReaderController(
         if (transitional != null && key != transitionalKey) dropTransitional()
         val c = content ?: return
         prefetchNeighbors(key)
+        refreshBusy()
         prepareAdjacentChapters(c, key)
         shownJob?.cancel()
         shownJob = contentScope.launch {
@@ -827,6 +849,21 @@ class ReaderController(
         if (key !in cache || key in dirty) request(key)
         next?.let { if (it !in cache || it in dirty) request(it) }
         prev?.let { if (it !in cache || it in dirty) request(it) }
+    }
+
+    /**
+     * Que espera el usuario ahora mismo: repaginar (cambio de letra o de tamano), un salto aun
+     * sin su pagina o la pagina actual aun sin dibujar. La pantalla lo muestra si tarda.
+     */
+    private fun refreshBusy() {
+        val key = currentKey
+        _busy.value = when {
+            content == null -> null
+            repaginating -> ReaderBusy.LAYOUT
+            navigating -> ReaderBusy.JUMP
+            key != null && key !in cache && transitionalKey != key -> ReaderBusy.PAGE
+            else -> null
+        }
     }
 
     private fun accessibilityOn(): Boolean =
@@ -926,4 +963,16 @@ class ReaderController(
         /** Cierra contenidos cuando terminan sus trabajos (no depende de ningun controlador). */
         private val CLOSER = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     }
+}
+
+/** Lo que el lector esta preparando mientras el usuario espera. */
+enum class ReaderBusy {
+    /** Repaginando (cambio de letra, margenes, tamano o giro). */
+    LAYOUT,
+
+    /** Buscando la pagina de un salto (indice, busqueda, marcador). */
+    JUMP,
+
+    /** Dibujando la pagina actual. */
+    PAGE,
 }

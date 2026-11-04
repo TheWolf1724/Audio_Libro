@@ -30,6 +30,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.foundation.layout.size
+import com.lectorvoz.reader.ReaderBusy
+import com.lectorvoz.app.ui.components.LoadingHint
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -159,7 +162,24 @@ fun ReaderScreen(
             state.error != null -> ErrorBox(state.error!!, onBack)
             else -> ReaderView(vm.controller, Modifier.fillMaxSize().testTag("vista-lectura"))
         }
-        if (state.loading) CircularProgressIndicator(Modifier.align(Alignment.Center).semantics { contentDescription = "Abriendo libro" })
+        // Esperas, con un aviso amable (solo si tardan): abrir, repaginar, saltar, dibujar, OCR.
+        LoadingHint(
+            when {
+                state.error != null -> null
+                state.loading -> "Abriendo el libro..."
+                state.busy == ReaderBusy.LAYOUT -> "Colocando las paginas..."
+                state.busy == ReaderBusy.JUMP -> "Buscando la pagina..."
+                state.busy == ReaderBusy.PAGE -> "Cargando la pagina..."
+                state.recognizingPage -> "Leyendo el texto de esta pagina escaneada..."
+                else -> null
+            },
+            slowText = when {
+                state.loading || state.busy == ReaderBusy.LAYOUT -> "Los libros grandes tardan un poco mas. Sigue trabajando."
+                state.recognizingPage -> "Puedes seguir leyendo mientras tanto."
+                else -> "Sigue trabajando, un momento."
+            },
+            modifier = Modifier.align(if (state.loading) Alignment.Center else Alignment.TopCenter).statusBarsPadding().padding(top = if (state.loading) 0.dp else 72.dp),
+        )
 
         AnimatedVisibility(bars, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
             TopBar(state, onBack, onPanel = { panel = it }, onBookmark = vm::addBookmark, onVoiceSettings = onVoiceSettings, onBookVoice = vm::toggleBookVoice,
@@ -310,6 +330,7 @@ private fun MiniPlayer(state: ReaderUiState, vm: ReaderViewModel) {
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.testTag("tiempo-restante"),
         )
+        if (p.isPreparing && p.playWhenReady) Text("Preparando la voz...", style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("preparando-voz"))
         if (p.focusSuppressed) Text("En pausa por una llamada; seguira sola", style = MaterialTheme.typography.bodySmall)
         if (p.lowBattery) Text("Bateria baja", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
         if (p.error != null) Text(p.error, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -415,13 +436,14 @@ private fun SearchPanel(search: SearchState, onSearch: (String) -> Unit, onOpen:
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 when {
-                    search.running -> "Buscando... ${search.results.size} resultados"
+                    search.running -> "Buscando en todo el libro... ${search.results.size} resultados"
                     search.done -> "${search.results.size} resultados"
                     else -> ""
                 },
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
             )
+            if (search.running) CircularProgressIndicator(Modifier.size(18.dp).semantics { contentDescription = "Buscando" }, strokeWidth = 2.dp)
             if (search.query.isNotEmpty()) TextButton(onClick = { q = ""; onClear() }) { Text("Limpiar") }
         }
         LazyColumn(Modifier.fillMaxWidth().heightIn(max = 480.dp)) {

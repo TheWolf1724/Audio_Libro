@@ -89,8 +89,12 @@ class ReaderControllerTest {
         val start = Locator(1, 2500)
         val view = open(start)
         val before = view.currentKey!!
+        assertThat(controller.busy.value).isNull()
         controller.setSettings(ReaderSettings(fontSizeSp = 30f, pageAnimation = PageAnimation.NONE))
+        // Mientras recoloca las paginas, la pantalla puede avisar de que esta en ello.
+        assertThat(controller.busy.value).isEqualTo(ReaderBusy.LAYOUT)
         waitUntil { view.currentKey != before && controller.cache[view.currentKey!!] != null }
+        waitUntil { controller.busy.value == null }
         assertThat(controller.currentLocator.value).isEqualTo(start)
         assertThat(view.currentKey!!.page).isGreaterThan(before.page)
     }
