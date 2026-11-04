@@ -2,20 +2,16 @@ package com.lectorvoz.app.ui.settings
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import com.lectorvoz.app.ocr.OcrStatus
@@ -32,12 +28,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -52,7 +45,6 @@ import com.lectorvoz.app.ui.components.SwitchRow
 import com.lectorvoz.app.ui.reader.animationLabel
 import com.lectorvoz.app.ui.reader.fontLabel
 import com.lectorvoz.app.ui.reader.themeLabel
-import com.lectorvoz.app.update.ManualCheck
 import com.lectorvoz.core.data.settings.AppPrefs
 import com.lectorvoz.core.data.settings.SettingsRanges
 import com.lectorvoz.tts.neural.PreloadStatus
@@ -111,10 +103,10 @@ fun SettingsHome(onNavigate: (String) -> Unit, onBack: () -> Unit) {
     SettingsScaffold("Ajustes", onBack) {
         NavRow("Lectura", "Tema, fuente, margenes, paginas y animaciones", R.drawable.ic_menu_book, { onNavigate(SettingsRoutes.READING) })
         NavRow("Voz", "Voz, velocidad, pausas, idioma y resaltado", R.drawable.ic_record_voice_over, { onNavigate(SettingsRoutes.VOICE) })
-        NavRow("Diccionario de pronunciacion", "Como debe sonar cada palabra", R.drawable.ic_edit, { onNavigate(SettingsRoutes.DICTIONARY) })
+        NavRow("Diccionario de pronunciacion", "Como debe sonar cada palabra", R.drawable.ic_spellcheck, { onNavigate(SettingsRoutes.DICTIONARY) })
         NavRow("Accesibilidad", "Texto grande, contraste, fuente para dislexia", R.drawable.ic_accessibility, { onNavigate(SettingsRoutes.ACCESSIBILITY) })
-        NavRow("Historial de lecturas", "Lo que has leido, con fechas de inicio y fin", R.drawable.ic_menu_book, { onNavigate(SettingsRoutes.HISTORY) })
-        NavRow("Estadisticas", "Tiempo leido y escuchado", R.drawable.ic_check_circle, { onNavigate(SettingsRoutes.STATS) })
+        NavRow("Historial de lecturas", "Lo que has leido, con fechas de inicio y fin", R.drawable.ic_history, { onNavigate(SettingsRoutes.HISTORY) })
+        NavRow("Estadisticas", "Tiempo leido y escuchado", R.drawable.ic_insights, { onNavigate(SettingsRoutes.STATS) })
         NavRow("Exportar audio", "Guardar un capitulo o el libro entero en audio", R.drawable.ic_download, { onNavigate(SettingsRoutes.EXPORT) })
         NavRow("Acerca de", "Version y licencias", R.drawable.ic_info, { onNavigate(SettingsRoutes.ABOUT) })
     }
@@ -132,16 +124,11 @@ fun ReadingSettingsContent(
     onApp: ((AppPrefs) -> AppPrefs) -> Unit,
     ocr: OcrStatus? = null,
     onClearOcr: () -> Unit = {},
-    onClearHistory: () -> Unit = {},
-    /** Resultado de la comprobacion manual de versiones ("Buscar ahora"). */
-    manualUpdate: ManualCheck = ManualCheck.Idle,
-    /** Lanza la comprobacion manual; nulo cuando no procede (p. ej. vistas previas). */
-    onCheckUpdatesNow: (() -> Unit)? = null,
 ) {
     val r = SettingsRanges
     SectionHeader("Tema")
     ChoiceRow("Tema", ThemeMode.entries, s.theme, ::themeLabel, { v -> onChange { it.copy(theme = v) } }, tag = "lectura-theme")
-    SwitchRow("Aumento de contraste", s.highContrast, { v -> onChange { it.copy(highContrast = v) } }, tag = "lectura-highContrast")
+    // "Aumento de contraste" vive solo en Accesibilidad (antes estaba tambien aqui, duplicado).
     SectionHeader("Texto")
     ChoiceRow("Fuente", r.fontFamilies, s.fontFamily, ::fontLabel, { v -> onChange { it.copy(fontFamily = v) } }, tag = "lectura-fontFamily")
     SliderRow("Tamano", s.fontSizeSp, r.fontSizeSp.min..r.fontSizeSp.max, r.fontSizeSp.step, { "${it.roundToInt()} sp" }, { v -> onChange { it.copy(fontSizeSp = v) } }, tag = "lectura-fontSizeSp")
@@ -195,67 +182,8 @@ fun ReadingSettingsContent(
         )
         if (o.storedBytes > 0) TextButton(onClick = onClearOcr, modifier = Modifier.padding(horizontal = 8.dp)) { Text("Borrar el texto reconocido") }
     }
-    SectionHeader("Historial de lecturas")
-    SwitchRow(
-        "Guardar el historial", app.historyEnabled, { v -> onApp { it.copy(historyEnabled = v) } },
-        summary = "Titulo, portada y fechas de cada libro, aunque lo quites de la biblioteca", tag = "app-historyEnabled",
-    )
-    SwitchRow("Mostrar portada", app.historyShowCover, { v -> onApp { it.copy(historyShowCover = v) } }, tag = "app-historyShowCover")
-    SwitchRow("Mostrar autor", app.historyShowAuthor, { v -> onApp { it.copy(historyShowAuthor = v) } }, tag = "app-historyShowAuthor")
-    SwitchRow("Mostrar fecha de inicio", app.historyShowStarted, { v -> onApp { it.copy(historyShowStarted = v) } }, tag = "app-historyShowStarted")
-    SwitchRow("Mostrar fecha de fin", app.historyShowFinished, { v -> onApp { it.copy(historyShowFinished = v) } }, tag = "app-historyShowFinished")
-    SwitchRow("Mostrar progreso", app.historyShowProgress, { v -> onApp { it.copy(historyShowProgress = v) } }, tag = "app-historyShowProgress")
-    var confirmHistory by rememberSaveable { mutableStateOf(false) }
-    TextButton(onClick = { confirmHistory = true }, modifier = Modifier.padding(horizontal = 8.dp).testTag("app-historial-borrar")) { Text("Borrar el historial") }
-    if (confirmHistory) {
-        AlertDialog(
-            onDismissRequest = { confirmHistory = false },
-            title = { Text("Borrar el historial") },
-            text = { Text("Se borraran todas las lecturas anotadas. Los libros y su progreso no cambian.") },
-            confirmButton = { TextButton(onClick = { onClearHistory(); confirmHistory = false }) { Text("Borrar") } },
-            dismissButton = { TextButton(onClick = { confirmHistory = false }) { Text("Cancelar") } },
-        )
-    }
-    SectionHeader("Actualizaciones")
-    SwitchRow("Avisar de nuevas versiones", app.checkUpdates, { v -> onApp { it.copy(checkUpdates = v) } }, summary = "Una vez al dia, al abrir la app, mira en GitHub si hay una version nueva (no envia ningun dato tuyo). Desde el aviso se puede instalar u omitir 24 h", tag = "app-checkUpdates")
-    // Justo debajo del interruptor y solo con el activado: comprobacion manual que ignora el limite diario.
-    if (app.checkUpdates && onCheckUpdatesNow != null) {
-        val checking = manualUpdate is ManualCheck.Checking
-        Button(
-            onClick = onCheckUpdatesNow,
-            enabled = !checking,
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).heightIn(min = 48.dp)
-                .semantics { contentDescription = "Buscar actualizaciones ahora" }
-                .testTag("app-buscar-actualizaciones"),
-        ) { Text("Buscar actualizaciones ahora") }
-        when (val m = manualUpdate) {
-            ManualCheck.Idle -> {}
-            ManualCheck.Checking -> Row(
-                Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("app-actualizaciones-estado"),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                Text("Comprobando...", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 12.dp))
-            }
-            is ManualCheck.UpToDate -> Text(
-                "Ya tienes la ultima version (${m.installed}).",
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("app-actualizaciones-estado"),
-            )
-            is ManualCheck.Found -> Text(
-                "Nueva version disponible: ${m.release.version}.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("app-actualizaciones-estado"),
-            )
-            is ManualCheck.Error -> Text(
-                m.message,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("app-actualizaciones-estado"),
-            )
-        }
-    }
+    // Los ajustes del historial viven ahora en la pantalla "Historial de lecturas" (junto al
+    // listado); el aviso de nuevas versiones, en "Acerca de".
 }
 
 private fun speedText(v: Float) = "x" + "%.2f".format(v)
@@ -327,7 +255,7 @@ fun VoiceSettingsContent(
     PauseSlider("Seccion", v.pauseSectionMs, "voz-pauseSectionMs") { x -> onChange { it.copy(pauseSectionMs = x) } }
     PauseSlider("Capitulo", v.pauseChapterMs, "voz-pauseChapterMs") { x -> onChange { it.copy(pauseChapterMs = x) } }
 
-    SectionHeader("Lectura")
+    SectionHeader("Narracion")
     ChoiceRow("Resaltado", HighlightMode.entries, v.highlightMode, {
         when (it) { HighlightMode.SENTENCE -> "Frase"; HighlightMode.WORD -> "Frase y palabra"; HighlightMode.NONE -> "Ninguno" }
     }, { m -> onChange { it.copy(highlightMode = m) } }, tag = "voz-highlightMode")

@@ -30,6 +30,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -51,6 +52,8 @@ import com.lectorvoz.app.books.ExportJobState
 import com.lectorvoz.app.ui.components.AppIconButton
 import com.lectorvoz.app.ui.components.ChoiceRow
 import com.lectorvoz.app.ui.components.SectionHeader
+import com.lectorvoz.app.ui.components.SwitchRow
+import com.lectorvoz.app.update.ManualResult
 import com.lectorvoz.app.ui.reader.formatDuration
 import com.lectorvoz.core.data.library.Book
 import com.lectorvoz.core.data.pronunciation.PronunciationEntry
@@ -332,11 +335,23 @@ private val LICENSES = listOf(
     Triple("Apache Commons Compress", "Apache License 2.0", null),
 )
 
-/** Acerca de: version y licencias (texto completo de las OFL incluidas). */
+/**
+ * Acerca de: version, actualizaciones (aviso + comprobacion manual) y licencias. El aviso de
+ * nuevas versiones vive aqui, junto a la version instalada, porque es a lo que se refiere.
+ */
 @Composable
-fun AboutScreen(onBack: () -> Unit) {
+fun AboutScreen(
+    onBack: () -> Unit,
+    checkUpdates: Boolean = true,
+    onCheckUpdates: (Boolean) -> Unit = {},
+    onCheckNow: () -> Unit = {},
+    manual: ManualResult = ManualResult.NONE,
+    onManualDismiss: () -> Unit = {},
+) {
     val context = LocalContext.current
     var shown by rememberSaveable { mutableStateOf<String?>(null) }
+    // Al salir de la pantalla se olvida el resultado de la ultima comprobacion manual.
+    DisposableEffect(Unit) { onDispose(onManualDismiss) }
     SettingsScaffold("Acerca de", onBack) {
         Text("LectorVoz ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
         Text(
@@ -344,6 +359,32 @@ fun AboutScreen(onBack: () -> Unit) {
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
+        SectionHeader("Actualizaciones")
+        SwitchRow(
+            "Avisar de nuevas versiones", checkUpdates, onCheckUpdates,
+            summary = "Una vez al dia, al abrir la app, mira en GitHub si hay una version nueva (no envia ningun dato tuyo). Desde el aviso se puede instalar u omitir 24 h",
+            tag = "app-checkUpdates",
+        )
+        // El boton de forzar la comprobacion va JUSTO debajo del interruptor.
+        Button(
+            onClick = onCheckNow,
+            enabled = manual != ManualResult.CHECKING,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).heightIn(min = 48.dp).testTag("app-buscar-actualizaciones"),
+        ) { Text(if (manual == ManualResult.CHECKING) "Buscando..." else "Buscar actualizaciones ahora") }
+        val manualText = when (manual) {
+            ManualResult.NEW_AVAILABLE -> "Hay una version nueva: aparecera el aviso para instalarla."
+            ManualResult.UP_TO_DATE -> "Ya tienes la ultima version."
+            ManualResult.FAILED -> "No se pudo comprobar. Revisa la conexion e intentalo de nuevo."
+            else -> null
+        }
+        manualText?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = if (manual == ManualResult.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp).testTag("app-buscar-resultado"),
+            )
+        }
         SectionHeader("Licencias")
         LICENSES.forEach { (name, license, asset) ->
             Column(

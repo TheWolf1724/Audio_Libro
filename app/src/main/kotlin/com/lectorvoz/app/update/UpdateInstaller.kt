@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
@@ -65,6 +66,9 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
 
     private var job: Job? = null
 
+    /** Sesion de PackageInstaller en curso (para abandonarla si el usuario cancela u omite). */
+    @Volatile private var sessionId: Int? = null
+
     /** Version que se descarga o instala (para la notificacion). */
     @Volatile var version: String? = null
         private set
@@ -82,6 +86,12 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
         val apkUrl = release.apkUrl
         if (apkUrl == null || !apkUrl.startsWith(UpdateChecker.RELEASES_PREFIX + "download/")) {
             mutable.value = InstallState.Failed("Esta version no incluye una APK para instalar")
+            return
+        }
+        // Sin huella SHA-256 no se instala: defiende ante preferencias viejas que guardaron una
+        // URL de APK sin digest (antes de exigirlo). Nunca se instala sin poder verificar.
+        if (release.apkSha256 == null) {
+            mutable.value = InstallState.Failed("Esta version no se puede verificar (sin huella SHA-256); no se instala")
             return
         }
         if (!context.packageManager.canRequestPackageInstalls()) {
@@ -117,7 +127,17 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
 
     fun cancel() {
         job?.cancel()
+        // Si ya se entrego a PackageInstaller (Installing/NeedsConfirmation), se abandona esa
+        // sesion pendiente para no dejarla colgada en el sistema (revision M4).
+        abandonSession()
         mutable.value = InstallState.Idle
+    }
+
+    /** Abandona la sesion de PackageInstaller en curso, si la hay. */
+    private fun abandonSession() {
+        val id = sessionId ?: return
+        sessionId = null
+        runCatching { context.packageManager.packageInstaller.abandonSession(id) }
     }
 
     /** Abre la confirmacion de Android desde la pantalla (la app en primer plano). */
@@ -136,23 +156,56 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
 
     private suspend fun download(link: String, release: AppRelease, set: (InstallState) -> Unit): File = withContext(Dispatchers.IO) {
         dir.mkdirs()
-        // Restos de intentos anteriores (ya terminados: ver [install]).
-        dir.listFiles()?.forEach { it.delete() }
         val part = File(dir, "actualizacion.apk.part")
+        val finalApk = File(dir, "actualizacion.apk")
+        // Un .apk ya completo de un intento anterior pudo quedarse (puede ser de otra version): fuera.
+        finalApk.delete()
         val digest = MessageDigest.getInstance("SHA-256")
+        // Si hay un .part parcial (y menor que el total conocido) se intenta reanudar desde el.
+        val hintTotal = release.apkSize.takeIf { it > 0 }
+        var existing = if (part.isFile) part.length() else 0L
+        if (existing < 0L || (hintTotal != null && existing >= hintTotal)) existing = 0L
         val conn = URL(link).openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 15_000
             conn.readTimeout = 30_000
             conn.instanceFollowRedirects = true
             conn.setRequestProperty("User-Agent", "LectorVoz")
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) throw UpdateError("GitHub no entrego la descarga (${conn.responseCode}). Reintentalo mas tarde.")
-            val total = conn.contentLengthLong.takeIf { it > 0 } ?: release.apkSize.takeIf { it > 0 }
+            // Pide solo lo que falta si hay un parcial; el servidor puede aceptarlo (206) o no (200).
+            if (existing > 0L) conn.setRequestProperty("Range", "bytes=$existing-")
+            val code = conn.responseCode
+            if (code != HttpURLConnection.HTTP_OK && code != HttpURLConnection.HTTP_PARTIAL) {
+                throw UpdateError("GitHub no entrego la descarga ($code). Reintentalo mas tarde.")
+            }
+            // Solo se reanuda si pedimos Range y el servidor respondio 206 (si no, se empieza de 0).
+            val resume = code == HttpURLConnection.HTTP_PARTIAL && existing > 0L
+            val reported = conn.contentLengthLong.takeIf { it > 0 }
+            val total = when {
+                hintTotal != null -> hintTotal
+                resume && reported != null -> existing + reported
+                else -> reported
+            }
             if ((total ?: 0L) > MAX_APK_BYTES) throw UpdateError("La descarga es demasiado grande")
-            var done = 0L
+            var done: Long
+            if (resume) {
+                // Precarga la huella con los bytes ya escritos (no hace falta volver a bajarlos).
+                part.inputStream().use { old ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        val n = old.read(buf)
+                        if (n < 0) break
+                        digest.update(buf, 0, n)
+                    }
+                }
+                done = existing
+            } else {
+                // El servidor ignoro Range (200) o no habia parcial util: empezar de cero.
+                done = 0L
+            }
             var shown = -1
             conn.inputStream.use { input ->
-                part.outputStream().use { out ->
+                // append = resume: con 206 se continua el fichero; con 200 se sobrescribe.
+                FileOutputStream(part, resume).use { out ->
                     val buf = ByteArray(64 * 1024)
                     while (true) {
                         currentCoroutineContext().ensureActive()
@@ -176,12 +229,25 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
             val sha = digest.digest().joinToString("") { "%02x".format(it) }
             release.apkSha256?.let { if (it != sha) throw UpdateError("La APK descargada no coincide con la publicada") }
         } catch (e: Exception) {
+            // Un parcial con huella equivocada (p. ej. de otra version) se borra: el reintento baja entero.
             part.delete()
+            if (e !is CancellationException && isNoSpace(e)) throw UpdateError("No hay espacio para la actualizacion")
             throw e
         } finally {
             conn.disconnect()
         }
-        File(dir, "actualizacion.apk").also { if (!part.renameTo(it)) throw UpdateError("No se pudo guardar la descarga") }
+        finalApk.also { if (!part.renameTo(it)) throw UpdateError("No se pudo guardar la descarga") }
+    }
+
+    /** true si [e] (o su causa) es una falta de espacio en disco (ENOSPC). */
+    private fun isNoSpace(e: Throwable): Boolean {
+        var t: Throwable? = e
+        while (t != null) {
+            val m = t.message?.lowercase().orEmpty()
+            if ("enospc" in m || "no space" in m) return true
+            t = t.cause
+        }
+        return false
     }
 
     /** Entrega la APK al instalador; el resultado llega a [InstallResultReceiver]. */
@@ -193,6 +259,7 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
             if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
         }
         val id = installer.createSession(params)
+        sessionId = id
         try {
             installer.openSession(id).use { session ->
                 apk.inputStream().use { input ->
@@ -208,6 +275,7 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
             }
         } catch (e: Exception) {
             runCatching { installer.abandonSession(id) }
+            sessionId = null
             throw e
         } finally {
             apk.delete()
@@ -216,6 +284,8 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
 
     /** Resultado del instalador del sistema. */
     internal fun onResult(status: Int, message: String?, confirm: Intent?) {
+        // Salvo cuando aun falta la confirmacion del usuario, la sesion ya esta resuelta.
+        if (status != PackageInstaller.STATUS_PENDING_USER_ACTION) sessionId = null
         when (status) {
             PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                 // Android pide confirmar (primera actualizacion o versiones antiguas). Con la app

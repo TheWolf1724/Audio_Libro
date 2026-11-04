@@ -103,12 +103,10 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
             val vm = settingsVm(graph)
             val s by vm.state.collectAsStateWithLifecycle()
             val ocr by graph.ocr.status.collectAsStateWithLifecycle()
-            val manualUpdate by graph.updates.manualState.collectAsStateWithLifecycle()
             SettingsScaffold("Lectura", back) {
                 ReadingSettingsContent(
                     s.reader, s.app, { vm.reader(it) }, { vm.app(it) },
-                    ocr = ocr, onClearOcr = { graph.ocr.clearAll() }, onClearHistory = { graph.historyRecorder.clear() },
-                    manualUpdate = manualUpdate, onCheckUpdatesNow = { graph.checkUpdatesNowManual() },
+                    ocr = ocr, onClearOcr = { graph.ocr.clearAll() },
                 )
             }
         }
@@ -147,7 +145,19 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
             val vm: ExportViewModel = viewModel(key = "exportar-$id", factory = viewModelFactory { initializer { ExportViewModel(graph, id) } })
             ExportScreen(vm, back, onPickBook = { b -> nav.navigate(Routes.export(b.id)) })
         }
-        composable(SettingsRoutes.ABOUT) { AboutScreen(back) }
+        composable(SettingsRoutes.ABOUT) {
+            val vm = settingsVm(graph)
+            val s by vm.state.collectAsStateWithLifecycle()
+            val manual by graph.updates.manual.collectAsStateWithLifecycle()
+            AboutScreen(
+                onBack = back,
+                checkUpdates = s.app.checkUpdates,
+                onCheckUpdates = { v -> vm.app { it.copy(checkUpdates = v) } },
+                onCheckNow = { graph.checkUpdatesNowManual() },
+                manual = manual,
+                onManualDismiss = { graph.updates.clearManual() },
+            )
+        }
         composable(SettingsRoutes.HISTORY) {
             val vm: HistoryViewModel = viewModel(factory = viewModelFactory { initializer { HistoryViewModel(graph.history, graph.library, graph.settings, graph.historyRecorder) } })
             HistoryScreen(vm, graph.covers, back, onOpen = { id -> nav.openReader(id) })

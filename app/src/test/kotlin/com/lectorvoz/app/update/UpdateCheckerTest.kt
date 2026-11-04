@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -126,70 +125,62 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun unFalloDeRedNoRompeNadaYReintentaOtroDia() = runTest(UnconfinedTestDispatcher()) {
+    fun unFalloDeRedApuntaLaConsultaYReintentaAntesDe24h() = runTest(UnconfinedTestDispatcher()) {
+        var now = 1_000_000L
         var calls = 0
-        val c = UpdateChecker(prefs, this, "1.0.0", fetch = { calls++; error("sin red") })
+        val c = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { calls++; error("sin red") })
         c.checkIfDue(enabled = true)
         assertThat(c.available.value).isNull()
-        // Sin respuesta valida no se apunta la consulta: se reintenta en la siguiente apertura.
+        assertThat(calls).isEqualTo(1)
+        // Tras un fallo se apunta la consulta con un reintento corto: no se reconsulta al instante
+        // (antes golpeaba la API en cada apertura y agravaba el rate-limit).
+        c.checkIfDue(enabled = true)
+        assertThat(calls).isEqualTo(1)
+        // Pero el reintento llega mucho antes que el dia completo.
+        assertThat(UpdateChecker.RETRY_MS).isLessThan(UpdateChecker.INTERVAL_MS)
+        now += UpdateChecker.RETRY_MS
         c.checkIfDue(enabled = true)
         assertThat(calls).isEqualTo(2)
     }
 
-    /** La comprobacion manual consulta aunque ya se haya consultado hoy, y avisa de la version mas nueva. */
     @Test
-    fun comprobacionManualIgnoraElLimiteYEncuentraVersionNueva() = runTest(UnconfinedTestDispatcher()) {
-        val now = 5_000_000L
+    fun elBotonManualIgnoraElThrottleYAvisaDelResultado() = runTest(UnconfinedTestDispatcher()) {
+        var now = 1_000_000L
         var calls = 0
-        val release = AppRelease("2.0.0", UpdateChecker.RELEASES_PREFIX + "tag/v2.0.0")
+        var release: AppRelease? = AppRelease("1.1.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.1.0")
         val c = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { calls++; release })
-        // Ya comprobado hoy: la automatica no vuelve a preguntar.
-        c.checkIfDue(enabled = true)
         c.checkIfDue(enabled = true)
         assertThat(calls).isEqualTo(1)
-        // La manual consulta igualmente (salta el limite de 24 h).
+        // El throttle bloquea una consulta automatica inmediata...
+        c.checkIfDue(enabled = true)
+        assertThat(calls).isEqualTo(1)
+        // ...pero el boton manual la fuerza igualmente y avisa de que hay version nueva.
         c.checkNow()
         assertThat(calls).isEqualTo(2)
-        assertThat(c.manualState.value).isEqualTo(ManualCheck.Found(release))
-        assertThat(c.available.value).isEqualTo(release)
+        assertThat(c.manual.value).isEqualTo(ManualResult.NEW_AVAILABLE)
+        // Sin novedad: "ya tienes la ultima".
+        release = AppRelease("1.0.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.0.0")
+        c.checkNow()
+        assertThat(c.manual.value).isEqualTo(ManualResult.UP_TO_DATE)
+        // Fallo de red: se avisa del fallo.
+        val d = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { error("sin red") })
+        d.checkNow()
+        assertThat(d.manual.value).isEqualTo(ManualResult.FAILED)
     }
 
-    /** Si la instalada ya es la ultima publicada, la manual dice que esta al dia. */
     @Test
-    fun comprobacionManualConLaUltimaInstaladaDiceUpToDate() = runTest(UnconfinedTestDispatcher()) {
-        val release = AppRelease("1.0.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.0.0")
-        val c = UpdateChecker(prefs, this, "1.0.0", fetch = { release })
-        c.checkNow()
-        assertThat(c.manualState.value).isEqualTo(ManualCheck.UpToDate("1.0.0"))
+    fun omitirSigueEnPieAunqueElRelojVayaHaciaAtras() = runTest(UnconfinedTestDispatcher()) {
+        var now = 1_000_000_000L
+        val release = AppRelease("1.1.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.1.0")
+        fun checker() = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { release })
+        val c = checker()
+        c.checkIfDue(enabled = true)
+        c.snooze()
         assertThat(c.available.value).isNull()
-    }
-
-    /** Un fallo en la comprobacion manual da un error amable, sin romper nada. */
-    @Test
-    fun comprobacionManualConFalloDaErrorAmable() = runTest(UnconfinedTestDispatcher()) {
-        val c = UpdateChecker(prefs, this, "1.0.0", fetch = { error("sin red") })
-        c.checkNow()
-        val m = c.manualState.value
-        assertThat(m).isInstanceOf(ManualCheck.Error::class.java)
-        assertThat((m as ManualCheck.Error).message).contains("sin conexion")
-        assertThat(c.available.value).isNull()
-    }
-
-    /** Dos pulsaciones seguidas no lanzan dos consultas: la segunda espera a que acabe la primera. */
-    @Test
-    fun comprobacionManualNoSeSolapaSiYaHayUnaEnCurso() = runTest(UnconfinedTestDispatcher()) {
-        val gate = CompletableDeferred<Unit>()
-        var calls = 0
-        val release = AppRelease("2.0.0", UpdateChecker.RELEASES_PREFIX + "tag/v2.0.0")
-        val c = UpdateChecker(prefs, this, "1.0.0", fetch = { calls++; gate.await(); release })
-        c.checkNow()
-        assertThat(calls).isEqualTo(1)
-        assertThat(c.manualState.value).isEqualTo(ManualCheck.Checking)
-        // Segunda pulsacion mientras la primera sigue en curso: no consulta de nuevo.
-        c.checkNow()
-        assertThat(calls).isEqualTo(1)
-        // Al terminar la primera queda su resultado.
-        gate.complete(Unit)
-        assertThat(c.manualState.value).isEqualTo(ManualCheck.Found(release))
+        // El reloj retrocede (zona horaria, ajuste manual): el aviso NO debe reaparecer antes de tiempo.
+        now -= 60_000
+        assertThat(checker().stored()).isNull()
+        now -= UpdateChecker.INTERVAL_MS
+        assertThat(checker().stored()).isNull()
     }
 }

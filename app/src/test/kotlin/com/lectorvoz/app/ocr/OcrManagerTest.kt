@@ -21,6 +21,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -206,6 +207,40 @@ class OcrManagerTest {
         m.setEnabled(false)
         assertThat(again.pageText(0).rawText).isEmpty()
         assertThat(recognized).hasSize(2)
+    }
+
+    /** M4: desactivar el OCR cancela un reconocimiento en vuelo (no reinstala ni recarga modelos). */
+    @Test
+    fun desactivarCancelaElReconocimientoEnVuelo() = runBlocking {
+        val b = pdfBook(book(1))
+        val library = FakeLibraryRepository(listOf(b))
+        val store = OcrStore(tmp.root)
+        val pdf = PdfBook.create(Backend(3, withText = emptySet()), Dispatchers.Unconfined, "x")
+        val started = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val cancelled = java.util.concurrent.atomic.AtomicBoolean(false)
+        var discard = 0
+        val m = OcrManager(
+            context, scope, library, openPdf = { pdf to {} }, store = store,
+            recognizer = PageRecognizer { _, _, _, _ ->
+                started.complete(Unit)
+                try {
+                    delay(10_000) // bloquea hasta que lo cancelen
+                    RawPageText("tarde", FloatArray(5))
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    cancelled.set(true)
+                    throw e
+                }
+            },
+            conditions = Conditions(), conditionsPollMs = 50, discardModels = { discard++ },
+        )
+        pdf.textFallback = m.fallbackFor(b)
+        // Reconocimiento urgente en vuelo (bloqueado en el recognizer).
+        val job = scope.launch { runCatching { pdf.pageText(1) } }
+        started.await()
+        m.setEnabled(false)
+        waitUntil { cancelled.get() }
+        assertThat(discard).isEqualTo(1)
+        job.cancel()
     }
 
     @Test
