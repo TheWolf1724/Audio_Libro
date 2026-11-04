@@ -91,8 +91,9 @@ class UpdateNotifier(private val context: Context, private val state: StateFlow<
             InstallState.Installing -> b.setContentTitle("Instalando LectorVoz$v")
                 .setContentText("Descarga comprobada. Instalando...")
                 .setProgress(0, 0, true)
-                .setOngoing(true)
                 .setSilent(true)
+                // Al instalarse la version nueva el proceso muere sin quitarla: caduca sola.
+                .setTimeoutAfter(10 * 60_000L)
                 .build()
             is InstallState.NeedsConfirmation -> b.setContentTitle("LectorVoz$v lista para instalar")
                 .setContentText("Toca para confirmar la instalacion")
@@ -168,11 +169,9 @@ class UpdateDownloadService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val graph = (application as LectorVozApp).graph
-        val n = graph.updateNotifier.build(graph.installer.state.value)
-        if (n == null) {
-            stopSelf()
-            return START_NOT_STICKY
-        }
+        // Android exige startForeground tras startForegroundService aunque ya no haya nada que
+        // descargar (cancelado antes de arrancar): se cumple con una minima y se para.
+        val n = graph.updateNotifier.build(graph.installer.state.value) ?: graph.updateNotifier.build(InstallState.Installing)!!
         try {
             ServiceCompat.startForeground(
                 this, UpdateNotifier.ID, n,
@@ -192,8 +191,12 @@ class UpdateDownloadService : Service() {
     }
 
     private fun stop() {
-        // La notificacion se queda (la sigue actualizando el notificador con el estado final).
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_DETACH)
+        val graph = (application as LectorVozApp).graph
+        // Cancelada: fuera la notificacion. Si no, se queda y la sigue el notificador.
+        val idle = graph.installer.state.value.let { it == InstallState.Idle || it == InstallState.NeedsPermission }
+        ServiceCompat.stopForeground(this, if (idle) ServiceCompat.STOP_FOREGROUND_REMOVE else ServiceCompat.STOP_FOREGROUND_DETACH)
+        // Mientras era del servicio, Android ignoraba los cambios: se repinta con el estado real.
+        graph.updateNotifier.refresh()
         stopSelf()
     }
 }

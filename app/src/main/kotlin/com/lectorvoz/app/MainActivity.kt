@@ -163,7 +163,10 @@ class MainActivity : ComponentActivity() {
 
     /** Importa los ficheros recibidos (en el ambito de la app); si es uno solo, lo abre. */
     private fun importAndOpen(uris: List<Uri>) {
-        (application as LectorVozApp).graph.imports.importExternal(uris)
+        // Solo ficheros que entrega otra app (content://), nunca rutas ni ficheros propios:
+        // un intent dirigido a esta actividad podria pedir copiar datos privados de la app.
+        val safe = uris.filter { it.scheme == "content" && it.authority?.startsWith(packageName) != true }
+        if (safe.isNotEmpty()) (application as LectorVozApp).graph.imports.importExternal(safe)
     }
 
     /**

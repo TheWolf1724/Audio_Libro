@@ -156,7 +156,7 @@ fun LibraryRoute(
                 UpdateAction.INSTALL -> {
                     // Para ver el progreso en la notificacion (Android 13+ pide permiso); la
                     // descarga empieza igual aunque se rechace.
-                    if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                    if (android.os.Build.VERSION.SDK_INT >= 33 && context.packageManager.canRequestPackageInstalls() &&
                         androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
                         android.content.pm.PackageManager.PERMISSION_GRANTED
                     ) {
@@ -207,9 +207,12 @@ fun LibraryScreen(
             TopAppBar(
                 title = {
                     if (searching) {
+                        // Texto propio del campo (sincrono): el filtrado va en otro hilo y llega un
+                        // poco despues; usar su valor perdia letras al escribir deprisa.
+                        var text by rememberSaveable { mutableStateOf(state.query) }
                         OutlinedTextField(
-                            value = state.query,
-                            onValueChange = actions::query,
+                            value = text,
+                            onValueChange = { text = it; actions.query(it) },
                             singleLine = true,
                             placeholder = { Text("Buscar titulo o autor") },
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -249,7 +252,7 @@ fun LibraryScreen(
             if (state.importing > 0) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().testTag("importando").semantics { contentDescription = "Importando ${state.importing} libros" })
                 Text(
-                    if (state.importing == 1) "Anadiendo el libro a la biblioteca..." else "Anadiendo ${state.importing} libros a la biblioteca...",
+                    if (state.importing == 1) "Importando el libro a la biblioteca..." else "Importando ${state.importing} libros a la biblioteca...",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
                 )

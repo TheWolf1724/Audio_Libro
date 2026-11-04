@@ -16,7 +16,7 @@
 ```kotlin
 android {
     // Los modelos se leen de assets con AssetManager: sin comprimir (si no, se descomprimen en RAM).
-    androidResources { noCompress += listOf("onnx", "bin") }
+    androidResources { noCompress += listOf("onnx", "bin", "traineddata") }
     packaging {
         jniLibs {
             // libsherpa-onnx-jni.so solo depende de libonnxruntime.so (readelf, 2.0.1).
@@ -25,11 +25,11 @@ android {
     }
 }
 ```
-ABIs: ya se filtran a arm64-v8a y x86_64 en el convention plugin.
+ABIs: el convention plugin filtra a arm64-v8a y x86_64; la release excluye x86_64 (solo arm64-v8a).
 
 ## Manifest
 El manifest de `:tts` ya declara el servicio y los permisos (se fusionan solos):
-`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `WAKE_LOCK`, `INTERNET`,
+`FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `WAKE_LOCK`,
 `<queries>` de `TTS_SERVICE` y `PlaybackService` (`exported=true`,
 `foregroundServiceType="mediaPlayback"`, intent-filter `androidx.media3.session.MediaSessionService`).
 Tambien `androidx.media3.session.MediaButtonReceiver` (`MEDIA_BUTTON`): con el proceso muerto,
@@ -42,7 +42,7 @@ No declarar `android:process` en el servicio: `PlaybackHub` comparte memoria con
 ## Arranque
 ```kotlin
 // Application.onCreate
-TtsConfig.sessionActivityIntent = { ctx -> Intent(ctx, ReaderActivity::class.java) }
+TtsConfig.sessionActivityIntent = { ctx -> Intent(ctx, MainActivity::class.java) }
 TtsConfig.audioCacheMaxBytes = 300L * 1024 * 1024   // cache de "preparar mientras carga"
 // "Play" sin libro (proceso muerto con la voz en pausa): ultimo libro en su posicion. Dejar
 // antes sus ajustes en PlaybackHub.default.settings; nulo = nada que reanudar.

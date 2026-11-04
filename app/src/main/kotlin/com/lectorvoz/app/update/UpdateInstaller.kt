@@ -138,7 +138,7 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
         dir.mkdirs()
         // Restos de intentos anteriores (ya terminados: ver [install]).
         dir.listFiles()?.forEach { it.delete() }
-        val part = File(dir, "LectorVoz-${release.version}.apk.part")
+        val part = File(dir, "actualizacion.apk.part")
         val digest = MessageDigest.getInstance("SHA-256")
         val conn = URL(link).openConnection() as HttpURLConnection
         try {
@@ -181,7 +181,7 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
         } finally {
             conn.disconnect()
         }
-        File(dir, "LectorVoz-${release.version}.apk").also { if (!part.renameTo(it)) throw UpdateError("No se pudo guardar la descarga") }
+        File(dir, "actualizacion.apk").also { if (!part.renameTo(it)) throw UpdateError("No se pudo guardar la descarga") }
     }
 
     /** Entrega la APK al instalador; el resultado llega a [InstallResultReceiver]. */

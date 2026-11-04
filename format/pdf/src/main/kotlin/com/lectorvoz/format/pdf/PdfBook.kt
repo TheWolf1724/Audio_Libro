@@ -142,7 +142,9 @@ class PdfBook internal constructor(
             } else {
                 null
             }
-            synchronized(textCache) { if (failed) failedPages += index else failedPages -= index }
+            // Solo lo que se espero (la voz): pasar paginas sin esperar no borra el aviso de fallo
+            // que la voz va a consultar justo despues.
+            if (wait) synchronized(textCache) { if (failed) failedPages += index else failedPages -= index }
             // Aun sin reconocer (sin esperar, o fallo): provisional, no se cachea; se vuelve a
             // intentar en la siguiente peticion.
             if (needsFallback && recognized == null && (!wait || failed)) {

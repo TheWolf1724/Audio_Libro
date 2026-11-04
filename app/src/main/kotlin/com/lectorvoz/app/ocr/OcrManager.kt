@@ -301,7 +301,11 @@ class OcrManager(
     private suspend fun sampled(bookId: Long, native: MutableSet<Int>, stored: Set<Int>, pdf: PdfBook): Boolean {
         val n = pdf.pageCount
         pageCounts[bookId] = n
-        if (n == 0) return false
+        if (n == 0) {
+            // Sin paginas: nada que reconocer (y se recuerda, para no volver a intentarlo).
+            withContext(Dispatchers.IO) { store.markTextual(bookId) }
+            return false
+        }
         val sample = (0 until SAMPLE).map { (it.toLong() * (n - 1) / (SAMPLE - 1).coerceAtLeast(1)).toInt() }.distinct()
         if (sample.any { it in stored }) return true
         val unknown = sample.filter { it !in native }

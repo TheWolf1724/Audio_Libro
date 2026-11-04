@@ -113,6 +113,8 @@ class UpdateCheckerTest {
         // Una APK alojada fuera del repositorio no se acepta.
         val ajena = json.replace("https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/LectorVoz-1.2.0.apk", "https://ejemplo.invalid/LectorVoz.apk")
         assertThat(UpdateChecker.parseRelease(ajena)!!.apkUrl).isNull()
+        // Sin huella SHA-256 publicada no se instala desde la app (solo "Ver").
+        assertThat(UpdateChecker.parseRelease(json.replace(",\"digest\":\"sha256:$sha\"", ""))!!.apkUrl).isNull()
     }
 
     @Test

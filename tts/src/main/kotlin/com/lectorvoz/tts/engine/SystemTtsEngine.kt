@@ -12,7 +12,6 @@ import com.lectorvoz.core.model.VoiceSettings
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlin.math.abs
 
 /**
  * Motor con el TextToSpeech de Android.
@@ -70,11 +69,7 @@ class SystemTtsEngine(
         if (settings.voiceId != appliedUserVoice) appliedLang = null
     }
 
-    /**
-     * TextToSpeech fija el volumen al encolar cada frase: el cambio se aplica al terminar la
-     * frase en curso, volviendo a encolar las que esperan con el volumen nuevo (ver [speak];
-     * es lo que usan los fundidos del temporizador).
-     */
+    /** Afecta a las frases que se encolan desde ahora (limitacion de TextToSpeech). */
     override fun setVolume(volume: Float) {
         this.volume = volume.coerceIn(0f, 1f)
     }
@@ -102,16 +97,12 @@ class SystemTtsEngine(
         var tail = start
         var exhausted = false
         var first = true
-        // Volumen con el que se encolo lo que espera en la cola del motor.
-        var queuedVolume = volume
 
         fun enqueue(u: Utterance) {
             val s = settings
             applyLanguage(t, SpeechLanguage.of(u, s), s)
             t.setSpeechRate(s.speed * AdaptivePace.factor(u, s))
-            val v = volume
-            queuedVolume = v
-            val params = Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, v) }
+            val params = Bundle().apply { putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, volume) }
             val mode = if (first) TextToSpeech.QUEUE_FLUSH else TextToSpeech.QUEUE_ADD
             first = false
             val text = u.spokenText.take(TextToSpeech.getMaxSpeechInputLength())
@@ -159,20 +150,6 @@ class SystemTtsEngine(
                             val head = pending.removeFirst()
                             listener.onUtteranceDone(head)
                             if (head === u) break
-                        }
-                        // El volumen cambio (fundido del temporizador): lo que espera se vuelve a
-                        // encolar ya con el nuevo, en vez de sonar 2-3 frases con el anterior. Solo
-                        // en la frontera entre frases (como mucho repite el arranque de la siguiente).
-                        if (pending.isNotEmpty() && abs(volume - queuedVolume) > VOLUME_REQUEUE_DELTA) {
-                            val waiting = pending.toList()
-                            pending.clear()
-                            // Vaciar la cola quita tambien la pausa tras la frase que acaba: se repone.
-                            val pauseMs = Pauses.afterMs(u, settings)
-                            first = pauseMs <= 0
-                            if (pauseMs > 0) {
-                                t.playSilentUtterance(pauseMs.toLong(), TextToSpeech.QUEUE_FLUSH, SILENCE_PREFIX + idOf(u))
-                            }
-                            waiting.forEach(::enqueue)
                         }
                         refill()
                         if (pending.isEmpty() && exhausted) return
@@ -258,9 +235,6 @@ class SystemTtsEngine(
     private companion object {
         const val INIT_TIMEOUT_MS = 10_000L
         const val SILENCE_PREFIX = "s"
-
-        /** Cambio de volumen minimo para volver a encolar lo que espera (ver [setVolume]). */
-        const val VOLUME_REQUEUE_DELTA = 0.05f
 
         /** Margen del vigilante por caracter del texto en curso (~6,7 car/s, ritmo muy lento). */
         const val WATCHDOG_MS_PER_CHAR = 150L

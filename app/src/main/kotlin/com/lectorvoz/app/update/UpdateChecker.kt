@@ -178,10 +178,12 @@ class UpdateChecker(
                     val link = a.optString("browser_download_url")
                     // Solo APK del propio repositorio (GitHub redirige luego a su almacenamiento).
                     if (!name.endsWith(".apk", ignoreCase = true) || !link.startsWith(RELEASES_PREFIX + "download/")) continue
-                    apkUrl = link
-                    apkSize = a.optLong("size")
                     apkSha = a.optString("digest").takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")
                         ?.lowercase()?.takeIf { it.length == 64 && it.all { c -> c in '0'..'9' || c in 'a'..'f' } }
+                    // Sin huella publicada no se instala desde la app (solo se ofrece la pagina).
+                    if (apkSha == null) continue
+                    apkUrl = link
+                    apkSize = a.optLong("size")
                     break
                 }
             }

@@ -144,4 +144,46 @@ class MigrationTest {
             context.deleteDatabase(name)
         }
     }
+
+    /** 3 -> 4 desde el esquema 3: el historial se conserva y las ediciones unidas empiezan vacias. */
+    @Test
+    fun migra3a4ConservandoHistorial() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "migracion-prueba-3.db"
+        context.deleteDatabase(name)
+        val path = context.getDatabasePath(name)
+        val json = JSONObject(File("schemas/com.lectorvoz.core.data.db.LectorVozDatabase/3.json").readText()).getJSONObject("database")
+        path.parentFile?.mkdirs()
+        val raw = SQLiteDatabase.openOrCreateDatabase(path, null)
+        val entities = json.getJSONArray("entities")
+        for (i in 0 until entities.length()) {
+            val e = entities.getJSONObject(i)
+            val table = e.getString("tableName")
+            raw.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", table))
+            val idx = e.optJSONArray("indices")
+            if (idx != null) for (j in 0 until idx.length()) raw.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table))
+        }
+        val setup = json.getJSONArray("setupQueries")
+        for (i in 0 until setup.length()) raw.execSQL(setup.getString(i))
+        raw.execSQL(
+            "INSERT INTO reading_history (id, book_id, quick_hash, title, authors, format, cover_path, started_at, finished_at, progress, updated_at) " +
+                "VALUES (7, NULL, 'h7', 'Siete', 'Ana', 'EPUB', NULL, 100, 200, 1.0, 200)",
+        )
+        raw.version = 3
+        raw.close()
+        val db = Room.databaseBuilder(context, LectorVozDatabase::class.java, name)
+            .addMigrations(*LectorVozDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val h = db.readingHistoryDao().observeAll().first().single()
+            assertThat(h.id).isEqualTo(7L)
+            assertThat(h.title).isEqualTo("Siete")
+            assertThat(h.startedAt).isEqualTo(100L)
+            assertThat(h.finishedAt).isEqualTo(200L)
+            assertThat(h.altHashes).isEmpty()
+            assertThat(db.openHelper.readableDatabase.version).isEqualTo(4)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
 }

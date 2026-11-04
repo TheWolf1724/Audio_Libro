@@ -139,6 +139,12 @@ class ReaderController(
     /** Hay un salto en curso (indice, buscar, marcador) aun sin su pagina. */
     private var navigating = false
 
+    /** Turno del ultimo salto: solo el mas reciente lo da por terminado. */
+    private var navToken = 0
+
+    /** Paginas cuyo dibujo fallo: no se anuncian como "cargando" para siempre. */
+    private val failedRenders = HashSet<PageKey>()
+
     private val _pageInfo = MutableStateFlow(PageInfo())
     val pageInfo: StateFlow<PageInfo> = _pageInfo.asStateFlow()
 
@@ -248,6 +254,8 @@ class ReaderController(
         currentKey = null
         repaginating = false
         navigating = false
+        navToken++
+        failedRenders.clear()
         _busy.value = null
         highlights = Highlights.NONE
         _sentence.value = null
@@ -387,6 +395,8 @@ class ReaderController(
         val token = ++repaginateToken
         repaginating = true
         navigating = false // el salto que hubiera queda dentro de la repaginacion (va al ancla)
+        navToken++
+        failedRenders.clear()
         refreshBusy()
         navJob = contentScope.launch {
             try {
@@ -456,6 +466,7 @@ class ReaderController(
         if (viewport == null) return
         navJob?.cancel()
         navigating = true
+        val token = ++navToken
         refreshBusy()
         navJob = contentScope.launch {
             try {
@@ -469,7 +480,9 @@ class ReaderController(
                 }
                 if (key != currentKey) show(key, animated && isNeighbor(key)) else updatePageInfo()
             } finally {
-                if (navJob === coroutineContext.job || navJob == null) navigating = false
+                // Por turno y no por trabajo: con el hilo principal el cuerpo puede acabar antes de
+                // que se asigne navJob, y el aviso se quedaba fijo.
+                if (token == navToken) navigating = false
                 refreshBusy()
             }
         }
@@ -724,7 +737,13 @@ class ReaderController(
             }
             if (jobs[key] === self) jobs.remove(key)
             val b = bmp ?: return@launch
-            if (!ok || gen != renderGen) { pool.put(b); return@launch }
+            if (!ok || gen != renderGen) {
+                pool.put(b)
+                if (!ok) failedRenders += key
+                if (key == currentKey) refreshBusy()
+                return@launch
+            }
+            failedRenders -= key
             if (hl == highlights) dirty.remove(key)
             cache.put(key, b)
             if (key == currentKey) refreshBusy()
@@ -861,7 +880,7 @@ class ReaderController(
             content == null -> null
             repaginating -> ReaderBusy.LAYOUT
             navigating -> ReaderBusy.JUMP
-            key != null && key !in cache && transitionalKey != key -> ReaderBusy.PAGE
+            key != null && key !in cache && transitionalKey != key && key !in failedRenders -> ReaderBusy.PAGE
             else -> null
         }
     }

@@ -40,7 +40,8 @@ class HistoryRecorder(
     fun start() {
         // Restos de un borrado a medias y miniaturas pendientes (migracion o sin portada aun).
         scope.launch(Dispatchers.IO) {
-            runCatching { history.tidy() }.onFailure { Log.w(TAG, "No se pudo ordenar el historial", it) }
+            // Con el candado de las miniaturas: no borrar una que se esta guardando.
+            coversLock.withLock { runCatching { history.tidy() }.onFailure { Log.w(TAG, "No se pudo ordenar el historial", it) } }
             fillCovers()
         }
     }

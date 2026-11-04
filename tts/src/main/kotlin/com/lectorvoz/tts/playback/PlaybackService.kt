@@ -127,7 +127,8 @@ class PlaybackService : MediaSessionService() {
             fastTick = { hub.readerVisible.value },
             // En pausa con el lector fuera de la pantalla, el modelo se libera enseguida, y la
             // espera cuenta el tiempo con el movil dormido.
-            keepWarm = { hub.readerVisible.value || TtsConfig.keepModelWarm?.invoke() == true },
+            // En pausa por una llamada tambien: al colgar debe seguir sin recargar el modelo.
+            keepWarm = { hub.readerVisible.value || hub.state.value.focusSuppressed || TtsConfig.keepModelWarm?.invoke() == true },
             sleepClock = SystemClock::elapsedRealtime,
         )
         hub.renderer = neural

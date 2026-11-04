@@ -174,7 +174,8 @@ class RoomReadingHistoryRepository(
             cur.copy(
                 bookId = book.id,
                 // Releido o reimportado y vuelto a terminar: se conserva la primera fecha de fin.
-                finishedAt = if (finished) cur.finishedAt ?: now else null,
+                // Una lectura con ediciones unidas no pierde su fin por desmarcar una de ellas.
+                finishedAt = if (finished) cur.finishedAt ?: now else cur.finishedAt.takeIf { cur.altHashes.isNotEmpty() },
                 progress = if (finished) 1f else book.progress,
                 updatedAt = now,
             ),

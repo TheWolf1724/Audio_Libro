@@ -6,6 +6,8 @@
 
     <!-- Instalar la version nueva descargada de GitHub (Android pide permiso al usuario). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Consultar y descargar la version nueva desde GitHub Releases (nada mas). -->
+    <uses-permission android:name="android.permission.INTERNET" />
     <!-- Notificacion con el estado de la descarga e instalacion de la actualizacion. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- La descarga sigue si se sale de la app (servicio en primer plano mientras dura). -->

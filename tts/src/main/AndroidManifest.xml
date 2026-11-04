@@ -7,8 +7,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <!-- WakeLock parcial solo mientras lee la voz neuronal (ver WakeLockHolder). -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- Descarga de voces desde las releases oficiales de sherpa-onnx. -->
-    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Ver los motores TTS del sistema (visibilidad de paquetes, API 30+). -->
     <queries>

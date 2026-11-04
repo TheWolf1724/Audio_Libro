@@ -32,11 +32,16 @@ auriculares. Gratis, sin anuncios y sin enviar nada a ningun servidor.
   de donde lees, para poder leerlos en voz alta, resaltarlos y buscar en ellos. Ocupa poco
   (unos KB por pagina) y se borra solo al terminar el libro o quitarlo de la biblioteca.
 - **Historial de lecturas**: cada libro con su portada y las fechas de inicio y fin, aunque ya
-  no este en la biblioteca. Se elige que datos mostrar (o se desactiva) en Ajustes.
+  no este en la biblioteca. Se elige que datos mostrar (o se desactiva) en Ajustes. Si abres
+  otra edicion del mismo libro, propone unir sus lecturas (siempre pregunta) y tambien se
+  pueden unir a mano.
 - **Widget de escritorio**: portada, titulo y progreso del ultimo libro, con un boton para
   escuchar o pausar sin abrir la app (no hace nada con la pantalla apagada).
 - **Actualizaciones**: aviso de version nueva con el resumen de novedades; "Instalar" la
-  descarga y la instala, "Omitir por ahora" lo pospone 24 h.
+  descarga y la instala, "Omitir por ahora" lo pospone 24 h. La descarga sigue aunque salgas
+  de la app y una notificacion muestra el progreso (con Cancelar), la instalacion y los errores.
+- **Sin esperas a ciegas**: avisos claros mientras abre un libro, recoloca las paginas, salta a
+  otra parte, reconoce una pagina escaneada, prepara la voz, busca o importa.
 - **Extras**: marcadores, busqueda, indice, estadisticas de lectura y escucha, series, y
   exportar un capitulo o el libro entero a audio.
 
@@ -48,7 +53,7 @@ auriculares. Gratis, sin anuncios y sin enviar nada a ningun servidor.
    [Releases](https://github.com/TheWolf1724/Audio_Libro/releases).
 2. Abrelo en el movil y permite la instalacion desde esa fuente si Android lo pide.
 
-Requisitos: **Android 8.0 o superior**. La APK pesa unos 210 MB porque incluye la voz
+Requisitos: **Android 8.0 o superior** en un movil de 64 bits (ARM64). La APK pesa unos 220 MB porque incluye la voz
 neuronal completa y los modelos de reconocimiento de texto, que funcionan sin conexion. Con 3 GB de RAM o mas va con soltura; en
 moviles con menos memoria la app precarga menos audio para no agotarla.
 
@@ -63,6 +68,16 @@ la ultima publicacion de este repositorio (no envia ningun dato tuyo) y, si puls
 descarga esa APK de aqui mismo, comprueba su huella SHA-256 y se la entrega al instalador de
 Android (que exige que este firmada con la misma clave). Se puede desactivar en Ajustes >
 Lectura > Actualizaciones.
+
+## Permisos
+
+- **Notificaciones**: controles de la lectura en voz alta y estado de una actualizacion.
+- **Servicio en primer plano** (reproduccion y sincronizacion de datos): seguir leyendo con la
+  pantalla apagada y terminar la descarga de una actualizacion aunque salgas de la app.
+- **Mantener activo el dispositivo**: solo mientras lee la voz neuronal.
+- **Internet**: solo para consultar y descargar la ultima version desde GitHub Releases.
+- **Instalar aplicaciones**: entregar la APK descargada al instalador de Android (lo pide la
+  primera vez).
 
 ---
 
