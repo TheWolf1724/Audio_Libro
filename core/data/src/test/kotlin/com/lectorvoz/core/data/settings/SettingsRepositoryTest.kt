@@ -124,6 +124,21 @@ class SettingsRepositoryTest {
     }
 
     @Test
+    fun forzarOcrPorLibro() = runTest {
+        val repo = DataStoreSettingsRepository(store())
+        // Por defecto: desactivado y no se refleja en otros libros.
+        assertThat(repo.overrides(5).first().forceOcr).isFalse()
+        assertThat(repo.forceOcr(5).first()).isFalse()
+        repo.updateOverrides(5) { it.copy(forceOcr = true) }
+        assertThat(repo.overrides(5).first().forceOcr).isTrue()
+        assertThat(repo.forceOcr(5).first()).isTrue()
+        assertThat(repo.forceOcr(6).first()).isFalse()
+        // Quitar los ajustes del libro tambien lo desactiva.
+        repo.clearOverrides(5)
+        assertThat(repo.forceOcr(5).first()).isFalse()
+    }
+
+    @Test
     fun preferenciasDeApp() = runTest {
         val repo = DataStoreSettingsRepository(store())
         repo.updateApp { it.copy(libraryGrid = false, librarySort = LibrarySort.TITLE, copyOnImport = false) }

@@ -39,6 +39,8 @@ data class BookOverrides(
     val fontFamily: String? = null,
     val fontSizeSp: Float? = null,
     val readingMode: ReadingMode? = null,
+    /** Forzar el OCR en este PDF aunque traiga capa de texto (texto incompleto, p. ej. versalitas). */
+    val forceOcr: Boolean = false,
 ) {
     val isEmpty: Boolean get() = this == NONE
 
@@ -99,6 +101,10 @@ interface SettingsRepository {
     val app: Flow<AppPrefs>
 
     fun overrides(bookId: Long): Flow<BookOverrides>
+
+    /** Si [bookId] (PDF) debe leerse forzando el OCR aunque traiga capa de texto. */
+    fun forceOcr(bookId: Long): Flow<Boolean> =
+        overrides(bookId).map { it.forceOcr }.distinctUntilChanged()
 
     /** Ajustes de lectura efectivos para [bookId] (globales + propios del libro). */
     fun readerFor(bookId: Long): Flow<ReaderSettings> =
@@ -436,6 +442,7 @@ class DataStoreSettingsRepository(
         val font = stringPreferencesKey("libro.$bookId.fuente")
         val size = floatPreferencesKey("libro.$bookId.tamano")
         val mode = stringPreferencesKey("libro.$bookId.modo")
+        val forceOcr = booleanPreferencesKey("libro.$bookId.forzar_ocr")
     }
 
     private fun readOverrides(p: Preferences, bookId: Long): BookOverrides {
@@ -446,6 +453,7 @@ class DataStoreSettingsRepository(
             fontFamily = p[k.font]?.takeIf { it in SettingsRanges.fontFamilies },
             fontSizeSp = p[k.size]?.takeIf { it.isFinite() && it > 0f }?.let { SettingsRanges.fontSizeSp.clamp(it) },
             readingMode = p[k.mode]?.let { name -> ReadingMode.entries.firstOrNull { it.name == name } },
+            forceOcr = p[k.forceOcr] ?: false,
         )
     }
 
@@ -456,6 +464,8 @@ class DataStoreSettingsRepository(
         p.setOrRemove(k.font, o.fontFamily?.takeIf { it in SettingsRanges.fontFamilies })
         p.setOrRemove(k.size, o.fontSizeSp?.let { SettingsRanges.fontSizeSp.clamp(it) })
         p.setOrRemove(k.mode, o.readingMode?.name)
+        // Solo se guarda cuando esta activo: asi borrar los ajustes del libro tambien lo quita.
+        p.setOrRemove(k.forceOcr, o.forceOcr.takeIf { it })
     }
 
     private companion object {

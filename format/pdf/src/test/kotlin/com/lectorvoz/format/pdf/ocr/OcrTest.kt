@@ -108,6 +108,27 @@ class OcrTest {
     }
 
     @Test
+    fun forzarOcrUsaElOcrAunConTextoPropio() = runTest {
+        val backend = Backend()
+        val book = PdfBook.create(backend, Dispatchers.Unconfined, "x")
+        var asked = 0
+        book.textFallback = PageTextFallback { _, _, _ -> asked++; recognized() }
+        // Sin forzar: la pagina 0 trae su texto y no se pide OCR.
+        assertThat(book.pageText(0).rawText).isEqualTo("Esta pagina trae su propio texto.")
+        assertThat(asked).isEqualTo(0)
+        assertThat(book.hasOwnText(0)).isTrue()
+        // Forzando el OCR: el texto de la pagina 0 pasa a venir del reconocimiento.
+        book.forceFallback = true
+        assertThat(book.pageText(0).rawText).isEqualTo("Hola mundo\n\nOtra linea")
+        assertThat(asked).isEqualTo(1)
+        // Con el OCR forzado ninguna pagina cuenta como "con texto propio".
+        assertThat(book.hasOwnText(0)).isFalse()
+        // Cambiar el flag olvida lo cacheado: al quitarlo vuelve el texto propio.
+        book.forceFallback = false
+        assertThat(book.pageText(0).rawText).isEqualTo("Esta pagina trae su propio texto.")
+    }
+
+    @Test
     fun idiomaDelModelo() {
         assertThat(OcrEngine.languageFor("en-GB")).isEqualTo("eng")
         assertThat(OcrEngine.languageFor("es")).isEqualTo("spa")

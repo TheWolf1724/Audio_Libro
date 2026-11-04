@@ -43,6 +43,12 @@ class PdfCleanerAdapter(
         synchronized(raw) { raw[page] = rawText }
     }
 
+    /** Olvida el texto preparado (p. ej. al forzar el OCR: el texto bruto de las paginas cambia). */
+    fun reset() {
+        synchronized(raw) { raw.clear() }
+        synchronized(flowed) { flowed.clear() }
+    }
+
     /**
      * Carga el texto bruto de las vecinas de [page] para detectar cabeceras repetidas. Sin
      * esperar al OCR: una vecina escaneada aun sin reconocer se omite (la limpieza se las

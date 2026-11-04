@@ -210,6 +210,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         }
         viewModelScope.launch { graph.settings.voiceFor(bookId).collect { v -> _state.update { it.copy(voice = v) } } }
         viewModelScope.launch { graph.settings.overrides(bookId).collect { o -> _state.update { it.copy(overrides = o) } } }
+        viewModelScope.launch { graph.settings.forceOcr(bookId).collect { applyForceOcr(it) } }
         viewModelScope.launch { graph.bookmarks.observe(bookId).collect { b -> _state.update { it.copy(bookmarks = b) } } }
         viewModelScope.launch { controller.pageInfo.collect { p -> _state.update { it.copy(pageInfo = p) } } }
         viewModelScope.launch { controller.busy.collect { b -> _state.update { it.copy(busy = b) } } }
@@ -490,6 +491,29 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     }
 
     fun updateOverrides(transform: (BookOverrides) -> BookOverrides) = viewModelScope.launch { graph.settings.updateOverrides(bookId, transform) }
+
+    /** Valor de "forzar OCR" ya aplicado a las instancias abiertas (null = aun ninguno). */
+    private var forceOcrApplied: Boolean? = null
+
+    /**
+     * Aplica "forzar OCR" a las instancias abiertas del PDF (la del lector y, si la voz lo lee,
+     * la compartida). La apertura ya fija el valor, asi que la primera llamada solo lo recuerda;
+     * un cambio posterior limpia las caches de texto y, si la voz suena, re-lee desde su posicion.
+     */
+    private suspend fun applyForceOcr(force: Boolean) {
+        val first = forceOcrApplied == null
+        if (forceOcrApplied == force) return
+        forceOcrApplied = force
+        (readerContent as? BookContent.Pdf)?.let { it.book.forceFallback = force; it.cleaner.reset() }
+        if (voiceHere()) {
+            (auxBook()?.content as? BookContent.Pdf)?.let { it.book.forceFallback = force; it.cleaner.reset() }
+        }
+        if (first) return
+        // El texto de las paginas ha cambiado: repaginar lo visible y re-leer la voz.
+        (readerContent as? BookContent.Pdf)?.cleaner?.prefetch(controller.currentLocator.value.chapter)
+        if (voiceHere()) graph.playback.seekTo(graph.playback.state.value.position ?: controller.currentLocator.value)
+        _state.update { it.copy(message = if (force) "Este PDF se leera con OCR" else "Este PDF se leera con su texto") }
+    }
 
     fun updateVoice(transform: (VoiceSettings) -> VoiceSettings) = viewModelScope.launch { graph.settings.updateVoice(transform) }
 
