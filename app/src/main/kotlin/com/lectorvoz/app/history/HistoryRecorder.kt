@@ -12,6 +12,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 
@@ -29,9 +31,15 @@ class HistoryRecorder(
 ) : LibraryListener {
     @Volatile var enabled: Boolean = true
 
+    /** Una sola tanda de miniaturas a la vez (dos escribirian el mismo fichero). */
+    private val coversLock = Mutex()
+
     fun start() {
-        // Miniaturas pendientes (entradas creadas por la migracion o sin portada aun).
-        scope.launch(Dispatchers.IO) { fillCovers() }
+        // Restos de un borrado a medias y miniaturas pendientes (migracion o sin portada aun).
+        scope.launch(Dispatchers.IO) {
+            runCatching { history.tidy() }.onFailure { Log.w(TAG, "No se pudo ordenar el historial", it) }
+            fillCovers()
+        }
     }
 
     override suspend fun opened(book: Book) {
@@ -50,8 +58,8 @@ class HistoryRecorder(
         history.detached(book)
     }
 
-    private suspend fun fillCovers() {
-        val dir = coversDir ?: return
+    private suspend fun fillCovers() = coversLock.withLock {
+        val dir = coversDir ?: return@withLock
         try {
             for (e in history.withoutCover()) {
                 val id = e.bookId ?: continue

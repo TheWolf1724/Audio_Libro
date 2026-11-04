@@ -7,6 +7,7 @@ import android.os.ParcelFileDescriptor
 import com.lectorvoz.core.model.BookMetadata
 import com.lectorvoz.core.model.Locator
 import com.lectorvoz.core.model.TocEntry
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -57,6 +58,9 @@ class PdfBook internal constructor(
     /** Paginas de la cache cuyo texto vino de [textFallback] (mismo candado que la cache). */
     private val fallbackPages = HashSet<Int>()
 
+    /** Paginas escaneadas cuyo reconocimiento fallo en la ultima peticion (mismo candado). */
+    private val failedPages = HashSet<Int>()
+
     private fun checkOpen() { if (closed) throw PdfException.Closed() }
 
     private fun checkIndex(index: Int) {
@@ -100,8 +104,12 @@ class PdfBook internal constructor(
     /**
      * Texto con cajas de la pagina [index], ya filtrado con [cleaner]. Se cachean las
      * ultimas paginas (el texto fluido se calcula una vez por pagina y limpiador).
+     *
+     * [wait]: en una pagina escaneada aun sin reconocer, esperar al OCR (la voz, buscar,
+     * seleccionar). Sin esperar (pasar paginas) se devuelve el texto propio sin cachearlo,
+     * para no frenar la navegacion ni amontonar reconocimientos de paginas que solo se ojean.
      */
-    suspend fun pageText(index: Int, cleaner: PageTextCleaner = PageTextCleaner.Identity): PdfPageText {
+    suspend fun pageText(index: Int, cleaner: PageTextCleaner = PageTextCleaner.Identity, wait: Boolean = true): PdfPageText {
         checkIndex(index)
         checkOpen()
         if (cleaner !== PageTextCleaner.Identity) {
@@ -120,10 +128,25 @@ class PdfBook internal constructor(
             // Pagina escaneada: el texto lo da el OCR (fuera del hilo de pdfium, que lo usa
             // para dibujar la pagina que reconoce).
             val fb = textFallback
-            val recognized = if (fb != null && !hasReadableText(own.rawText)) {
-                fb.pageText(this, index)?.let { PdfPageText(index, it.text, it.boxes, own.pageSize) }
+            val needsFallback = fb != null && !hasReadableText(own.rawText)
+            var failed = false
+            val recognized = if (needsFallback) {
+                try {
+                    fb!!.pageText(this, index, wait)?.let { PdfPageText(index, it.text, it.boxes, own.pageSize) }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failed = true
+                    null
+                }
             } else {
                 null
+            }
+            synchronized(textCache) { if (failed) failedPages += index else failedPages -= index }
+            // Aun sin reconocer (sin esperar, o fallo): provisional, no se cachea; se vuelve a
+            // intentar en la siguiente peticion.
+            if (needsFallback && recognized == null && (!wait || failed)) {
+                return if (cleaner === PageTextCleaner.Identity) own else own.withCleaner(cleaner)
             }
             val page = recognized ?: own
             synchronized(textCache) {
@@ -160,8 +183,14 @@ class PdfBook internal constructor(
 
     /** Olvida el texto cacheado de [index] (el OCR acaba de reconocerla). */
     fun invalidateText(index: Int) {
-        synchronized(textCache) { textCache.remove(index); cleanedCache.remove(index); fallbackPages -= index }
+        synchronized(textCache) { textCache.remove(index); cleanedCache.remove(index); fallbackPages -= index; failedPages -= index }
     }
+
+    /**
+     * true si [index] es escaneada y su reconocimiento fallo en la ultima peticion: su texto
+     * vacio no es una pagina en blanco (la voz no debe saltarla como si lo fuera).
+     */
+    fun textFailed(index: Int): Boolean = synchronized(textCache) { index in failedPages }
 
     /** Suelta el texto cacheado (respuesta a falta de memoria). */
     fun trimMemory() {
@@ -254,6 +283,9 @@ class PdfBook internal constructor(
 
 /** Texto alternativo de las paginas sin texto propio (OCR). */
 fun interface PageTextFallback {
-    /** Texto de la pagina [index] de [book] o nulo. Puede tardar (reconocerla). */
-    suspend fun pageText(book: PdfBook, index: Int): RawPageText?
+    /**
+     * Texto de la pagina [index] de [book] o nulo. Con [wait] puede tardar (reconocerla);
+     * sin el, solo lo ya reconocido.
+     */
+    suspend fun pageText(book: PdfBook, index: Int, wait: Boolean): RawPageText?
 }

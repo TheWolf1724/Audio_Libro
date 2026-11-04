@@ -80,6 +80,8 @@ data class AppPrefs(
     val checkUpdates: Boolean = true,
     /** Reconocer el texto de los PDF escaneados (OCR en el movil, de fondo). */
     val ocrEnabled: Boolean = true,
+    /** Pausar el OCR de fondo con ahorro de bateria o bateria baja (por debajo del 20 %, sin cargar). */
+    val ocrSaveBattery: Boolean = true,
     /** Guardar el historial de lecturas (aunque los libros se quiten de la biblioteca). */
     val historyEnabled: Boolean = true,
     /** Datos que muestra el historial. */
@@ -378,6 +380,7 @@ class DataStoreSettingsRepository(
         val reduceMotion = booleanPreferencesKey("app.reducir_movimiento")
         val checkUpdates = booleanPreferencesKey("app.avisar_versiones")
         val ocr = booleanPreferencesKey("app.ocr")
+        val ocrSaveBattery = booleanPreferencesKey("app.ocr.ahorro")
         val history = booleanPreferencesKey("app.historial")
         val historyCover = booleanPreferencesKey("app.historial.portada")
         val historyAuthor = booleanPreferencesKey("app.historial.autor")
@@ -397,6 +400,7 @@ class DataStoreSettingsRepository(
             reduceMotion = p[A.reduceMotion] ?: d.reduceMotion,
             checkUpdates = p[A.checkUpdates] ?: d.checkUpdates,
             ocrEnabled = p[A.ocr] ?: d.ocrEnabled,
+            ocrSaveBattery = p[A.ocrSaveBattery] ?: d.ocrSaveBattery,
             historyEnabled = p[A.history] ?: d.historyEnabled,
             historyShowCover = p[A.historyCover] ?: d.historyShowCover,
             historyShowAuthor = p[A.historyAuthor] ?: d.historyShowAuthor,
@@ -415,6 +419,7 @@ class DataStoreSettingsRepository(
         p[A.reduceMotion] = s.reduceMotion
         p[A.checkUpdates] = s.checkUpdates
         p[A.ocr] = s.ocrEnabled
+        p[A.ocrSaveBattery] = s.ocrSaveBattery
         p[A.history] = s.historyEnabled
         p[A.historyCover] = s.historyShowCover
         p[A.historyAuthor] = s.historyShowAuthor

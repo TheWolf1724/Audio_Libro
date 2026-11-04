@@ -116,6 +116,7 @@ fun LibraryRoute(
     val update by (updates?.available ?: remember { MutableStateFlow<AppRelease?>(null) }).collectAsStateWithLifecycle()
     val install by (installer?.state ?: remember { MutableStateFlow<InstallState>(InstallState.Idle) }).collectAsStateWithLifecycle()
     val uri = LocalUriHandler.current
+    val context = androidx.compose.ui.platform.LocalContext.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         vm.import(uris)
     }
@@ -149,6 +150,7 @@ fun LibraryRoute(
             when (action) {
                 UpdateAction.INSTALL -> installer?.install(r)
                 UpdateAction.CANCEL -> installer?.cancel()
+                UpdateAction.CONFIRM -> (context as? android.app.Activity)?.let { installer?.confirm(it) }
                 UpdateAction.SNOOZE -> { installer?.cancel(); updates?.snooze() }
                 // Solo paginas del propio repositorio (lo garantiza tambien la lectura de la respuesta).
                 UpdateAction.OPEN_PAGE -> if (r.url.startsWith(UpdateChecker.RELEASES_PREFIX)) runCatching { uri.openUri(r.url) }
@@ -455,7 +457,7 @@ private fun ContinueCard(b: Book, covers: CoverLoader, onClick: () -> Unit) {
 /** Aviso de nueva version para la pantalla: publicacion, instalacion en curso y contexto. */
 data class UpdateUi(val release: AppRelease, val install: InstallState, val metered: Boolean, val canInstall: Boolean)
 
-enum class UpdateAction { INSTALL, CANCEL, SNOOZE, OPEN_PAGE }
+enum class UpdateAction { INSTALL, CANCEL, SNOOZE, OPEN_PAGE, CONFIRM }
 
 /** Aviso de nueva version: novedades, instalar (descarga e instala) u omitir 24 h. */
 @Composable
@@ -483,14 +485,16 @@ private fun UpdateBanner(u: UpdateUi, onAction: (UpdateAction) -> Unit) {
                     else LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 6.dp))
                 }
                 InstallState.Installing -> Text("Instalando... (si Android lo pide, confirma la instalacion)", style = MaterialTheme.typography.bodySmall)
+                is InstallState.NeedsConfirmation -> Text("Descargada y comprobada. Android pide que confirmes la instalacion.", style = MaterialTheme.typography.bodySmall)
                 InstallState.NeedsPermission -> Text(
                     "Permite a LectorVoz instalar aplicaciones en el ajuste que se ha abierto y vuelve a pulsar Instalar.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 is InstallState.Failed -> Text(st.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                InstallState.Idle -> if (u.canInstall && r.apkSize > 0) {
+                InstallState.Idle -> if (u.canInstall && (r.apkSize > 0 || u.metered)) {
                     Text(
-                        "Descarga de ${r.apkSize / (1024 * 1024)} MB" + if (u.metered) " (estas con datos moviles)" else "",
+                        (if (r.apkSize > 0) "Descarga de ${r.apkSize / (1024 * 1024)} MB" else "Descarga de la app completa") +
+                            if (u.metered) " (estas con datos moviles)" else "",
                         style = MaterialTheme.typography.bodySmall,
                     )
                 }
@@ -500,9 +504,12 @@ private fun UpdateBanner(u: UpdateUi, onAction: (UpdateAction) -> Unit) {
                 if (u.install is InstallState.Downloading) {
                     TextButton(onClick = { onAction(UpdateAction.CANCEL) }, modifier = Modifier.testTag("aviso-version-cancelar")) { Text("Cancelar") }
                 } else {
-                    TextButton(onClick = { onAction(UpdateAction.SNOOZE) }, enabled = !busy, modifier = Modifier.testTag("aviso-version-omitir")) { Text("Omitir por ahora") }
+                    // Tambien instalando: si Android no llega a responder, no se queda atascado.
+                    TextButton(onClick = { onAction(UpdateAction.SNOOZE) }, modifier = Modifier.testTag("aviso-version-omitir")) { Text("Omitir por ahora") }
                 }
-                if (u.canInstall) {
+                if (u.install is InstallState.NeedsConfirmation) {
+                    TextButton(onClick = { onAction(UpdateAction.CONFIRM) }, modifier = Modifier.testTag("aviso-version-confirmar")) { Text("Confirmar") }
+                } else if (u.canInstall) {
                     TextButton(onClick = { onAction(UpdateAction.INSTALL) }, enabled = !busy, modifier = Modifier.testTag("aviso-version-instalar")) {
                         Text(if (u.install is InstallState.Failed) "Reintentar" else "Instalar")
                     }

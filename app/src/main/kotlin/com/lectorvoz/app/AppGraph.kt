@@ -24,6 +24,7 @@ import com.lectorvoz.tts.playback.TtsConfig
 import java.io.File
 import com.lectorvoz.app.update.UpdateChecker
 import com.lectorvoz.app.update.UpdateInstaller
+import com.lectorvoz.app.update.InstallState
 import com.lectorvoz.app.widget.ListenWidgetUpdater
 import com.lectorvoz.app.integration.PlaybackPort
 import com.lectorvoz.app.integration.UtteranceProviderImpl
@@ -64,6 +65,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -180,8 +182,9 @@ class AppGraph(
         widget.start()
         // OCR e historial segun los ajustes; el OCR de fondo sigue al libro que suena.
         appScope.launch {
-            settings.app.map { it.ocrEnabled to it.historyEnabled }.distinctUntilChanged().collect { (ocrOn, historyOn) ->
+            settings.app.map { Triple(it.ocrEnabled, it.ocrSaveBattery, it.historyEnabled) }.distinctUntilChanged().collect { (ocrOn, saveBattery, historyOn) ->
                 ocr.setEnabled(ocrOn)
+                ocr.setSaveBattery(saveBattery)
                 historyRecorder.enabled = historyOn
             }
         }
@@ -192,10 +195,22 @@ class AppGraph(
         historyRecorder.start()
         // Aviso de nueva version: al abrir la app (y al activarlo), como mucho una vez al dia.
         appScope.launch {
-            settings.app.map { it.checkUpdates }.distinctUntilChanged().collect { on ->
-                if (on) updates.checkIfDue(true) else updates.disable()
+            // La comprobacion la lanza la pantalla al abrirse ([checkUpdatesNow]); aqui solo se
+            // atiende el cambio del ajuste (desactivar quita el aviso y para la descarga).
+            settings.app.map { it.checkUpdates }.distinctUntilChanged().drop(1).collect { on ->
+                if (on) {
+                    updates.checkIfDue(true)
+                } else {
+                    updates.disable()
+                    if (installer.state.value is InstallState.Downloading) installer.cancel()
+                }
             }
         }
+    }
+
+    /** Al abrir la app: aviso de version nueva si toca (como mucho una consulta al dia). */
+    fun checkUpdatesNow() {
+        appScope.launch { if (settings.app.first().checkUpdates) updates.checkIfDue(true) }
     }
 
     /**

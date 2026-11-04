@@ -114,7 +114,11 @@ class MigrationTest {
         raw.execSQL(
             "INSERT INTO books (id, uri, local_path, format, title, authors, language, cover_path, size_bytes, quick_hash, " +
                 "added_at, last_opened_at, progress, locator_chapter, locator_offset, finished, favorite, finished_at) VALUES " +
-                "(1, 'content://a', NULL, 'PDF', 'Uno', 'Ana', 'es', NULL, 10, 'h1', 1, 900, 0.4, 3, 4, 0, 0, NULL)",
+                "(1, 'content://a', NULL, 'PDF', 'Uno', 'Ana', 'es', NULL, 10, 'h1', 1, 900, 0.4, 3, 4, 0, 0, NULL), " +
+                // Marcado terminado a mano sin abrirlo nunca.
+                "(2, 'content://b', NULL, 'PDF', 'Dos', 'Ana', 'es', NULL, 10, 'h2', 5, NULL, 1.0, 0, 0, 1, 0, 700), " +
+                // Terminado antes de la primera sesion registrada: el inicio no pasa del fin.
+                "(3, 'content://c', NULL, 'PDF', 'Tres', 'Ana', 'es', NULL, 10, 'h3', 5, 2000, 1.0, 0, 0, 1, 0, 150)",
         )
         raw.execSQL("INSERT INTO reading_sessions (book_id, kind, started_at, duration_ms, chars) VALUES (1, 'READ', 300, 10, 1), (1, 'LISTEN', 200, 10, 1)")
         raw.version = 2
@@ -122,7 +126,15 @@ class MigrationTest {
         val db = Room.databaseBuilder(context, LectorVozDatabase::class.java, name)
             .addMigrations(*LectorVozDatabase.MIGRATIONS).allowMainThreadQueries().build()
         try {
-            val h = db.readingHistoryDao().observeAll().first().single()
+            val all = db.readingHistoryDao().observeAll().first()
+            assertThat(all).hasSize(3)
+            val h = all.single { it.quickHash == "h1" }
+            val manual = all.single { it.quickHash == "h2" }
+            assertThat(manual.startedAt).isEqualTo(700L)
+            assertThat(manual.finishedAt).isEqualTo(700L)
+            val early = all.single { it.quickHash == "h3" }
+            assertThat(early.startedAt).isEqualTo(150L)
+            assertThat(early.updatedAt).isEqualTo(2000L)
             assertThat(h.startedAt).isEqualTo(200L)
             assertThat(h.finishedAt).isNull()
             assertThat(h.progress).isWithin(0.001f).of(0.4f)

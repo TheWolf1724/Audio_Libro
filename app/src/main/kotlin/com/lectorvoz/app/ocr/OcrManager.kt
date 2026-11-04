@@ -17,7 +17,8 @@ import com.lectorvoz.format.pdf.RawPageText
 import com.lectorvoz.format.pdf.ocr.OcrEngine
 import com.lectorvoz.format.pdf.ocr.OcrStore
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +31,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -47,10 +50,12 @@ data class OcrStatus(val enabled: Boolean = true, val storedBytes: Long = 0L, va
  *
  * - **De fondo**: al importar un PDF y mientras se lee o se escucha, reconoce las paginas por
  *   delante de la posicion actual y las guarda (texto ligero, ~5 KB por pagina). Solo trabaja
- *   con la app en pantalla o la voz sonando; se detiene con ahorro de bateria, bateria baja
- *   (sin cargar) o el movil caliente, y sin cargador deja descansos entre paginas.
- * - **Al momento**: si la voz o el lector llegan a una pagina aun sin reconocer, se reconoce
- *   esa con prioridad (la voz trabaja por delante de lo que suena, asi que no hay corte).
+ *   con la app en pantalla o la voz sonando; se detiene con el movil caliente y (si esta
+ *   activado, por defecto) con ahorro de bateria o bateria baja sin cargar; sin cargador deja
+ *   descansos entre paginas.
+ * - **Al momento**: si la voz llega a una pagina aun sin reconocer, se reconoce esa con
+ *   prioridad (la voz trabaja por delante de lo que suena, asi que no hay corte). Al pasar
+ *   paginas no se espera: el trabajo de fondo salta a la pagina a la que se llega.
  * - **Limpieza**: al terminar un libro o quitarlo de la biblioteca se borra lo guardado (y el
  *   audio guardado de ese libro). Si se vuelve a abrir uno terminado, solo se reconocen unas
  *   paginas por delante de donde se lea.
@@ -70,14 +75,18 @@ class OcrManager(
     private val conditions: DeviceConditions = AndroidConditions(context),
     /** Cada cuanto se revisa el estado del movil mientras no se puede trabajar. */
     private val conditionsPollMs: Long = CONDITIONS_POLL_MS,
+    /** Libera el modelo y su copia en disco (OCR desactivado). */
+    private val discardModels: () -> Unit = { OcrEngine.discardModels(context) },
 ) : LibraryListener {
     private val enabled = MutableStateFlow(true)
+    @Volatile private var saveBattery = true
     private val readerBook = MutableStateFlow<Long?>(null)
     private val voiceBook = MutableStateFlow<Long?>(null)
     private val appVisible = MutableStateFlow(false)
     private val voicePlaying = MutableStateFlow(false)
     private val pending = MutableStateFlow<List<Long>>(emptyList())
     private val inFlight = ConcurrentHashMap<Long, Deferred<RawPageText?>>()
+    private val pageCounts = ConcurrentHashMap<Long, Int>()
     private val mutableStatus = MutableStateFlow(OcrStatus())
 
     val status: StateFlow<OcrStatus> = mutableStatus
@@ -100,43 +109,67 @@ class OcrManager(
     /** Trabaja solo con la app en pantalla o la voz sonando. */
     private fun active() = combine(appVisible, voicePlaying) { a, v -> a || v }.distinctUntilChanged()
 
-    fun setEnabled(on: Boolean) { enabled.value = on; mutableStatus.value = mutableStatus.value.copy(enabled = on) }
+    fun setEnabled(on: Boolean) {
+        val was = enabled.value
+        enabled.value = on
+        mutableStatus.value = mutableStatus.value.copy(enabled = on)
+        if (was && !on) discardModels()
+    }
+
+    /** Pausar con ahorro de bateria o bateria baja (Ajustes, activado por defecto). */
+    fun setSaveBattery(on: Boolean) { saveBattery = on }
     fun setReaderBook(id: Long?) { readerBook.value = id }
     fun setVoice(bookId: Long?, playing: Boolean) { voiceBook.value = bookId; voicePlaying.value = playing }
     fun setAppVisible(visible: Boolean) { appVisible.value = visible }
 
-    /** Texto de las paginas escaneadas de [book] para su [PdfBook]. */
-    fun fallbackFor(book: Book): PageTextFallback = PageTextFallback { pdf, index ->
-        store.read(book.id, index) ?: if (enabled.value) page(book, pdf, index, urgent = true) else null
-    }
-
-    /** Pagina reconocida (del disco o reconociendola); sin repetir trabajo en curso. */
-    private suspend fun page(book: Book, pdf: PdfBook, index: Int, urgent: Boolean): RawPageText? {
-        withContext(Dispatchers.IO) { store.read(book.id, index) }?.let { return it }
-        val key = (book.id shl 24) or index.toLong()
-        val mine = CompletableDeferred<RawPageText?>()
-        val running = inFlight.putIfAbsent(key, mine)
-        if (running != null) return running.await()
-        try {
-            val r = recognizer.recognize(pdf, index, OcrEngine.languageFor(book.language), urgent)
-            if (r != null) {
-                withContext(Dispatchers.IO) { store.write(book.id, index, r) }
-                pdf.invalidateText(index)
-            }
-            mine.complete(r)
-            return r
-        } catch (e: Throwable) {
-            mine.completeExceptionally(e)
-            throw e
-        } finally {
-            inFlight.remove(key, mine)
+    /**
+     * Texto de las paginas escaneadas de [book] para su [PdfBook]. Si la voz lo espera y el
+     * reconocimiento falla, error (la voz lo muestra) en vez de una pagina vacia que se saltaria:
+     * saltar todas las de un libro escaneado lo daria por terminado y borraria lo guardado.
+     */
+    fun fallbackFor(book: Book): PageTextFallback = PageTextFallback { pdf, index, wait ->
+        withContext(Dispatchers.IO) { store.read(book.id, index) } ?: run {
+            if (!wait || !enabled.value) return@run null
+            val r = page(book, pdf, index, urgent = true) ?: throw java.io.IOException("No se pudo reconocer el texto de la pagina ${index + 1}")
+            // La voz va pagina a pagina: la siguiente se adelanta de fondo.
+            if (index + 1 < pdf.pageCount) scope.launch { runCatching { page(book, pdf, index + 1, urgent = false) } }
+            r
         }
     }
 
     /**
+     * Pagina reconocida (del disco o reconociendola); sin repetir trabajo en curso. El
+     * reconocimiento no depende de quien lo pide: si este se cancela (pausa, salto, la app pasa
+     * a segundo plano) la pagina se termina y se guarda igual, sin tirar el trabajo hecho.
+     */
+    private suspend fun page(book: Book, pdf: PdfBook, index: Int, urgent: Boolean): RawPageText? {
+        withContext(Dispatchers.IO) { store.read(book.id, index) }?.let { return it }
+        val key = (book.id shl 24) or index.toLong()
+        val job = inFlight.computeIfAbsent(key) {
+            scope.async(Dispatchers.IO, start = CoroutineStart.LAZY) {
+                try {
+                    val r = recognizer.recognize(pdf, index, OcrEngine.languageFor(book.language), urgent)
+                    if (r != null) {
+                        store.write(book.id, index, r)
+                        pdf.invalidateText(index)
+                        // Quitado de la biblioteca mientras se reconocia: no dejar restos.
+                        if (library.get(book.id) == null) store.deleteBook(book.id)
+                    }
+                    r
+                } finally {
+                    inFlight.remove(key)
+                }
+            }
+        }
+        job.start()
+        return job.await()
+    }
+
+    /**
      * Procesa [bookId]. Si no es el que se lee o escucha, al acabar sale de la cola; si lo es,
-     * espera a que cambie su posicion (un salto) para seguir desde alli. Se cancela al cambiar
-     * de objetivo.
+     * espera a que su posicion cambie y se asiente (pasar paginas deprisa no lanza trabajo en
+     * cada una) para seguir desde alli. Se cancela al cambiar de objetivo. El PDF se abre solo
+     * si hace falta y una vez por seguimiento, no en cada pagina.
      */
     private suspend fun follow(bookId: Long, focused: Boolean) {
         // Los EPUB no necesitan OCR: ni se vigila su posicion.
@@ -144,84 +177,133 @@ class OcrManager(
             pending.value = pending.value - bookId
             return
         }
-        while (true) {
-            try {
-                process(bookId, focused)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "OCR de fondo detenido en el libro $bookId", e)
+        var lease: Pair<PdfBook?, () -> Unit>? = null
+        try {
+            while (true) {
+                try {
+                    process(bookId, focused) { b -> (lease ?: openPdf(b).also { lease = it }).first }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "OCR de fondo detenido en el libro $bookId", e)
+                }
+                if (!focused) {
+                    pending.value = pending.value - bookId
+                    return
+                }
+                val from = library.get(bookId)?.locator?.chapter
+                library.observe(bookId).map { it?.locator?.chapter }.distinctUntilChanged().debounce(SETTLE_MS).first { it != from }
             }
-            if (!focused) {
-                pending.value = pending.value - bookId
-                return
-            }
-            val from = library.get(bookId)?.locator?.chapter
-            library.observe(bookId).map { it?.locator?.chapter }.distinctUntilChanged().first { it != from }
+        } finally {
+            lease?.second?.invoke()
+            refreshSize()
         }
     }
 
-    /** Recorre [bookId] por delante de su posicion. */
-    private suspend fun process(bookId: Long, focused: Boolean) {
-        val book = library.get(bookId)
-        if (book == null || book.format != BookFormat.PDF || !shouldProcess(book, focused)) return
-        val (opened, release) = openPdf(book)
+    /**
+     * Recorre [bookId] por delante de su posicion: los escaneados hasta el final (o una ventana
+     * si ya esta terminado); los que traen texto, solo unas paginas por delante (por si mezclan
+     * paginas escaneadas). Lo ya sabido (paginas con texto y reconocidas) no vuelve a mirarse.
+     */
+    private suspend fun process(bookId: Long, focused: Boolean, pdfOf: suspend (Book) -> PdfBook?) {
+        var book = library.get(bookId) ?: return
+        if (book.format != BookFormat.PDF || !shouldProcess(book, focused)) return
+        val textual = withContext(Dispatchers.IO) { store.isTextual(bookId) }
+        val native = withContext(Dispatchers.IO) { store.nativePages(bookId) }.toHashSet()
+        val stored = withContext(Dispatchers.IO) { store.recognizedPages(bookId) }.toHashSet()
+        val newNative = ArrayList<Int>()
+        var count = pageCounts[bookId]
+        var pos = position(book, count)
+        var i = pos
+        var end = endPage(book, textual, pos, count)
+        var sinceCheck = 0
         try {
-            val pdf = opened ?: return
-            if (withContext(Dispatchers.IO) { store.isTextual(bookId) } || looksTextual(bookId, pdf)) return
-            val native = withContext(Dispatchers.IO) { store.nativePages(bookId) }.toHashSet()
-            val newNative = ArrayList<Int>()
-            var i = startPage(bookId, pdf.pageCount)
-            var end = endPage(book, i, pdf.pageCount)
             mutableStatus.value = mutableStatus.value.copy(working = true)
+            if (!textual && !sampled(bookId, native, stored, pdfOf(book) ?: return)) {
+                // Resulto ser un PDF con texto: solo la ventana por delante.
+                return process(bookId, focused, pdfOf)
+            }
             while (i < end) {
-                // Si el usuario salta a otra parte, se sigue desde alli.
-                val now = startPage(bookId, pdf.pageCount)
-                if (now > i || now < i - BACK_JUMP) { i = now; end = endPage(book, i, pdf.pageCount); continue }
-                if (i in native || withContext(Dispatchers.IO) { store.has(bookId, i) }) { i++; continue }
+                // Si el usuario salta a otra parte (o termina el libro), se sigue desde alli.
+                if (++sinceCheck >= RECHECK) {
+                    sinceCheck = 0
+                    book = library.get(bookId) ?: return
+                    if (!shouldProcess(book, focused)) return
+                    val now = position(book, count)
+                    if (now != pos) {
+                        pos = now
+                        if (now > i || now < i - BACK_JUMP) i = now
+                    }
+                    end = endPage(book, textual, pos, count)
+                    if (i >= end) break
+                }
+                if (i in native || i in stored) { i++; continue }
+                val pdf = pdfOf(book) ?: return
+                if (count == null) {
+                    count = pdf.pageCount.also { pageCounts[bookId] = it }
+                    end = endPage(book, textual, pos, count)
+                    if (i >= end) break
+                }
                 if (pdf.hasOwnText(i)) {
                     native += i
                     newNative += i
-                    if (newNative.size >= NATIVE_FLUSH) { flushNative(bookId, newNative) }
+                    if (newNative.size >= NATIVE_FLUSH) flushNative(bookId, newNative)
                     i++
                     continue
                 }
                 waitForGoodConditions()
                 val t0 = System.nanoTime()
-                page(book, pdf, i, urgent = false)
+                if (page(book, pdf, i, urgent = false) != null) stored += i
                 // Sin cargador: descanso igual al trabajo (la CPU nunca va al limite).
                 if (!conditions.charging()) delay(((System.nanoTime() - t0) / 1_000_000).coerceIn(MIN_REST_MS, MAX_REST_MS))
                 i++
+                sinceCheck = RECHECK // tras cada pagina reconocida, se mira la posicion
             }
-            flushNative(bookId, newNative)
         } finally {
+            withContext(NonCancellable) { flushNative(bookId, newNative) }
             mutableStatus.value = mutableStatus.value.copy(working = false)
-            release()
-            refreshSize()
         }
     }
 
     /** Terminado: los ya leidos solo se procesan si se estan leyendo o escuchando. */
     private fun shouldProcess(book: Book, focused: Boolean): Boolean = !book.finished || focused
 
-    private suspend fun startPage(bookId: Long, count: Int): Int =
-        (library.get(bookId)?.locator?.chapter ?: 0).coerceIn(0, (count - 1).coerceAtLeast(0))
+    private fun position(book: Book, count: Int?): Int {
+        val p = book.locator?.chapter ?: 0
+        return if (count == null) p.coerceAtLeast(0) else p.coerceIn(0, (count - 1).coerceAtLeast(0))
+    }
 
-    private fun endPage(book: Book, start: Int, count: Int): Int =
-        if (book.finished) minOf(count, start + FINISHED_WINDOW) else count
-
-    /** Muestra de paginas: si todas traen texto, el PDF no es escaneado (y se recuerda). */
-    private suspend fun looksTextual(bookId: Long, pdf: PdfBook): Boolean {
-        val n = pdf.pageCount
-        if (n == 0) return true
-        val sample = (0 until SAMPLE).map { (it.toLong() * (n - 1) / (SAMPLE - 1).coerceAtLeast(1)).toInt() }.distinct()
-        val withText = sample.filter { pdf.hasOwnText(it) }
-        if (withText.size == sample.size) {
-            withContext(Dispatchers.IO) { store.markTextual(bookId) }
-            return true
+    private fun endPage(book: Book, textual: Boolean, start: Int, count: Int?): Int {
+        val limit = when {
+            textual -> start + TEXTUAL_WINDOW
+            book.finished -> start + FINISHED_WINDOW
+            else -> Int.MAX_VALUE
         }
-        withContext(Dispatchers.IO) { store.markNative(bookId, withText) }
-        return false
+        return if (count == null) limit else minOf(count, limit)
+    }
+
+    /**
+     * Muestra de paginas repartidas por el libro (solo la primera vez: lo que se sabe de cada
+     * pagina queda guardado). Si todas traen texto, el PDF no es escaneado y se recuerda;
+     * devuelve false en ese caso.
+     */
+    private suspend fun sampled(bookId: Long, native: MutableSet<Int>, stored: Set<Int>, pdf: PdfBook): Boolean {
+        val n = pdf.pageCount
+        pageCounts[bookId] = n
+        if (n == 0) return false
+        val sample = (0 until SAMPLE).map { (it.toLong() * (n - 1) / (SAMPLE - 1).coerceAtLeast(1)).toInt() }.distinct()
+        if (sample.any { it in stored }) return true
+        val unknown = sample.filter { it !in native }
+        val withText = unknown.filter { pdf.hasOwnText(it) }
+        if (withText.isNotEmpty()) {
+            native += withText
+            withContext(Dispatchers.IO) { store.markNative(bookId, withText) }
+        }
+        if (sample.all { it in native }) {
+            withContext(Dispatchers.IO) { store.markTextual(bookId) }
+            return false
+        }
+        return true
     }
 
     private suspend fun flushNative(bookId: Long, pages: MutableList<Int>) {
@@ -232,12 +314,14 @@ class OcrManager(
     }
 
     private suspend fun waitForGoodConditions() {
-        while (!conditions.good()) delay(conditionsPollMs)
+        while (!conditions.good(saveBattery)) delay(conditionsPollMs)
     }
 
+    /** Quitados de la biblioteca o ya terminados (lo de una relectura): fuera. */
     private suspend fun removeOrphans() {
-        val ids = library.books.first().map { it.id }.toSet()
-        for (id in store.books()) if (id !in ids) store.deleteBook(id)
+        val keep = library.books.first().filter { !it.finished }.map { it.id }.toSet()
+        for (id in store.books()) if (id !in keep) store.deleteBook(id)
+        store.removePartials()
         refreshSize()
     }
 
@@ -280,6 +364,9 @@ class OcrManager(
         private const val SAMPLE = 8
         private const val FINISHED_WINDOW = 10
         private const val BACK_JUMP = 3
+        private const val TEXTUAL_WINDOW = 5
+        private const val RECHECK = 16
+        private const val SETTLE_MS = 800L
         private const val NATIVE_FLUSH = 20
         private const val MIN_REST_MS = 300L
         private const val MAX_REST_MS = 5_000L
@@ -291,8 +378,11 @@ class OcrManager(
 interface DeviceConditions {
     fun charging(): Boolean
 
-    /** true si se puede trabajar de fondo (sin ahorro de bateria, bateria suficiente, no caliente). */
-    fun good(): Boolean
+    /**
+     * true si se puede trabajar de fondo: el movil no esta caliente y, con [saveBattery], sin
+     * ahorro de bateria y con bateria suficiente (o cargando).
+     */
+    fun good(saveBattery: Boolean): Boolean
 }
 
 class AndroidConditions(private val context: Context) : DeviceConditions {
@@ -303,10 +393,11 @@ class AndroidConditions(private val context: Context) : DeviceConditions {
         return s == BatteryManager.BATTERY_STATUS_CHARGING || s == BatteryManager.BATTERY_STATUS_FULL
     }
 
-    override fun good(): Boolean {
+    override fun good(saveBattery: Boolean): Boolean {
         val pm = context.getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return true
-        if (pm.isPowerSaveMode) return false
         if (Build.VERSION.SDK_INT >= 29 && pm.currentThermalStatus >= PowerManager.THERMAL_STATUS_MODERATE) return false
+        if (!saveBattery) return true
+        if (pm.isPowerSaveMode) return false
         val b = battery() ?: return true
         val level = b.getIntExtra(BatteryManager.EXTRA_LEVEL, -1)
         val scale = b.getIntExtra(BatteryManager.EXTRA_SCALE, 100).coerceAtLeast(1)

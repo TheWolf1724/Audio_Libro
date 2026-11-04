@@ -385,8 +385,6 @@ class PageFlipView @JvmOverloads constructor(
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         when (keyCode) {
-            KeyEvent.KEYCODE_VOLUME_DOWN -> if (volumeKeysTurnPages) { nextPage(true); return true }
-            KeyEvent.KEYCODE_VOLUME_UP -> if (volumeKeysTurnPages) { prevPage(true); return true }
             KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_PAGE_DOWN, KeyEvent.KEYCODE_SPACE -> { nextPage(true); return true }
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_PAGE_UP -> { prevPage(true); return true }
         }

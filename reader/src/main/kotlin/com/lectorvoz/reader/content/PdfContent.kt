@@ -63,7 +63,19 @@ class PdfContent(
 
     override suspend fun startOf(key: PageKey): Locator = Locator(key.chapter, 0)
 
-    override suspend fun offsetsOf(key: PageKey): IntRange = 0 until text(key.chapter).length
+    // Al pasar paginas no se espera al OCR de una pagina escaneada (lo hace de fondo). La
+    // longitud solo se anota si el texto es el definitivo (para el tiempo restante).
+    override suspend fun offsetsOf(key: PageKey): IntRange {
+        val t = book.pageText(key.chapter, cleaner, wait = false)
+        if (book.cachedPageText(key.chapter, cleaner) != null) synchronized(charCounts) { charCounts[key.chapter] = t.length }
+        return 0 until t.length
+    }
+
+    // En scroll el alto depende del tamano de la pagina: se conoce antes de pedir el bitmap
+    // (si no, se dibujaba dos veces, la primera con el alto de la vista).
+    override suspend fun prepare(key: PageKey) {
+        if (key.chapter in 0 until chapterCount) size(key.chapter)
+    }
 
     /** Texto limpio de [page]; anota su longitud (en indices de pdfium, como los Locator). */
     private suspend fun text(page: Int) =
@@ -143,7 +155,7 @@ class PdfContent(
         return textSource.locatorAt(key.chapter, px, py)
     }
 
-    override suspend fun pageText(key: PageKey): String = text(key.chapter).flow.text
+    override suspend fun pageText(key: PageKey): String = book.pageText(key.chapter, cleaner, wait = false).flow.text
 
     override suspend fun textOf(range: LocatorRange): String? {
         if (range.isEmpty) return null

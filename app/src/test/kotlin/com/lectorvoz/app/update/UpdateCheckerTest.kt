@@ -77,6 +77,26 @@ class UpdateCheckerTest {
         assertThat(c2.available.value).isEqualTo(release)
     }
 
+    /** Omitir pospone esa version: si sale otra mas nueva, se avisa de ella enseguida. */
+    @Test
+    fun omitirSoloPosponeLaVersionAvisada() = runTest(UnconfinedTestDispatcher()) {
+        var now = 1_000_000L
+        var release = AppRelease("1.1.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.1.0")
+        fun checker() = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { release })
+        val c = checker()
+        c.checkIfDue(enabled = true)
+        c.snooze()
+        assertThat(c.available.value).isNull()
+        // Al dia siguiente de la ultima consulta (aun dentro de la pausa por reloj) sale la 1.1.1.
+        release = AppRelease("1.1.1", UpdateChecker.RELEASES_PREFIX + "tag/v1.1.1")
+        now += UpdateChecker.INTERVAL_MS - 1
+        assertThat(checker().stored()).isNull()
+        now += 2
+        val c2 = checker()
+        c2.checkIfDue(enabled = true)
+        assertThat(c2.available.value?.version).isEqualTo("1.1.1")
+    }
+
     @Test
     fun leeLaApkYResumeLasNovedades() {
         val sha = "a".repeat(64)

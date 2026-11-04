@@ -79,9 +79,17 @@ class OcrTest {
         val backend = Backend()
         val book = PdfBook.create(backend, Dispatchers.Unconfined, "x")
         var asked = 0
-        book.textFallback = PageTextFallback { _, index -> asked++; if (index == 1) recognized() else null }
+        var ready = false
+        book.textFallback = PageTextFallback { _, index, wait -> asked++; if (index == 1 && (wait || ready)) recognized() else null }
         assertThat(book.pageText(0).rawText).isEqualTo("Esta pagina trae su propio texto.")
         assertThat(asked).isEqualTo(0)
+        // Pasando paginas no se espera al OCR, y lo provisional no se cachea.
+        assertThat(book.pageText(1, wait = false).rawText).isEqualTo(" 12 ")
+        ready = true
+        assertThat(book.pageText(1, wait = false).rawText).isEqualTo("Hola mundo\n\nOtra linea")
+        book.invalidateText(1)
+        asked = 0
+        ready = false
         val scanned = book.pageText(1)
         assertThat(scanned.rawText).isEqualTo("Hola mundo\n\nOtra linea")
         assertThat(scanned.pageSize).isEqualTo(PageSize(400f, 600f))

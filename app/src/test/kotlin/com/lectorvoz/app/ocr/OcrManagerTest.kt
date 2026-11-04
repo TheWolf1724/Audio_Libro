@@ -54,10 +54,11 @@ class OcrManagerTest {
 
     private class Conditions(var ok: Boolean = true) : DeviceConditions {
         override fun charging() = true
-        override fun good() = ok
+        override fun good(saveBattery: Boolean) = ok || !saveBattery
     }
 
     private val recognized: MutableList<Pair<Int, Boolean>> = Collections.synchronizedList(ArrayList())
+    private var discarded = 0
     private val audioRemoved: MutableList<Long> = Collections.synchronizedList(ArrayList())
 
     private fun manager(library: FakeLibraryRepository, pdf: PdfBook, store: OcrStore, conditions: DeviceConditions = Conditions()) =
@@ -73,6 +74,7 @@ class OcrManagerTest {
             removeAudio = { audioRemoved += it },
             conditions = conditions,
             conditionsPollMs = 50,
+            discardModels = { discarded++ },
         )
 
     private fun pdfBook(b: com.lectorvoz.core.data.library.Book) = b.copy(format = BookFormat.PDF)
@@ -95,6 +97,40 @@ class OcrManagerTest {
         assertThat(recognized.map { it.first }).containsExactly(2, 3, 5).inOrder()
         assertThat(recognized.all { !it.second }).isTrue()
         assertThat(store.nativePages(1)).contains(4)
+    }
+
+    /** Libro largo desde el principio: llega al final (antes volvia una y otra vez a la posicion). */
+    @Test
+    fun deFondoLlegaAlFinalDeUnLibroLargo() {
+        val b = pdfBook(book(1, opened = 5))
+        val library = FakeLibraryRepository(listOf(b))
+        val store = OcrStore(tmp.root)
+        val pdf = PdfBook.create(Backend(40, withText = setOf(0)), Dispatchers.Unconfined, "x")
+        val m = manager(library, pdf, store)
+        m.start()
+        m.setAppVisible(true)
+        m.setReaderBook(1)
+        waitUntil { store.recognizedPages(1).size == 39 }
+        assertThat(recognized.map { it.first }).isEqualTo((1 until 40).toList())
+    }
+
+    /** Si el OCR falla, la pagina no se da por vacia (la voz la saltaria hasta acabar el libro). */
+    @Test
+    fun unFalloDelOcrNoSeTomaPorPaginaVacia() = runBlocking {
+        val b = pdfBook(book(1))
+        val library = FakeLibraryRepository(listOf(b))
+        val store = OcrStore(tmp.root)
+        val pdf = PdfBook.create(Backend(2, withText = emptySet()), Dispatchers.Unconfined, "x")
+        val m = OcrManager(
+            context, scope, library, openPdf = { pdf to {} }, store = store,
+            recognizer = PageRecognizer { _, _, _, _ -> null },
+            conditions = Conditions(), conditionsPollMs = 50, discardModels = {},
+        )
+        pdf.textFallback = m.fallbackFor(b)
+        assertThat(pdf.pageText(0).rawText).isEmpty()
+        assertThat(pdf.textFailed(0)).isTrue()
+        // No se cachea: la siguiente peticion lo vuelve a intentar.
+        assertThat(pdf.cachedPageText(0)).isNull()
     }
 
     @Test
@@ -126,8 +162,26 @@ class OcrManagerTest {
         m.setAppVisible(true)
         runBlocking { delay(200) }
         assertThat(recognized).isEmpty() // bateria baja / caliente
-        cond.ok = true
+        // Con el ajuste de ahorro desactivado no se pausa por bateria.
+        m.setSaveBattery(false)
         waitUntil { recognized.size == 4 }
+    }
+
+    @Test
+    fun alPasarPaginasNoSeEsperaAlOcr() = runBlocking {
+        val b = pdfBook(book(1))
+        val library = FakeLibraryRepository(listOf(b))
+        val store = OcrStore(tmp.root)
+        val pdf = PdfBook.create(Backend(3, withText = emptySet()), Dispatchers.Unconfined, "x")
+        val m = manager(library, pdf, store)
+        pdf.textFallback = m.fallbackFor(b)
+        assertThat(pdf.pageText(0, wait = false).rawText).isEmpty()
+        assertThat(recognized).isEmpty()
+        // Lo que se espera (la voz) si se reconoce, y despues ya sale sin esperar.
+        pdf.pageText(0)
+        assertThat(pdf.pageText(0, wait = false).rawText).isEqualTo("Pagina reconocida 0")
+        m.setEnabled(false)
+        assertThat(discarded).isEqualTo(1)
     }
 
     @Test
@@ -139,16 +193,19 @@ class OcrManagerTest {
         val m = manager(library, pdf, store)
         pdf.textFallback = m.fallbackFor(b)
         assertThat(pdf.pageText(1).rawText).isEqualTo("Pagina reconocida 1")
-        assertThat(recognized).containsExactly(1 to true)
+        // La siguiente se adelanta de fondo (la voz va pagina a pagina).
+        waitUntil { recognized.size == 2 }
+        assertThat(recognized).containsExactly(1 to true, 2 to false).inOrder()
         // Otra instancia del libro (reabierto): sale del disco, sin reconocer de nuevo.
         val again = PdfBook.create(Backend(3, withText = emptySet()), Dispatchers.Unconfined, "x")
         again.textFallback = m.fallbackFor(b)
         assertThat(again.pageText(1).rawText).isEqualTo("Pagina reconocida 1")
-        assertThat(recognized).hasSize(1)
+        assertThat(again.pageText(2).rawText).isEqualTo("Pagina reconocida 2")
+        assertThat(recognized).hasSize(2)
         // Desactivado: lo guardado se sigue usando, pero no se reconoce nada nuevo.
         m.setEnabled(false)
-        assertThat(again.pageText(2).rawText).isEmpty()
-        assertThat(recognized).hasSize(1)
+        assertThat(again.pageText(0).rawText).isEmpty()
+        assertThat(recognized).hasSize(2)
     }
 
     @Test

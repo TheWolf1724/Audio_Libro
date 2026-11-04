@@ -7,6 +7,8 @@ import com.lectorvoz.core.model.BookFormat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 
 /** Entrada del historial de lecturas (sobrevive a quitar el libro de la biblioteca). */
@@ -52,6 +54,12 @@ interface ReadingHistoryRepository {
     suspend fun delete(id: Long)
 
     suspend fun clear()
+
+    /**
+     * Mantenimiento al arrancar: suelta las entradas cuyo libro ya no existe (borrado a medias)
+     * y borra miniaturas que ya no son de ninguna entrada.
+     */
+    suspend fun tidy() {}
 }
 
 class RoomReadingHistoryRepository(
@@ -62,7 +70,13 @@ class RoomReadingHistoryRepository(
 ) : ReadingHistoryRepository {
     override val entries: Flow<List<HistoryEntry>> = dao.observeAll().map { l -> l.map { it.toEntry() } }.distinctUntilChanged()
 
-    override suspend fun opened(book: Book) {
+    /**
+     * Cada cambio lee la fila y la reescribe: abrir, terminar y poner la miniatura pueden
+     * coincidir (la voz termina el libro mientras se abre el lector) y no deben pisarse.
+     */
+    private val lock = Mutex()
+
+    override suspend fun opened(book: Book): Unit = lock.withLock {
         val now = clock()
         val cur = dao.byHash(book.quickHash)
         if (cur == null) {
@@ -74,7 +88,8 @@ class RoomReadingHistoryRepository(
                     authors = book.authors.joinToString("\n"),
                     format = book.format,
                     coverPath = null,
-                    startedAt = now,
+                    // Un libro ya terminado (entrada borrada o historial reactivado): inicio <= fin.
+                    startedAt = minOf(now, book.finishedAt ?: now),
                     finishedAt = book.finishedAt,
                     progress = book.progress,
                     updatedAt = now,
@@ -87,17 +102,23 @@ class RoomReadingHistoryRepository(
                     title = book.title,
                     authors = book.authors.joinToString("\n"),
                     progress = book.progress,
+                    // Terminado o desmarcado con el historial desactivado: se pone al dia.
+                    finishedAt = when {
+                        !book.finished -> null
+                        cur.finishedAt != null -> cur.finishedAt
+                        else -> book.finishedAt ?: now
+                    },
                     updatedAt = now,
                 ),
             )
         }
     }
 
-    override suspend fun finished(book: Book, finished: Boolean) {
+    override suspend fun finished(book: Book, finished: Boolean): Unit = lock.withLock {
         val now = clock()
         val cur = dao.byHash(book.quickHash)
         if (cur == null) {
-            if (!finished) return
+            if (!finished) return@withLock
             // Terminado sin haberlo abierto nunca en la app (marcado a mano): inicio = fin.
             dao.insert(
                 ReadingHistoryEntity(
@@ -106,32 +127,43 @@ class RoomReadingHistoryRepository(
                     startedAt = now, finishedAt = now, progress = 1f, updatedAt = now,
                 ),
             )
-            return
+            return@withLock
         }
         dao.update(
             cur.copy(
                 bookId = book.id,
-                finishedAt = if (finished) now else null,
+                // Releido o reimportado y vuelto a terminar: se conserva la primera fecha de fin.
+                finishedAt = if (finished) cur.finishedAt ?: now else null,
                 progress = if (finished) 1f else book.progress,
                 updatedAt = now,
             ),
         )
     }
 
-    override suspend fun detached(book: Book) = dao.detach(book.id, book.progress, clock())
+    override suspend fun detached(book: Book): Unit = lock.withLock { dao.detach(book.id, book.progress, clock()) }
 
     override suspend fun withoutCover(): List<HistoryEntry> = dao.withoutCover().map { it.toEntry() }
 
-    override suspend fun setCover(id: Long, path: String?) = dao.setCover(id, path)
+    override suspend fun setCover(id: Long, path: String?): Unit = lock.withLock {
+        // La entrada se borro mientras se hacia la miniatura: fuera el fichero.
+        if (dao.setCover(id, path) == 0) path?.let { ownCover(it)?.delete() }
+    }
 
-    override suspend fun delete(id: Long) {
+    override suspend fun delete(id: Long): Unit = lock.withLock {
         dao.coverOf(id)?.let { ownCover(it)?.delete() }
         dao.delete(id)
     }
 
-    override suspend fun clear() {
+    override suspend fun clear(): Unit = lock.withLock {
         dao.allCovers().forEach { ownCover(it)?.delete() }
         dao.clear()
+    }
+
+    override suspend fun tidy(): Unit = lock.withLock {
+        dao.detachMissingBooks()
+        val dir = coversDir ?: return@withLock
+        val used = dao.allCovers().mapNotNull { runCatching { File(it).canonicalPath }.getOrNull() }.toHashSet()
+        dir.listFiles()?.forEach { if (it.canonicalPath !in used) it.delete() }
     }
 
     /** Solo se borran miniaturas de la carpeta propia del historial. */
@@ -175,9 +207,10 @@ class InMemoryReadingHistory(private val clock: () -> Long = System::currentTime
         if (cur == null) {
             val id = next++
             hashes[id] = book.quickHash
-            put(HistoryEntry(id, book.id, book.title, book.authors, book.format, null, now, book.finishedAt, book.progress, now))
+            put(HistoryEntry(id, book.id, book.title, book.authors, book.format, null, minOf(now, book.finishedAt ?: now), book.finishedAt, book.progress, now))
         } else {
-            put(cur.copy(bookId = book.id, title = book.title, authors = book.authors, progress = book.progress, updatedAt = now))
+            val fin = if (!book.finished) null else cur.finishedAt ?: book.finishedAt ?: now
+            put(cur.copy(bookId = book.id, title = book.title, authors = book.authors, progress = book.progress, finishedAt = fin, updatedAt = now))
         }
     }
 
@@ -190,7 +223,7 @@ class InMemoryReadingHistory(private val clock: () -> Long = System::currentTime
             hashes[id] = book.quickHash
             put(HistoryEntry(id, book.id, book.title, book.authors, book.format, null, now, now, 1f, now))
         } else {
-            put(cur.copy(bookId = book.id, finishedAt = if (finished) now else null, progress = if (finished) 1f else book.progress, updatedAt = now))
+            put(cur.copy(bookId = book.id, finishedAt = if (finished) cur.finishedAt ?: now else null, progress = if (finished) 1f else book.progress, updatedAt = now))
         }
     }
 

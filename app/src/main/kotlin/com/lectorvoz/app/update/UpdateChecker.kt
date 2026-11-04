@@ -85,7 +85,8 @@ class UpdateChecker(
 
     /** "Omitir por ahora": el aviso vuelve a salir pasadas 24 h. */
     fun snooze() {
-        prefs.edit().putLong(K_SNOOZE_UNTIL, clock() + INTERVAL_MS).apply()
+        // Solo para la version avisada: si sale otra mas nueva, se avisa de esa.
+        prefs.edit().putLong(K_SNOOZE_UNTIL, clock() + INTERVAL_MS).putString(K_SNOOZE_VERSION, prefs.getString(K_VERSION, null)).apply()
         mutable.value = null
     }
 
@@ -102,7 +103,8 @@ class UpdateChecker(
         val until = prefs.getLong(K_SNOOZE_UNTIL, 0L)
         val now = clock()
         // Pospuesto (con margen por si el reloj se atraso mucho: nunca mas de 24 h).
-        if (now < until && until - now <= INTERVAL_MS) return null
+        val snoozed = prefs.getString(K_SNOOZE_VERSION, null)
+        if (now < until && until - now <= INTERVAL_MS && (snoozed == null || snoozed == version)) return null
         return AppRelease(
             version = version,
             url = url,
@@ -124,6 +126,7 @@ class UpdateChecker(
         private const val K_APK_SIZE = "apk_bytes"
         private const val K_APK_SHA = "apk_sha256"
         private const val K_SNOOZE_UNTIL = "pospuesta_hasta"
+        private const val K_SNOOZE_VERSION = "pospuesta_version"
         const val INTERVAL_MS = 24L * 60 * 60 * 1000
 
         private const val API = "https://api.github.com/repos/TheWolf1724/Audio_Libro/releases/latest"

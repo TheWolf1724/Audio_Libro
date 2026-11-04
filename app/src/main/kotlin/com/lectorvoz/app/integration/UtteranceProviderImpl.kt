@@ -14,6 +14,7 @@ import com.lectorvoz.core.text.TextOptions
 import com.lectorvoz.core.text.UtteranceBuilder
 import com.lectorvoz.format.epub.EpubBook
 import com.lectorvoz.format.pdf.PdfBook
+import com.lectorvoz.format.pdf.PdfException
 import com.lectorvoz.reader.TextProgress
 import com.lectorvoz.tts.UtteranceProvider
 import kotlinx.coroutines.Dispatchers
@@ -56,6 +57,9 @@ sealed interface BookContent {
         override suspend fun plainText(chapter: Int): String {
             cleaner.prefetch(chapter)
             val raw = book.pageText(chapter).rawText
+            // Escaneada y sin reconocer: error visible, no una pagina vacia que se salta (saltar
+            // todas daria el libro por terminado).
+            if (book.textFailed(chapter)) throw PdfException.Unreadable("no se pudo reconocer el texto de la pagina ${chapter + 1}")
             return cleaner.flowFor(chapter, raw).sameLength
         }
     }

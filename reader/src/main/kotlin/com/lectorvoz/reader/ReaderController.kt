@@ -178,6 +178,12 @@ class ReaderController(
     private var repaginateToken = 0
     private var countJob: Job? = null
     private var followJob: Job? = null
+
+    /** Lo que se calcula de cada pagina mostrada (se cancela al mostrar otra). */
+    private var shownJob: Job? = null
+
+    /** Ultimo paso de pagina hecho por el usuario (la voz no lo deshace enseguida). */
+    private var userTurnAt = 0L
     private var navJob: Job? = null
     private var sentenceJob: Job? = null
 
@@ -469,6 +475,9 @@ class ReaderController(
     fun ensureVisible(locator: Locator) {
         val c = content ?: return
         if (viewport == null) return
+        // El usuario acaba de pasar de pagina con la voz sonando (mirar algo, volver atras):
+        // no se le devuelve a la pagina de la voz hasta pasado un rato.
+        if (android.os.SystemClock.uptimeMillis() - userTurnAt < USER_TURN_GRACE_MS) return
         followJob?.cancel()
         followJob = contentScope.launch {
             val key = try {
@@ -628,6 +637,18 @@ class ReaderController(
         return PageKey(prev, (prevCount - 1).coerceAtLeast(0))
     }
 
+    /**
+     * Cerca del final (o del principio) de un capitulo se pagina ya el siguiente (o el
+     * anterior): con capitulos grandes, llegar al borde no deja el paso de pagina esperando.
+     */
+    private fun prepareAdjacentChapters(c: PagedContent, key: PageKey) {
+        val count = c.knownPageCount(key.chapter) ?: return
+        val next = key.chapter + 1
+        if (key.page >= count - PREPARE_AHEAD_PAGES && next < c.chapterCount && c.knownPageCount(next) == null) prepareChapter(next)
+        val prev = key.chapter - 1
+        if (key.page < PREPARE_AHEAD_PAGES && prev >= 0 && c.knownPageCount(prev) == null) prepareChapter(prev)
+    }
+
     /** Pagina un capitulo en fondo y avisa a la vista cuando ya se conocen sus paginas. */
     private fun prepareChapter(chapter: Int) {
         val c = content ?: return
@@ -667,6 +688,7 @@ class ReaderController(
             var bmp: Bitmap? = null
             val ok = try {
                 withContext(renderDispatcher) {
+                    c.prepare(key)
                     val (w, h) = c.bitmapSize(key)
                     val b = pool.get(w, h)
                     bmp = b
@@ -742,6 +764,7 @@ class ReaderController(
 
     override fun onPageShown(key: PageKey) {
         if (key == currentKey) return // ya lo pidio el controlador
+        userTurnAt = android.os.SystemClock.uptimeMillis()
         pageShown(key, keepAnchor = false)
     }
 
@@ -752,7 +775,9 @@ class ReaderController(
         if (transitional != null && key != transitionalKey) dropTransitional()
         val c = content ?: return
         prefetchNeighbors(key)
-        contentScope.launch {
+        prepareAdjacentChapters(c, key)
+        shownJob?.cancel()
+        shownJob = contentScope.launch {
             val offs = try {
                 c.offsetsOf(key)
             } catch (e: CancellationException) {
@@ -767,15 +792,16 @@ class ReaderController(
                 _locator.value = anchor
             }
             updatePageInfo()
-            val text = try {
-                c.pageText(key)
+            val info = _pageInfo.value
+            val label = "Pagina ${(info.globalPage ?: key.page) + 1} de ${info.totalPages}"
+            // El texto de la pagina solo sirve al lector de pantalla: sin el, no se extrae.
+            val text = if (!accessibilityOn()) "" else try {
+                withContext(Dispatchers.Default) { c.pageText(key) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 ""
             }
-            val info = _pageInfo.value
-            val label = "Pagina ${(info.globalPage ?: key.page) + 1} de ${info.totalPages}"
             host?.setPageDescription("$label. $text", announce = false)
             if (!keepAnchor) {
                 @Suppress("DEPRECATION")
@@ -793,12 +819,18 @@ class ReaderController(
         prev?.let { pins += it }
         (host as? ScrollReaderView)?.visibleKeys()?.let { pins += it }
         cache.pin(pins)
+        // Pasando paginas deprisa: fuera los renders de paginas que ya quedaron atras (si no,
+        // la pagina a la que se llega espera detras de todas y luego llegan de golpe).
+        for (k in jobs.keys.toList()) if (k !in pins) jobs.remove(k)?.cancel()
         // Solo si falta o cambio (resaltado nuevo = sucia): antes se volvia a dibujar entera cada
         // pagina mostrada (tambien cada paso de pagina de la voz) aunque ya estuviera lista.
         if (key !in cache || key in dirty) request(key)
         next?.let { if (it !in cache || it in dirty) request(it) }
         prev?.let { if (it !in cache || it in dirty) request(it) }
     }
+
+    private fun accessibilityOn(): Boolean =
+        (appContext.getSystemService(Context.ACCESSIBILITY_SERVICE) as? android.view.accessibility.AccessibilityManager)?.isEnabled == true
 
     private fun updatePageInfo() {
         val c = content ?: return
@@ -884,6 +916,12 @@ class ReaderController(
 
         /** Espera tras un cambio de ajustes antes de contar las paginas del libro. */
         const val COUNT_DELAY_MS = 1000L
+
+        /** Tras un paso de pagina del usuario, la voz no mueve la vista durante este tiempo. */
+        const val USER_TURN_GRACE_MS = 10_000L
+
+        /** Paginas antes del borde de un capitulo en que se pagina el contiguo. */
+        const val PREPARE_AHEAD_PAGES = 3
 
         /** Cierra contenidos cuando terminan sus trabajos (no depende de ningun controlador). */
         private val CLOSER = CoroutineScope(SupervisorJob() + Dispatchers.IO)

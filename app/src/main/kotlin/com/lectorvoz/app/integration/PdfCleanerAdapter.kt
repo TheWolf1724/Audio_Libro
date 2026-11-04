@@ -43,14 +43,20 @@ class PdfCleanerAdapter(
         synchronized(raw) { raw[page] = rawText }
     }
 
-    /** Carga el texto bruto de [page] y sus vecinas para detectar cabeceras repetidas. */
+    /**
+     * Carga el texto bruto de las vecinas de [page] para detectar cabeceras repetidas. Sin
+     * esperar al OCR: una vecina escaneada aun sin reconocer se omite (la limpieza se las
+     * arregla sin ella) en vez de frenar la voz o la apertura del libro.
+     */
     suspend fun prefetch(page: Int) {
         val b = book ?: return
         for (p in (page - 1)..(page + 1)) {
-            if (p < 0 || p >= b.pageCount) continue
+            if (p == page || p < 0 || p >= b.pageCount) continue
             if (synchronized(raw) { raw.containsKey(p) }) continue
             try {
-                remember(p, b.pageText(p).rawText)
+                val t = b.pageText(p, wait = false).rawText
+                // Lo provisional (pagina escaneada sin reconocer) no se recuerda.
+                if (b.cachedPageText(p) != null || PdfBook.hasReadableText(t)) remember(p, t)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

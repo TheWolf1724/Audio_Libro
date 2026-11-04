@@ -36,6 +36,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
@@ -209,10 +210,11 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         viewModelScope.launch { controller.pageInfo.collect { p -> _state.update { it.copy(pageInfo = p) } } }
         viewModelScope.launch { controller.currentSentence.collect { s -> if (renderActive || !voiceHere()) _state.update { it.copy(sentence = s) } } }
         viewModelScope.launch {
-            controller.currentLocator.collect { l ->
-                _state.update { it.copy(locator = l) }
-                (readerContent as? BookContent.Pdf)?.cleaner?.prefetch(l.chapter)
-            }
+            controller.currentLocator.collect { l -> _state.update { it.copy(locator = l) } }
+        }
+        viewModelScope.launch {
+            // Aparte y cancelable: pasar paginas deprisa no encola una carga por pagina.
+            controller.currentLocator.collectLatest { l -> (readerContent as? BookContent.Pdf)?.cleaner?.prefetch(l.chapter) }
         }
         viewModelScope.launch { controller.currentLocator.debounce(1500).collect { saveProgress() } }
         viewModelScope.launch {

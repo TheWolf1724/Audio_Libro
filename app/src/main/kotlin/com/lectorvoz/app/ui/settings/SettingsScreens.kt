@@ -155,6 +155,11 @@ fun ReadingSettingsContent(
         summary = "Para leer y escuchar PDF que son fotos de paginas. Se hace en el movil, sin conexion, por delante de donde lees; al terminar el libro se borra",
         tag = "app-ocrEnabled",
     )
+    SwitchRow(
+        "Pausar con bateria baja", app.ocrSaveBattery, { v -> onApp { it.copy(ocrSaveBattery = v) } },
+        summary = "No reconoce de fondo con el ahorro de bateria activo o por debajo del 20 % sin cargar",
+        tag = "app-ocrSaveBattery",
+    )
     ocr?.let { o ->
         val mb = o.storedBytes / (1024.0 * 1024.0)
         Text(

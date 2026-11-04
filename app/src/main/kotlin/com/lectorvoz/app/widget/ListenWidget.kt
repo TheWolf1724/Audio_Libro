@@ -57,7 +57,7 @@ class ListenWidget : AppWidgetProvider() {
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_TOGGLE) {
             val pending = goAsync()
-            updater(context).toggle { pending.finish() }
+            updater(context).toggle(shownPlaying = intent.getBooleanExtra(EXTRA_SHOWN_PLAYING, false)) { pending.finish() }
             return
         }
         super.onReceive(context, intent)
@@ -66,6 +66,9 @@ class ListenWidget : AppWidgetProvider() {
     companion object {
         /** Boton del widget con un libro ya cargado en la voz: escuchar/pausar sin abrir la app. */
         const val ACTION_TOGGLE = "com.lectorvoz.app.WIDGET_ESCUCHAR_PAUSAR"
+
+        /** El boton mostraba "pausa" al tocarlo. */
+        const val EXTRA_SHOWN_PLAYING = "mostraba_pausa"
     }
 }
 
@@ -164,7 +167,7 @@ class ListenWidgetUpdater(
     /** Repintar (el sistema lo pide al anadir el widget o reiniciar el escritorio). */
     fun refresh() {
         if (!active.value) {
-            active.value = true // el flujo lo pinta al empezar
+            setActive(true) // el flujo lo pinta al empezar (y solo con la pantalla encendida)
             return
         }
         last?.let { scope.launch { render(it) } }
@@ -175,13 +178,15 @@ class ListenWidgetUpdater(
      * no lo tiene), se empieza a escuchar el ultimo libro: el toque en un widget permite
      * arrancar el servicio de voz desde segundo plano.
      */
-    fun toggle(done: () -> Unit) {
+    fun toggle(shownPlaying: Boolean, done: () -> Unit) {
         scope.launch {
             try {
-                if (playback.state.value.bookId != null) {
-                    playback.togglePlayPause()
-                } else {
-                    library.continueReading.first()?.let { listen(it) }
+                when {
+                    playback.state.value.bookId != null -> playback.togglePlayPause()
+                    // Mostraba "pausa" pero el proceso murio (ya no suena): se pinta como esta,
+                    // sin empezar a sonar justo cuando se queria parar.
+                    shownPlaying -> setActive(true)
+                    else -> library.continueReading.first()?.let { listen(it) }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -261,7 +266,7 @@ class ListenWidgetUpdater(
             )
             // Sin el libro en la voz se abre la app para empezar (arrancar el audio en primer
             // plano es lo que Android garantiza); con el libro cargado conmuta sin abrirla.
-            val click = if (c.loaded) toggleIntent() else activityIntent(MainActivity.ACTION_LISTEN, c.bookId, REQ_LISTEN)
+            val click = if (c.loaded) toggleIntent(c.playing) else activityIntent(MainActivity.ACTION_LISTEN, c.bookId, REQ_LISTEN)
             views.setOnClickPendingIntent(R.id.widget_boton, click)
         }
         try {
@@ -279,8 +284,9 @@ class ListenWidgetUpdater(
         return PendingIntent.getActivity(context, request, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
-    private fun toggleIntent(): PendingIntent {
+    private fun toggleIntent(playing: Boolean): PendingIntent {
         val intent = Intent(context, ListenWidget::class.java).setAction(ListenWidget.ACTION_TOGGLE)
+            .putExtra(ListenWidget.EXTRA_SHOWN_PLAYING, playing)
         return PendingIntent.getBroadcast(context, REQ_TOGGLE, intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
@@ -300,9 +306,16 @@ class ListenWidgetUpdater(
         } else {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(file.path, bounds)
+            // Por el lado mayor (una imagen muy ancha tambien) y a tamano exacto: el widget viaja
+            // entero al escritorio y una portada grande no cabe en la transaccion.
+            val longest = maxOf(bounds.outWidth, bounds.outHeight)
             var sample = 1
-            while (bounds.outHeight / (sample * 2) >= COVER_HEIGHT_PX) sample *= 2
-            BitmapFactory.decodeFile(file.path, BitmapFactory.Options().apply { inSampleSize = sample })
+            while (longest / (sample * 2) >= COVER_HEIGHT_PX) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample; inPreferredConfig = Bitmap.Config.RGB_565 }
+            BitmapFactory.decodeFile(file.path, opts)?.let { b ->
+                val k = COVER_HEIGHT_PX.toFloat() / maxOf(b.width, b.height)
+                if (k >= 1f) b else Bitmap.createScaledBitmap(b, (b.width * k).roundToInt().coerceAtLeast(1), (b.height * k).roundToInt().coerceAtLeast(1), true).also { if (it !== b) b.recycle() }
+            }
         }
     } catch (e: Exception) {
         null

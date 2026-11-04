@@ -75,4 +75,29 @@ class HistoryTest {
         library.setFinished(1, false)
         assertThat(history.entries.first().single().finished).isFalse()
     }
+
+    /** Terminado con el historial desactivado: al reactivarlo y abrirlo, se pone al dia. */
+    @Test
+    fun reactivarloPoneAlDiaElTerminadoYConservaLaPrimeraFechaDeFin() = runTest(UnconfinedTestDispatcher()) {
+        var now = 1_000L
+        val history = InMemoryReadingHistory { now }
+        val raw = FakeLibraryRepository(listOf(book(1)))
+        val recorder = HistoryRecorder(this, history, raw, coversDir = null)
+        val library = ObservedLibrary(raw, listOf(recorder))
+        library.markOpened(1)
+        recorder.enabled = false
+        now = 2_000L
+        library.setFinished(1, true)
+        recorder.enabled = true
+        now = 3_000L
+        library.markOpened(1)
+        val e = history.entries.first().single()
+        assertThat(e.finished).isTrue()
+        assertThat(e.startedAt).isAtMost(e.finishedAt!!)
+        // Releido y terminado otra vez (desmarcado por el camino no hay): la primera fecha sigue.
+        val first = e.finishedAt
+        now = 9_000L
+        history.finished(raw.get(1)!!, true)
+        assertThat(history.entries.first().single().finishedAt).isEqualTo(first)
+    }
 }

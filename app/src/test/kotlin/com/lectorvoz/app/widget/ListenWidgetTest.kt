@@ -71,15 +71,19 @@ class ListenWidgetTest {
         val w = ListenWidgetUpdater(context, this, library, playback) { started += it }
         var done = 0
 
-        // Proceso reiniciado (la voz no tiene libro): empieza a escuchar el ultimo.
-        w.toggle { done++ }
+        // Proceso reiniciado mostrando "pausa": no empieza a sonar.
+        w.toggle(shownPlaying = true) { done++ }
+        assertThat(started).isEmpty()
+
+        // Proceso reiniciado (la voz no tiene libro) mostrando "escuchar": empieza el ultimo.
+        w.toggle(shownPlaying = false) { done++ }
         assertThat(started.map { it.id }).containsExactly(1L)
         assertThat(playback.calls).doesNotContain("toggle")
 
         // Con el libro cargado: conmuta.
         playback.mutable.value = VoiceUiState(bookId = 1, playWhenReady = true)
-        w.toggle { done++ }
+        w.toggle(shownPlaying = true) { done++ }
         assertThat(playback.calls).contains("toggle")
-        assertThat(done).isEqualTo(2)
+        assertThat(done).isEqualTo(3)
     }
 }

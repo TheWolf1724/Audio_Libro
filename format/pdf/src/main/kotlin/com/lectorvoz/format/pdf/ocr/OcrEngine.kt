@@ -36,7 +36,7 @@ class OcrEngine private constructor(private val context: Context) {
     private class Job(
         val priority: Int,
         val seq: Long,
-        val book: PdfBook,
+        val book: PdfBook?,
         val index: Int,
         val language: String,
         val result: CompletableDeferred<RawPageText?>,
@@ -86,12 +86,21 @@ class OcrEngine private constructor(private val context: Context) {
     private fun loop() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND + Process.THREAD_PRIORITY_LESS_FAVORABLE)
         while (true) {
-            val job = queue.poll(IDLE_RELEASE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            // Con el modelo cargado se espera un rato y se libera; sin el, hasta el siguiente
+            // trabajo (el hilo no se despierta para nada).
+            val job = if (api == null && bitmap == null) queue.take() else queue.poll(IDLE_RELEASE_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
             if (job == null) {
                 releaseModel()
                 continue
             }
             if (job.result.isCancelled) continue
+            if (job.book == null) {
+                // OCR desactivado: fuera el modelo de la memoria y sus ficheros del disco.
+                releaseModel()
+                modelsDir().deleteRecursively()
+                job.result.complete(null)
+                continue
+            }
             val started = System.nanoTime()
             val out = try {
                 run(job)
@@ -106,14 +115,13 @@ class OcrEngine private constructor(private val context: Context) {
     }
 
     private fun run(job: Job): RawPageText? {
+        val book = job.book ?: return null
         val tess = model(job.language) ?: return null
-        val size: PageSize = kotlinx.coroutines.runBlocking { job.book.pageSize(job.index) }
+        val size: PageSize = kotlinx.coroutines.runBlocking { book.pageSize(job.index) }
         val scale = scaleFor(size)
         val w = (size.width * scale).roundToInt().coerceAtLeast(1)
         val h = (size.height * scale).roundToInt().coerceAtLeast(1)
-        val bmp = bitmapFor(w, h)
-        kotlinx.coroutines.runBlocking { job.book.renderPage(job.index, bmp, scale) }
-        val gray = toGray(bmp, w, h)
+        val gray = renderGray(book, job.index, scale, w, h)
         tess.setImage(gray, w, h, 1, w)
         return try {
             words(tess, scale)
@@ -165,33 +173,48 @@ class OcrEngine private constructor(private val context: Context) {
         return RawPageText(sb.toString(), boxes.toArray())
     }
 
-    /** Escala (pixeles por punto): ~300 ppp, sin pasar de [MAX_SIDE_PX] en el lado largo. */
+    /**
+     * Escala (pixeles por punto): ~300 ppp (~150 como poco), y en todo caso sin pasar de
+     * [MAX_SIDE_PX] en el lado largo (planos y carteles enormes: memoria acotada).
+     */
     private fun scaleFor(size: PageSize): Float {
         val longSide = max(size.width, size.height).coerceAtLeast(1f)
-        return min(MAX_SCALE, MAX_SIDE_PX / longSide).coerceAtLeast(MIN_SCALE)
+        val cap = MAX_SIDE_PX / longSide
+        return min(max(min(MAX_SCALE, cap), MIN_SCALE), cap)
     }
 
-    /** Bitmap de trabajo reutilizado mientras el tamano no cambie. */
+    /** Bitmap de trabajo (una franja) reutilizado mientras el tamano no cambie. */
     private fun bitmapFor(w: Int, h: Int): Bitmap {
         bitmap?.let { if (it.width == w && it.height == h) return it; it.recycle() }
         return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { bitmap = it }
     }
 
-    /** Gris de 8 bits por franjas (no copia la pagina entera en color). */
-    private fun toGray(bmp: Bitmap, w: Int, h: Int): ByteArray {
+    /**
+     * Pagina en gris de 8 bits, dibujada por franjas de [RENDER_BAND_PX]: cada franja es una
+     * llamada corta al hilo de pdfium, asi el lector puede dibujar sus paginas entre una y
+     * otra en vez de esperar a la pagina entera a 300 ppp (pasar paginas sin tirones).
+     */
+    private fun renderGray(book: PdfBook, index: Int, scale: Float, w: Int, h: Int): ByteArray {
         val out = ByteArray(w * h)
-        val band = BAND_ROWS
-        val row = IntArray(w * band)
-        var y = 0
-        while (y < h) {
-            val rows = min(band, h - y)
-            bmp.getPixels(row, 0, w, 0, y, w, rows)
-            for (i in 0 until w * rows) {
-                val c = row[i]
-                val g = (((c shr 16) and 0xFF) * 77 + ((c shr 8) and 0xFF) * 150 + (c and 0xFF) * 29) shr 8
-                out[y * w + i] = g.toByte()
+        val bandH = min(RENDER_BAND_PX, h)
+        val bmp = bitmapFor(w, bandH)
+        val row = IntArray(w * BAND_ROWS)
+        var top = 0
+        while (top < h) {
+            val rows = min(bandH, h - top)
+            kotlinx.coroutines.runBlocking { book.renderPage(index, bmp, scale, left = 0, top = top) }
+            var y = 0
+            while (y < rows) {
+                val n = min(BAND_ROWS, rows - y)
+                bmp.getPixels(row, 0, w, 0, y, w, n)
+                val base = (top + y) * w
+                for (i in 0 until w * n) {
+                    val c = row[i]
+                    out[base + i] = ((((c shr 16) and 0xFF) * 77 + ((c shr 8) and 0xFF) * 150 + (c and 0xFF) * 29) shr 8).toByte()
+                }
+                y += n
             }
-            y += rows
+            top += rows
         }
         return out
     }
@@ -226,8 +249,10 @@ class OcrEngine private constructor(private val context: Context) {
      * ficheros). Solo la primera vez o si cambiaron (se compara el tamano). Devuelve la
      * carpeta que contiene `tessdata/`, o nulo si la APK no los trae.
      */
+    private fun modelsDir() = File(context.noBackupFilesDir, MODELS_DIR)
+
     private fun installModels(): File? {
-        val base = File(context.noBackupFilesDir, "ocr-modelos")
+        val base = modelsDir()
         val data = File(base, "tessdata").apply { mkdirs() }
         return try {
             val assets = context.assets
@@ -277,6 +302,8 @@ class OcrEngine private constructor(private val context: Context) {
         /** Lado largo maximo de la imagen (memoria acotada: ~13 MB en color + 3 MB en gris). */
         private const val MAX_SIDE_PX = 2600f
         private const val BAND_ROWS = 64
+        private const val RENDER_BAND_PX = 512
+        private const val MODELS_DIR = "ocr-modelos"
         private const val MIN_CONFIDENCE = 35f
         private const val IDLE_RELEASE_MS = 60_000L
 
@@ -284,6 +311,16 @@ class OcrEngine private constructor(private val context: Context) {
 
         fun get(context: Context): OcrEngine =
             instance ?: synchronized(this) { instance ?: OcrEngine(context.applicationContext).also { instance = it } }
+
+        /**
+         * OCR desactivado: libera el modelo y borra su copia en disco (~40 MB); se vuelve a
+         * copiar de la APK si se activa otra vez.
+         */
+        fun discardModels(context: Context) {
+            // En el hilo del motor: nunca a la vez que una instalacion o un reconocimiento.
+            val engine = get(context)
+            engine.queue.put(Job(URGENT, engine.seq.incrementAndGet(), null, -1, "", CompletableDeferred()))
+        }
 
         /** Codigo de modelo para el idioma de un libro ("es" -> spa, "en" -> eng). */
         fun languageFor(bookLanguage: String?): String = when (bookLanguage?.lowercase()?.take(2)) {

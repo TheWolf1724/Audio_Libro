@@ -78,9 +78,12 @@ abstract class LectorVozDatabase : RoomDatabase() {
                     "INSERT OR IGNORE INTO `reading_history` (`book_id`, `quick_hash`, `title`, `authors`, `format`, `cover_path`, " +
                         "`started_at`, `finished_at`, `progress`, `updated_at`) " +
                         "SELECT b.`id`, b.`quick_hash`, b.`title`, b.`authors`, b.`format`, NULL, " +
-                        "COALESCE((SELECT MIN(s.`started_at`) FROM `reading_sessions` s WHERE s.`book_id` = b.`id`), b.`last_opened_at`), " +
-                        "b.`finished_at`, b.`progress`, COALESCE(b.`finished_at`, b.`last_opened_at`) " +
-                        "FROM `books` b WHERE b.`last_opened_at` IS NOT NULL",
+                        // Inicio: primera sesion (o ultima apertura); nunca despues del fin.
+                        "MIN(COALESCE((SELECT MIN(s.`started_at`) FROM `reading_sessions` s WHERE s.`book_id` = b.`id`), " +
+                        "b.`last_opened_at`, b.`finished_at`, b.`added_at`), COALESCE(b.`finished_at`, 9223372036854775807)), " +
+                        "b.`finished_at`, b.`progress`, " +
+                        "MAX(COALESCE(b.`finished_at`, 0), COALESCE(b.`last_opened_at`, 0), b.`added_at`) " +
+                        "FROM `books` b WHERE b.`last_opened_at` IS NOT NULL OR b.`finished` = 1",
                 )
             }
         }

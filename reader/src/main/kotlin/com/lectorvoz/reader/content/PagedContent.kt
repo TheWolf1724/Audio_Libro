@@ -53,6 +53,9 @@ interface PagedContent : AutoCloseable {
     /** Rango [inicio, fin) de offsets de la pagina dentro de su capitulo. */
     suspend fun offsetsOf(key: PageKey): IntRange
 
+    /** Deja listo lo que [bitmapSize] necesita saber de [key] (en el hilo de render). */
+    suspend fun prepare(key: PageKey) {}
+
     /** Tamano del bitmap de la pagina en pixeles. */
     fun bitmapSize(key: PageKey): Pair<Int, Int>
 

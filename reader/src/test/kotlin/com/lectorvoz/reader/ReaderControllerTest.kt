@@ -102,9 +102,14 @@ class ReaderControllerTest {
         waitUntil { controller.currentLocator.value.offset > 0 }
         assertThat(view.currentKey).isEqualTo(com.lectorvoz.reader.view.PageKey(0, 1))
 
-        // La voz lee una frase del capitulo 2: la vista salta alli.
+        // La voz lee una frase del capitulo 2. Justo despues de que el usuario pase de pagina no
+        // se le mueve; pasado un rato, la vista salta alli.
         val range = LocatorRange(Locator(2, 1000), Locator(2, 1100))
         controller.highlight(range, HighlightKind.SENTENCE)
+        controller.ensureVisible(range.start)
+        repeat(10) { shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+        assertThat(view.currentKey).isEqualTo(com.lectorvoz.reader.view.PageKey(0, 1))
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ReaderController.USER_TURN_GRACE_MS + 1))
         controller.ensureVisible(range.start)
         waitUntil { view.currentKey?.chapter == 2 }
         val shown = view.currentKey!!

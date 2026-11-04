@@ -71,12 +71,19 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        (application as LectorVozApp).graph.ocr.setAppVisible(true)
+        val graph = (application as LectorVozApp).graph
+        graph.ocr.setAppVisible(true)
+        graph.installer.foreground = true
+        // Aviso de nueva version: al abrir la app (no al despertar por el widget o la voz), como
+        // mucho una vez al dia; tambien vuelve a mirar si acabo el "Omitir por ahora".
+        graph.checkUpdatesNow()
     }
 
     override fun onStop() {
         super.onStop()
-        (application as LectorVozApp).graph.ocr.setAppVisible(false)
+        val graph = (application as LectorVozApp).graph
+        graph.ocr.setAppVisible(false)
+        graph.installer.foreground = false
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -86,6 +93,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         val up = keyCode == KeyEvent.KEYCODE_VOLUME_UP
+        // Tecla mantenida: una sola pagina por pulsacion (las repeticiones encolaban decenas).
+        if ((up || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) && event.repeatCount > 0 && volumeConsumed) return true
         if ((up || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) && volumeKeyHandler?.invoke(up) == true) {
             volumeConsumed = true
             return true

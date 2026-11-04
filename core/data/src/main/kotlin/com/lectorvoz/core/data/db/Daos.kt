@@ -211,7 +211,10 @@ interface ReadingHistoryDao {
     suspend fun withoutCover(): List<ReadingHistoryEntity>
 
     @Query("UPDATE reading_history SET cover_path = :path WHERE id = :id")
-    suspend fun setCover(id: Long, path: String?)
+    suspend fun setCover(id: Long, path: String?): Int
+
+    @Query("UPDATE reading_history SET book_id = NULL WHERE book_id IS NOT NULL AND book_id NOT IN (SELECT id FROM books)")
+    suspend fun detachMissingBooks()
 
     @Query("SELECT cover_path FROM reading_history WHERE id = :id")
     suspend fun coverOf(id: Long): String?

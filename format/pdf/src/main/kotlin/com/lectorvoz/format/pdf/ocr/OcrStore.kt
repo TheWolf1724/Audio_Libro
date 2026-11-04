@@ -103,6 +103,11 @@ class OcrStore(private val root: File) {
         d.walkTopDown().filter { it.isFile }.sumOf { it.length() }
     }
 
+    /** Borra paginas a medio escribir (el proceso murio mientras se guardaban). */
+    fun removePartials() = synchronized(lock) {
+        root.listFiles()?.forEach { d -> d.listFiles { f -> f.name.endsWith(".part") }?.forEach { it.delete() } }
+    }
+
     /** Libros con algo guardado. */
     fun books(): List<Long> = root.list()?.mapNotNull { it.toLongOrNull() } ?: emptyList()
 
