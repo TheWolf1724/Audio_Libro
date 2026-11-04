@@ -496,18 +496,23 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     private var forceOcrApplied: Boolean? = null
 
     /**
-     * Aplica "forzar OCR" a las instancias abiertas del PDF (la del lector y, si la voz lo lee,
-     * la compartida). La apertura ya fija el valor, asi que la primera llamada solo lo recuerda;
-     * un cambio posterior limpia las caches de texto y, si la voz suena, re-lee desde su posicion.
+     * Aplica "forzar OCR" a las instancias abiertas del PDF: la del lector y la compartida
+     * (voz, busqueda, exportacion). La apertura ya fija el valor, asi que la primera llamada
+     * solo lo recuerda; un cambio posterior limpia las caches de texto y, si la voz suena,
+     * re-lee desde su posicion.
+     *
+     * El flag debe llegar SIEMPRE a la instancia compartida (A1): si la voz lee este libro se
+     * adquiere (abriendola si hace falta); si no, se actualiza solo la que ya exista (p. ej. de
+     * una busqueda) sin forzar su apertura. El reuso en `SharedBooks.acquire` reaplica la
+     * preferencia, asi que la voz al empezar y las busquedas posteriores quedan coherentes.
      */
     private suspend fun applyForceOcr(force: Boolean) {
         val first = forceOcrApplied == null
         if (forceOcrApplied == force) return
         forceOcrApplied = force
         (readerContent as? BookContent.Pdf)?.let { it.book.forceFallback = force; it.cleaner.reset() }
-        if (voiceHere()) {
-            (auxBook()?.content as? BookContent.Pdf)?.let { it.book.forceFallback = force; it.cleaner.reset() }
-        }
+        val shared = if (voiceHere()) auxBook() else auxMutex.withLock { aux?.opened }
+        (shared?.content as? BookContent.Pdf)?.let { it.book.forceFallback = force; it.cleaner.reset() }
         if (first) return
         // El texto de las paginas ha cambiado: repaginar lo visible y re-leer la voz.
         (readerContent as? BookContent.Pdf)?.cleaner?.prefetch(controller.currentLocator.value.chapter)
