@@ -46,7 +46,7 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun consultaComoMuchoUnaVezAlDiaYRespetaElDescarte() = runTest(UnconfinedTestDispatcher()) {
+    fun consultaComoMuchoUnaVezAlDiaYOmitirPosponeUnDia() = runTest(UnconfinedTestDispatcher()) {
         var now = 1_000_000L
         var calls = 0
         val release = AppRelease("1.1.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.1.0")
@@ -66,16 +66,33 @@ class UpdateCheckerTest {
         assertThat(calls).isEqualTo(1)
         assertThat(c2.available.value).isEqualTo(release)
 
-        // Descartado: no se muestra mas para esa version.
-        c2.dismiss()
+        // Omitir por ahora: no sale durante 24 h (tampoco tras reiniciar)...
+        c2.snooze()
         assertThat(c2.available.value).isNull()
+        now += UpdateChecker.INTERVAL_MS - 10
         assertThat(checker().stored()).isNull()
-
-        // Al dia siguiente vuelve a preguntar.
-        now += 2
+        // ...y pasado ese tiempo vuelve a avisar.
+        now += 20
         c2.checkIfDue(enabled = true)
-        assertThat(calls).isEqualTo(2)
-        assertThat(c2.available.value).isNull()
+        assertThat(c2.available.value).isEqualTo(release)
+    }
+
+    @Test
+    fun leeLaApkYResumeLasNovedades() {
+        val sha = "a".repeat(64)
+        val json = """{"tag_name":"v1.2.0","html_url":"https://github.com/TheWolf1724/Audio_Libro/releases/tag/v1.2.0",
+            "body":"## Novedades\n\n- **OCR** para PDF escaneados\n- [Historial](https://x.invalid) de lecturas\n\n| tabla | x |",
+            "assets":[{"name":"notas.txt","browser_download_url":"https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/notas.txt"},
+              {"name":"LectorVoz-1.2.0.apk","size":1234,"digest":"sha256:$sha",
+               "browser_download_url":"https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/LectorVoz-1.2.0.apk"}]}"""
+        val r = UpdateChecker.parseRelease(json)!!
+        assertThat(r.apkUrl).endsWith("LectorVoz-1.2.0.apk")
+        assertThat(r.apkSize).isEqualTo(1234)
+        assertThat(r.apkSha256).isEqualTo(sha)
+        assertThat(r.notes).isEqualTo("Novedades\n\u2022 OCR para PDF escaneados\n\u2022 Historial de lecturas")
+        // Una APK alojada fuera del repositorio no se acepta.
+        val ajena = json.replace("https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/LectorVoz-1.2.0.apk", "https://ejemplo.invalid/LectorVoz.apk")
+        assertThat(UpdateChecker.parseRelease(ajena)!!.apkUrl).isNull()
     }
 
     @Test

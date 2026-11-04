@@ -59,6 +59,8 @@ docs/investigacion/muestras-voz/*.wav
 # :tts - voces neuronales (tools/descargar-voces.sh) y binarios de prueba
 # (tools/descargar-dependencias.sh): pesados, se descargan con SHA-256 verificado
 tts/src/main/assets/voces/
+# :format:pdf - modelos de OCR (tools/descargar-voces.sh)
+format/pdf/src/main/assets/ocr/
 tools/cache/
 docs/investigacion/muestras-voz/30s/
 entregas/

@@ -13,8 +13,17 @@ import com.lectorvoz.app.books.OpenedBook
 import com.lectorvoz.app.integration.BookForVoice
 import com.lectorvoz.app.integration.PlaybackFacade
 import com.lectorvoz.app.integration.TimerChoice
+import com.lectorvoz.app.books.ObservedLibrary
+import com.lectorvoz.app.history.HistoryRecorder
+import com.lectorvoz.app.ocr.OcrManager
 import com.lectorvoz.app.update.AppRelease
+import com.lectorvoz.core.data.history.InMemoryReadingHistory
+import com.lectorvoz.core.data.history.ReadingHistoryRepository
+import com.lectorvoz.core.data.history.RoomReadingHistoryRepository
+import com.lectorvoz.tts.playback.TtsConfig
+import java.io.File
 import com.lectorvoz.app.update.UpdateChecker
+import com.lectorvoz.app.update.UpdateInstaller
 import com.lectorvoz.app.widget.ListenWidgetUpdater
 import com.lectorvoz.app.integration.PlaybackPort
 import com.lectorvoz.app.integration.UtteranceProviderImpl
@@ -73,7 +82,7 @@ class AppGraph(
     val context: Context,
     val appScope: CoroutineScope,
     val settings: SettingsRepository,
-    val library: LibraryRepository,
+    library: LibraryRepository,
     val bookmarks: BookmarkRepository,
     val pronunciation: PronunciationRepository,
     val stats: ReadingStatsRepository,
@@ -86,27 +95,58 @@ class AppGraph(
     exportFiles: ExportFiles = SafExportFiles(context),
     /** Consulta de la ultima version (sin red por defecto: las pruebas no salen a Internet). */
     updateFetch: suspend () -> AppRelease? = { null },
+    /** Historial de lecturas (en memoria por defecto: pruebas). */
+    val history: ReadingHistoryRepository = InMemoryReadingHistory(),
+    historyCovers: File? = null,
 ) {
+    /** Biblioteca sin avisos (para quien solo lee: OCR e historial). */
+    private val rawLibrary: LibraryRepository = library
+
+    /** Historial de lecturas: se anota al abrir, terminar y quitar libros. */
+    val historyRecorder = HistoryRecorder(appScope, history, rawLibrary, historyCovers)
+
+    /** OCR de los PDF escaneados y limpieza de lo guardado al terminar o quitar un libro. */
+    val ocr: OcrManager = OcrManager(
+        context, appScope, rawLibrary,
+        openPdf = { b ->
+            val lease = books.acquire(b, skipPdfHeaders = true)
+            (lease.opened.content as? BookContent.Pdf)?.book to { lease.release() }
+        },
+        removeAudio = { id -> runCatching { TtsConfig.audioCache(context).removeBook(id.toString()) } },
+    )
+
+    /** Biblioteca de la app: avisa al historial y al OCR de los momentos clave. */
+    val library: LibraryRepository = ObservedLibrary(rawLibrary, listOf(historyRecorder, ocr))
+
     /** Libros abiertos compartidos (voz, busqueda del lector, exportar). */
-    val books = SharedBooks(opener)
+    val books = SharedBooks(opener).also { opener.pdfTextFallback = { b -> ocr.fallbackFor(b) } }
 
     /** Libro abierto para la voz (independiente del lector: sigue sonando al salir). */
     val speech = SpeechBooks(this)
 
     /** Importacion de "Abrir con" y "Compartir" (sobrevive a la actividad). */
-    val imports = ImportCoordinator(appScope, library)
+    val imports = ImportCoordinator(appScope, this.library)
 
     /** Exportar a audio (sobrevive a la pantalla). */
     val exports = ExportManager(appScope, playback, books, settings, pronunciation, exportFiles)
 
     /** Posicion y estadisticas de escucha aunque el lector este cerrado. */
-    val listening = ListeningTracker(appScope, playback, library, stats, progressOf = { id, loc -> speech.progressOf(id, loc) })
+    val listening = ListeningTracker(appScope, playback, this.library, stats, progressOf = { id, loc -> speech.progressOf(id, loc) })
 
     /** Aviso de nueva version publicada en GitHub. */
     val updates: UpdateChecker by lazy { UpdateChecker(context, appScope, BuildConfig.VERSION_NAME, updateFetch) }
 
+    /** Descarga e instalacion de la version nueva. */
+    val installer: UpdateInstaller by lazy { UpdateInstaller(context, appScope) }
+
+    /**
+     * Solo la version publicada se instala a si misma (la de depuracion tiene otro
+     * identificador y firma: su aviso abre la pagina).
+     */
+    val canSelfUpdate: Boolean get() = !BuildConfig.DEBUG
+
     /** Widget de escritorio "seguir escuchando". */
-    val widget = ListenWidgetUpdater(context, appScope, library, playback) { listenTo(it) }
+    val widget = ListenWidgetUpdater(context, appScope, this.library, playback) { listenTo(it) }
 
     private val voiceSync = VoiceSettingsSync(appScope, playback, settings, pronunciation) { v, d -> speech.update(v, d) }
 
@@ -138,6 +178,18 @@ class AppGraph(
         voiceSync.start()
         listening.start()
         widget.start()
+        // OCR e historial segun los ajustes; el OCR de fondo sigue al libro que suena.
+        appScope.launch {
+            settings.app.map { it.ocrEnabled to it.historyEnabled }.distinctUntilChanged().collect { (ocrOn, historyOn) ->
+                ocr.setEnabled(ocrOn)
+                historyRecorder.enabled = historyOn
+            }
+        }
+        appScope.launch {
+            playback.state.map { it.bookId to it.playWhenReady }.distinctUntilChanged().collect { (id, play) -> ocr.setVoice(id, play) }
+        }
+        ocr.start()
+        historyRecorder.start()
         // Aviso de nueva version: al abrir la app (y al activarlo), como mucho una vez al dia.
         appScope.launch {
             settings.app.map { it.checkUpdates }.distinctUntilChanged().collect { on ->
@@ -221,6 +273,8 @@ class AppGraph(
                 playback = PlaybackFacade(app, scope),
                 voices = VoicesFacade(app),
                 updateFetch = UpdateChecker::fetchLatest,
+                history = RoomReadingHistoryRepository(db.readingHistoryDao(), File(app.filesDir, "historial")),
+                historyCovers = File(app.filesDir, "historial"),
             )
         }
     }

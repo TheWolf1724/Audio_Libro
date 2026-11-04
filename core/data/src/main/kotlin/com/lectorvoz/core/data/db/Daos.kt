@@ -189,3 +189,39 @@ interface ReadingSessionDao {
     @Query("DELETE FROM reading_sessions")
     suspend fun clear()
 }
+
+@Dao
+interface ReadingHistoryDao {
+    @Query("SELECT * FROM reading_history ORDER BY updated_at DESC")
+    fun observeAll(): Flow<List<ReadingHistoryEntity>>
+
+    @Query("SELECT * FROM reading_history WHERE quick_hash = :hash")
+    suspend fun byHash(hash: String): ReadingHistoryEntity?
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insert(entry: ReadingHistoryEntity): Long
+
+    @Update
+    suspend fun update(entry: ReadingHistoryEntity)
+
+    @Query("UPDATE reading_history SET book_id = NULL, progress = :progress, updated_at = :now WHERE book_id = :bookId")
+    suspend fun detach(bookId: Long, progress: Float, now: Long)
+
+    @Query("SELECT * FROM reading_history WHERE cover_path IS NULL AND book_id IS NOT NULL")
+    suspend fun withoutCover(): List<ReadingHistoryEntity>
+
+    @Query("UPDATE reading_history SET cover_path = :path WHERE id = :id")
+    suspend fun setCover(id: Long, path: String?)
+
+    @Query("SELECT cover_path FROM reading_history WHERE id = :id")
+    suspend fun coverOf(id: Long): String?
+
+    @Query("DELETE FROM reading_history WHERE id = :id")
+    suspend fun delete(id: Long)
+
+    @Query("SELECT cover_path FROM reading_history WHERE cover_path IS NOT NULL")
+    suspend fun allCovers(): List<String>
+
+    @Query("DELETE FROM reading_history")
+    suspend fun clear()
+}

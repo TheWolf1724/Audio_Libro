@@ -85,3 +85,37 @@ else
   echo "estimador optimizado instalado"
 fi
 echo "listo: $DESTINO"
+
+# Modelos de reconocimiento de texto (OCR) para PDF escaneados (04-11-2026): Tesseract,
+# repositorio oficial tesseract-ocr/tessdata (Apache-2.0), modelo LSTM entero (precision
+# cercana a "best" y mas rapido). Commit fijado y SHA-256 verificado.
+OCR_REV="ced78752cc61322fb554c280d13360b35b8684e4"
+OCR_DEST="$RAIZ/format/pdf/src/main/assets/ocr/tessdata"
+mkdir -p "$OCR_DEST"
+OCR=(
+  "spa|0b0fcbb4665189e01ab8019e591f014dd7260460de072543edd4b2cb4ede7c96"
+  "eng|daa0c97d651c19fba3b25e81317cd697e9908c8208090c94c3905381c23fc047"
+)
+for o in "${OCR[@]}"; do
+  IFS='|' read -r lengua sha <<< "$o"
+  dest="$OCR_DEST/$lengua.traineddata"
+  if echo "$sha  $dest" | sha256sum -c --status 2>/dev/null; then
+    echo "OCR ya instalado: $lengua"
+    continue
+  fi
+  cache="$CACHE/tessdata-$OCR_REV-$lengua.traineddata"
+  if ! { [[ -f "$cache" ]] && echo "$sha  $cache" | sha256sum -c --status; }; then
+    echo "descargando OCR: $lengua"
+    timeout 1800 nice -n 10 curl -fL --retry 3 -o "$cache.part" \
+      "https://raw.githubusercontent.com/tesseract-ocr/tessdata/$OCR_REV/$lengua.traineddata"
+    mv "$cache.part" "$cache"
+    if ! echo "$sha  $cache" | sha256sum -c --status; then
+      echo "ERROR: SHA-256 no coincide para el OCR $lengua" >&2
+      rm -f "$cache"
+      exit 1
+    fi
+  fi
+  cp "$cache" "$dest"
+  echo "OCR instalado: $lengua"
+done
+echo "listo: $OCR_DEST"

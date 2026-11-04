@@ -52,6 +52,12 @@ object TtsConfig {
 
     /** Limite de la cache de audio en disco (preparar mientras carga), en bytes. */
     @Volatile var audioCacheMaxBytes: Long = AudioDiskCache.DEFAULT_MAX_BYTES
+
+    /** Carpeta de la cache de audio en disco. */
+    fun audioCacheDir(context: Context): File = File(context.cacheDir, "audio-voz")
+
+    /** Cache de audio compartida del proceso (la misma instancia que usa el servicio). */
+    fun audioCache(context: Context): AudioDiskCache = AudioDiskCache.forRoot(audioCacheDir(context), audioCacheMaxBytes)
 }
 
 /**
@@ -88,7 +94,7 @@ class PlaybackService : MediaSessionService() {
     override fun onCreate() {
         super.onCreate()
         val store = VoiceStore(this)
-        val diskCache = AudioDiskCache(File(cacheDir, "audio-voz"), TtsConfig.audioCacheMaxBytes)
+        val diskCache = AudioDiskCache.forRoot(TtsConfig.audioCacheDir(this), TtsConfig.audioCacheMaxBytes)
         neural = NeuralTtsEngine(
             loader = SherpaSynthesizerLoader(store),
             numThreads = TtsConfig.neuralThreads,

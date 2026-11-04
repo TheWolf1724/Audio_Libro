@@ -48,6 +48,9 @@ class OpenedBook(
 
 /** Abre libros de la biblioteca con los motores de formato (fuera del hilo principal). */
 class BookOpener(private val context: Context) {
+    /** Texto de las paginas escaneadas de un PDF (OCR); nulo = sin OCR. */
+    @Volatile var pdfTextFallback: ((Book) -> com.lectorvoz.format.pdf.PageTextFallback?)? = null
+
     /** Un cerrojo por libro: dos aperturas a la vez no escriben la misma copia temporal. */
     private val copyLocks = ConcurrentHashMap<String, Mutex>()
 
@@ -60,6 +63,7 @@ class BookOpener(private val context: Context) {
             }
             BookFormat.PDF -> {
                 val pdf = book.localFile?.let { PdfBook.open(context, it) } ?: PdfBook.open(context, book.uri.toUri())
+                pdf.textFallback = pdfTextFallback?.invoke(book)
                 OpenedBook(book, BookContent.Pdf(pdf, PdfCleanerAdapter(pdf, skipPdfHeaders)), pdf.toc)
             }
         }

@@ -14,14 +14,24 @@ import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
 
-/** Version publicada en GitHub. */
-data class AppRelease(val version: String, val url: String)
+/**
+ * Version publicada en GitHub: numero, pagina, resumen de novedades y la APK (enlace, tamano y
+ * SHA-256 si GitHub lo da). Sin APK solo se puede abrir la pagina.
+ */
+data class AppRelease(
+    val version: String,
+    val url: String,
+    val notes: String = "",
+    val apkUrl: String? = null,
+    val apkSize: Long = 0L,
+    val apkSha256: String? = null,
+)
 
 /**
  * Aviso de nueva version. Como mucho una vez al dia (al abrir la app y si el usuario no lo ha
  * desactivado) pide a GitHub la ultima publicacion del repositorio y la compara con la
- * instalada. Solo se hace esa peticion, sin datos del usuario; no descarga ni instala nada:
- * el aviso abre la pagina de la publicacion en el navegador.
+ * instalada. Solo se hace esa peticion, sin datos del usuario. "Omitir por ahora" pospone el
+ * aviso 24 h; instalar lo hace [UpdateInstaller].
  */
 class UpdateChecker(
     private val prefs: SharedPreferences,
@@ -36,7 +46,7 @@ class UpdateChecker(
 
     private val mutable = MutableStateFlow(stored())
 
-    /** Version mas nueva que la instalada y no descartada; nula si no hay. */
+    /** Version mas nueva que la instalada y no pospuesta; nula si no hay. */
     val available: StateFlow<AppRelease?> = mutable
 
     private var running = false
@@ -57,6 +67,10 @@ class UpdateChecker(
                     .putLong(K_LAST_CHECK, now)
                     .putString(K_VERSION, latest.version)
                     .putString(K_URL, latest.url)
+                    .putString(K_NOTES, latest.notes)
+                    .putString(K_APK_URL, latest.apkUrl)
+                    .putLong(K_APK_SIZE, latest.apkSize)
+                    .putString(K_APK_SHA, latest.apkSha256)
                     .apply()
                 mutable.value = stored()
             } catch (e: CancellationException) {
@@ -69,10 +83,9 @@ class UpdateChecker(
         }
     }
 
-    /** El usuario cierra el aviso: no se vuelve a mostrar para esta version. */
-    fun dismiss() {
-        val shown = mutable.value ?: return
-        prefs.edit().putString(K_DISMISSED, shown.version).apply()
+    /** "Omitir por ahora": el aviso vuelve a salir pasadas 24 h. */
+    fun snooze() {
+        prefs.edit().putLong(K_SNOOZE_UNTIL, clock() + INTERVAL_MS).apply()
         mutable.value = null
     }
 
@@ -81,13 +94,23 @@ class UpdateChecker(
         mutable.value = null
     }
 
-    /** Aviso guardado, si sigue siendo mas nuevo que la instalada y no se descarto. */
+    /** Aviso guardado, si sigue siendo mas nuevo que la instalada y no esta pospuesto. */
     fun stored(): AppRelease? {
         val version = prefs.getString(K_VERSION, null) ?: return null
         val url = prefs.getString(K_URL, null) ?: return null
         if (!isNewer(version, installed)) return null
-        if (prefs.getString(K_DISMISSED, null) == version) return null
-        return AppRelease(version, url)
+        val until = prefs.getLong(K_SNOOZE_UNTIL, 0L)
+        val now = clock()
+        // Pospuesto (con margen por si el reloj se atraso mucho: nunca mas de 24 h).
+        if (now < until && until - now <= INTERVAL_MS) return null
+        return AppRelease(
+            version = version,
+            url = url,
+            notes = prefs.getString(K_NOTES, null).orEmpty(),
+            apkUrl = prefs.getString(K_APK_URL, null),
+            apkSize = prefs.getLong(K_APK_SIZE, 0L),
+            apkSha256 = prefs.getString(K_APK_SHA, null),
+        )
     }
 
     companion object {
@@ -96,13 +119,21 @@ class UpdateChecker(
         private const val K_LAST_CHECK = "ultima_comprobacion"
         private const val K_VERSION = "version"
         private const val K_URL = "url"
-        private const val K_DISMISSED = "descartada"
+        private const val K_NOTES = "novedades"
+        private const val K_APK_URL = "apk_url"
+        private const val K_APK_SIZE = "apk_bytes"
+        private const val K_APK_SHA = "apk_sha256"
+        private const val K_SNOOZE_UNTIL = "pospuesta_hasta"
         const val INTERVAL_MS = 24L * 60 * 60 * 1000
 
         private const val API = "https://api.github.com/repos/TheWolf1724/Audio_Libro/releases/latest"
 
         /** Solo se abren paginas del propio repositorio. */
         const val RELEASES_PREFIX = "https://github.com/TheWolf1724/Audio_Libro/releases/"
+
+        /** Lineas y caracteres maximos del resumen de novedades. */
+        private const val NOTES_LINES = 12
+        private const val NOTES_CHARS = 900
 
         /**
          * true si [candidate] es mayor que [current] ("1.2.0" > "1.1.9"; acepta "v" delante y
@@ -133,10 +164,57 @@ class UpdateChecker(
             val tag = o.optString("tag_name").takeIf { it.isNotBlank() } ?: return null
             val url = o.optString("html_url").takeIf { it.startsWith(RELEASES_PREFIX) } ?: return null
             if (parse(tag) == null) return null
-            return AppRelease(tag.trim().removePrefix("v").removePrefix("V"), url)
+            var apkUrl: String? = null
+            var apkSize = 0L
+            var apkSha: String? = null
+            val assets = o.optJSONArray("assets")
+            if (assets != null) {
+                for (i in 0 until assets.length()) {
+                    val a = assets.optJSONObject(i) ?: continue
+                    val name = a.optString("name")
+                    val link = a.optString("browser_download_url")
+                    // Solo APK del propio repositorio (GitHub redirige luego a su almacenamiento).
+                    if (!name.endsWith(".apk", ignoreCase = true) || !link.startsWith(RELEASES_PREFIX + "download/")) continue
+                    apkUrl = link
+                    apkSize = a.optLong("size")
+                    apkSha = a.optString("digest").takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")
+                        ?.lowercase()?.takeIf { it.length == 64 && it.all { c -> c in '0'..'9' || c in 'a'..'f' } }
+                    break
+                }
+            }
+            return AppRelease(
+                version = tag.trim().removePrefix("v").removePrefix("V"),
+                url = url,
+                notes = summarize(o.optString("body")),
+                apkUrl = apkUrl,
+                apkSize = apkSize,
+                apkSha256 = apkSha,
+            )
         }
 
-        /** Pide a GitHub la ultima publicacion (unica conexion de red de la app). */
+        /**
+         * Resumen legible de las novedades (Markdown de la publicacion): sin cabeceras, negritas
+         * ni enlaces, con vinetas simples y acotado a unas lineas.
+         */
+        fun summarize(markdown: String): String {
+            val lines = markdown.lineSequence()
+                .map { it.trim() }
+                .filter { it.isNotEmpty() && !it.startsWith("```") && !it.startsWith("|") && !it.startsWith("---") }
+                .map { line ->
+                    var l = line.trimStart('#').trim()
+                    l = l.replace(Regex("""\[([^\]]*)]\([^)]*\)"""), "$1")
+                        .replace("**", "").replace("__", "").replace("`", "")
+                    if (l.startsWith("- ") || l.startsWith("* ")) l = "• " + l.substring(2).trim()
+                    l
+                }
+                .filter { it.isNotBlank() }
+                .take(NOTES_LINES)
+                .toList()
+            val text = lines.joinToString("\n")
+            return if (text.length <= NOTES_CHARS) text else text.take(NOTES_CHARS).substringBeforeLast(' ') + "..."
+        }
+
+        /** Pide a GitHub la ultima publicacion. */
         suspend fun fetchLatest(): AppRelease? = withContext(Dispatchers.IO) {
             val conn = URL(API).openConnection() as HttpURLConnection
             try {
@@ -147,7 +225,7 @@ class UpdateChecker(
                 conn.setRequestProperty("User-Agent", "LectorVoz")
                 if (conn.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
                 // Respuesta acotada: una publicacion ocupa unos pocos KB.
-                val body = conn.inputStream.use { it.readNBytesCompat(MAX_BODY) }
+                val body = conn.inputStream.use { it.readAtMost(MAX_BODY) }
                 parseRelease(String(body, Charsets.UTF_8))
             } finally {
                 conn.disconnect()
@@ -156,7 +234,7 @@ class UpdateChecker(
 
         private const val MAX_BODY = 256 * 1024
 
-        private fun java.io.InputStream.readNBytesCompat(max: Int): ByteArray {
+        private fun java.io.InputStream.readAtMost(max: Int): ByteArray {
             val out = java.io.ByteArrayOutputStream()
             val buf = ByteArray(8192)
             while (out.size() < max) {

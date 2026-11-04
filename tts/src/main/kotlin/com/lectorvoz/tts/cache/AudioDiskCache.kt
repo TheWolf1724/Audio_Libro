@@ -111,6 +111,15 @@ class AudioDiskCache(
     /** Bytes ocupados en disco. */
     fun sizeBytes(): Long = synchronized(lock) { ensureTotal(); totalBytes }
 
+    /** Borra el audio guardado del libro [bookId] (terminado o quitado de la biblioteca). */
+    fun removeBook(bookId: String) = synchronized(lock) {
+        val dir = File(root, hashHex(bookId))
+        if (!dir.exists()) return@synchronized
+        indexes.keys.removeAll { it.parentFile == dir }
+        dir.deleteRecursively()
+        totalBytes = -1
+    }
+
     /** Borra toda la cache. */
     fun clear() = synchronized(lock) {
         root.deleteRecursively()
@@ -170,6 +179,16 @@ class AudioDiskCache(
     private fun chapterBase(bookId: String, chapter: Int): File = File(File(root, hashHex(bookId)), "c$chapter")
 
     companion object {
+        private val shared = HashMap<String, AudioDiskCache>()
+
+        /**
+         * Instancia unica por carpeta en el proceso: el servicio de voz y la app (que borra el
+         * audio de un libro terminado) comparten indices y no se pisan.
+         */
+        fun forRoot(root: File, maxBytes: Long = DEFAULT_MAX_BYTES): AudioDiskCache = synchronized(shared) {
+            shared.getOrPut(root.absolutePath) { AudioDiskCache(root, maxBytes) }.also { it.maxBytes = maxBytes }
+        }
+
         /** Limite por defecto: 300 MB. */
         const val DEFAULT_MAX_BYTES = 300L * 1024 * 1024
         private const val PCM = ".pcm"

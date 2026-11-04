@@ -69,6 +69,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        (application as LectorVozApp).graph.ocr.setAppVisible(true)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        (application as LectorVozApp).graph.ocr.setAppVisible(false)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleIntent(intent)

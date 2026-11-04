@@ -78,7 +78,55 @@ class MigrationTest {
             // La tabla nueva funciona.
             db.readingSessionDao().insert(ReadingSessionEntity(bookId = 1, kind = "READ", startedAt = 1, durationMs = 10_000, chars = 5))
             assertThat(db.readingSessionDao().observeCount().first()).isEqualTo(1)
-            assertThat(db.openHelper.readableDatabase.version).isEqualTo(2)
+            assertThat(db.openHelper.readableDatabase.version).isEqualTo(3)
+            // 2 -> 3: el libro abierto entra en el historial (sin sesiones: inicio = ultima apertura).
+            val h = db.readingHistoryDao().observeAll().first()
+            assertThat(h.map { it.quickHash }).containsExactly("h1")
+            assertThat(h.single().startedAt).isEqualTo(50L)
+            assertThat(h.single().finishedAt).isEqualTo(50L)
+            assertThat(h.single().bookId).isEqualTo(1L)
+        } finally {
+            db.close()
+            context.deleteDatabase(name)
+        }
+    }
+
+    /** 2 -> 3 desde el esquema 2: el inicio sale de la primera sesion registrada. */
+    @Test
+    fun migra2a3ConLaPrimeraSesionComoInicio() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val name = "migracion-prueba-2.db"
+        context.deleteDatabase(name)
+        val path = context.getDatabasePath(name)
+        val json = JSONObject(File("schemas/com.lectorvoz.core.data.db.LectorVozDatabase/2.json").readText()).getJSONObject("database")
+        path.parentFile?.mkdirs()
+        val raw = SQLiteDatabase.openOrCreateDatabase(path, null)
+        val entities = json.getJSONArray("entities")
+        for (i in 0 until entities.length()) {
+            val e = entities.getJSONObject(i)
+            val table = e.getString("tableName")
+            raw.execSQL(e.getString("createSql").replace("\${TABLE_NAME}", table))
+            val idx = e.optJSONArray("indices")
+            if (idx != null) for (j in 0 until idx.length()) raw.execSQL(idx.getJSONObject(j).getString("createSql").replace("\${TABLE_NAME}", table))
+        }
+        val setup = json.getJSONArray("setupQueries")
+        for (i in 0 until setup.length()) raw.execSQL(setup.getString(i))
+        raw.execSQL(
+            "INSERT INTO books (id, uri, local_path, format, title, authors, language, cover_path, size_bytes, quick_hash, " +
+                "added_at, last_opened_at, progress, locator_chapter, locator_offset, finished, favorite, finished_at) VALUES " +
+                "(1, 'content://a', NULL, 'PDF', 'Uno', 'Ana', 'es', NULL, 10, 'h1', 1, 900, 0.4, 3, 4, 0, 0, NULL)",
+        )
+        raw.execSQL("INSERT INTO reading_sessions (book_id, kind, started_at, duration_ms, chars) VALUES (1, 'READ', 300, 10, 1), (1, 'LISTEN', 200, 10, 1)")
+        raw.version = 2
+        raw.close()
+        val db = Room.databaseBuilder(context, LectorVozDatabase::class.java, name)
+            .addMigrations(*LectorVozDatabase.MIGRATIONS).allowMainThreadQueries().build()
+        try {
+            val h = db.readingHistoryDao().observeAll().first().single()
+            assertThat(h.startedAt).isEqualTo(200L)
+            assertThat(h.finishedAt).isNull()
+            assertThat(h.progress).isWithin(0.001f).of(0.4f)
+            assertThat(h.title).isEqualTo("Uno")
         } finally {
             db.close()
             context.deleteDatabase(name)

@@ -15,6 +15,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.lectorvoz.tts.playback.DevicePreload
 import com.lectorvoz.app.AppGraph
+import com.lectorvoz.app.ui.history.HistoryScreen
+import com.lectorvoz.app.ui.history.HistoryViewModel
 import com.lectorvoz.app.ui.library.LibraryRoute
 import com.lectorvoz.app.ui.library.LibraryViewModel
 import com.lectorvoz.app.ui.reader.ReaderScreen
@@ -68,7 +70,7 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
     NavHost(navController = nav, startDestination = Routes.LIBRARY) {
         composable(Routes.LIBRARY) {
             val vm: LibraryViewModel = viewModel(factory = viewModelFactory { initializer { LibraryViewModel(graph.library, graph.collections, graph.settings, onDelete = graph::deleteBook) } })
-            LibraryRoute(vm, graph.covers, onOpen = { nav.openReader(it.id) }, onSettings = { nav.navigate(Routes.SETTINGS) }, updates = graph.updates)
+            LibraryRoute(vm, graph.covers, onOpen = { nav.openReader(it.id) }, onSettings = { nav.navigate(Routes.SETTINGS) }, updates = graph.updates, installer = graph.installer.takeIf { graph.canSelfUpdate })
         }
         composable(Routes.READER, arguments = listOf(navArgument("libro") { type = NavType.LongType })) { entry ->
             val id = entry.arguments?.getLong("libro") ?: return@composable
@@ -86,7 +88,13 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
         composable(SettingsRoutes.READING) {
             val vm = settingsVm(graph)
             val s by vm.state.collectAsStateWithLifecycle()
-            SettingsScaffold("Lectura", back) { ReadingSettingsContent(s.reader, s.app, { vm.reader(it) }, { vm.app(it) }) }
+            val ocr by graph.ocr.status.collectAsStateWithLifecycle()
+            SettingsScaffold("Lectura", back) {
+                ReadingSettingsContent(
+                    s.reader, s.app, { vm.reader(it) }, { vm.app(it) },
+                    ocr = ocr, onClearOcr = { graph.ocr.clearAll() }, onClearHistory = { graph.historyRecorder.clear() },
+                )
+            }
         }
         composable(SettingsRoutes.VOICE) {
             val vm = settingsVm(graph)
@@ -124,6 +132,10 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
             ExportScreen(vm, back, onPickBook = { b -> nav.navigate(Routes.export(b.id)) })
         }
         composable(SettingsRoutes.ABOUT) { AboutScreen(back) }
+        composable(SettingsRoutes.HISTORY) {
+            val vm: HistoryViewModel = viewModel(factory = viewModelFactory { initializer { HistoryViewModel(graph.history, graph.library, graph.settings) } })
+            HistoryScreen(vm, graph.covers, back, onOpen = { id -> nav.openReader(id) })
+        }
     }
 }
 

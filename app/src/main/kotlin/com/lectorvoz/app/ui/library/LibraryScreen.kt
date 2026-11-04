@@ -33,7 +33,9 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.ui.platform.LocalUriHandler
 import com.lectorvoz.app.update.AppRelease
+import com.lectorvoz.app.update.InstallState
 import com.lectorvoz.app.update.UpdateChecker
+import com.lectorvoz.app.update.UpdateInstaller
 import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
@@ -102,9 +104,17 @@ interface LibraryActions {
 
 /** Ruta de la biblioteca: une ViewModel, selector de ficheros y pantalla. */
 @Composable
-fun LibraryRoute(vm: LibraryViewModel, covers: CoverLoader, onOpen: (Book) -> Unit, onSettings: () -> Unit, updates: UpdateChecker? = null) {
+fun LibraryRoute(
+    vm: LibraryViewModel,
+    covers: CoverLoader,
+    onOpen: (Book) -> Unit,
+    onSettings: () -> Unit,
+    updates: UpdateChecker? = null,
+    installer: UpdateInstaller? = null,
+) {
     val state by vm.state.collectAsStateWithLifecycle()
     val update by (updates?.available ?: remember { MutableStateFlow<AppRelease?>(null) }).collectAsStateWithLifecycle()
+    val install by (installer?.state ?: remember { MutableStateFlow<InstallState>(InstallState.Idle) }).collectAsStateWithLifecycle()
     val uri = LocalUriHandler.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         vm.import(uris)
@@ -131,12 +141,19 @@ fun LibraryRoute(vm: LibraryViewModel, covers: CoverLoader, onOpen: (Book) -> Un
     }
     LibraryScreen(
         state, covers, actions,
-        update = update,
-        onOpenUpdate = { r ->
-            // Solo paginas del propio repositorio (lo garantiza tambien la lectura de la respuesta).
-            if (r.url.startsWith(UpdateChecker.RELEASES_PREFIX)) runCatching { uri.openUri(r.url) }
+        update = update?.let { r ->
+            UpdateUi(r, install, metered = remember(r.version) { installer?.isMetered() ?: false }, canInstall = installer != null && r.apkUrl != null)
         },
-        onDismissUpdate = { updates?.dismiss() },
+        onUpdateAction = { action ->
+            val r = update ?: return@LibraryScreen
+            when (action) {
+                UpdateAction.INSTALL -> installer?.install(r)
+                UpdateAction.CANCEL -> installer?.cancel()
+                UpdateAction.SNOOZE -> { installer?.cancel(); updates?.snooze() }
+                // Solo paginas del propio repositorio (lo garantiza tambien la lectura de la respuesta).
+                UpdateAction.OPEN_PAGE -> if (r.url.startsWith(UpdateChecker.RELEASES_PREFIX)) runCatching { uri.openUri(r.url) }
+            }
+        },
     )
 }
 
@@ -147,9 +164,8 @@ fun LibraryScreen(
     state: LibraryUiState,
     covers: CoverLoader,
     actions: LibraryActions,
-    update: AppRelease? = null,
-    onOpenUpdate: (AppRelease) -> Unit = {},
-    onDismissUpdate: () -> Unit = {},
+    update: UpdateUi? = null,
+    onUpdateAction: (UpdateAction) -> Unit = {},
 ) {
     val snackbar = remember { SnackbarHostState() }
     var searching by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
@@ -211,7 +227,7 @@ fun LibraryScreen(
             if (state.importing > 0) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().testTag("importando").semantics { contentDescription = "Importando ${state.importing} libros" })
             }
-            update?.let { UpdateBanner(it, { onOpenUpdate(it) }, onDismissUpdate) }
+            update?.let { UpdateBanner(it, onUpdateAction) }
             if (!state.loading && state.totalCount == 0) {
                 EmptyLibrary(actions::import)
                 return@Column
@@ -436,19 +452,63 @@ private fun ContinueCard(b: Book, covers: CoverLoader, onClick: () -> Unit) {
     }
 }
 
-/** Aviso de nueva version: ver la publicacion (en el navegador) o descartarla. */
+/** Aviso de nueva version para la pantalla: publicacion, instalacion en curso y contexto. */
+data class UpdateUi(val release: AppRelease, val install: InstallState, val metered: Boolean, val canInstall: Boolean)
+
+enum class UpdateAction { INSTALL, CANCEL, SNOOZE, OPEN_PAGE }
+
+/** Aviso de nueva version: novedades, instalar (descarga e instala) u omitir 24 h. */
 @Composable
-private fun UpdateBanner(r: AppRelease, onOpen: () -> Unit, onDismiss: () -> Unit) {
+private fun UpdateBanner(u: UpdateUi, onAction: (UpdateAction) -> Unit) {
+    val r = u.release
+    var expanded by rememberSaveable(r.version) { mutableStateOf(false) }
     Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).testTag("aviso-version")) {
         Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
             Text("Hay una version nueva: ${r.version}", style = MaterialTheme.typography.titleSmall)
-            Text(
-                "Se descarga desde la pagina de la publicacion en GitHub y se instala encima (se conservan los libros y ajustes).",
-                style = MaterialTheme.typography.bodySmall,
-            )
+            if (r.notes.isNotBlank()) {
+                Text(
+                    r.notes,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = if (expanded) Int.MAX_VALUE else 4,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 4.dp, end = 8.dp).testTag("aviso-version-novedades"),
+                )
+                TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Ver menos" else "Ver todas las novedades") }
+            }
+            when (val st = u.install) {
+                is InstallState.Downloading -> {
+                    Text("Descargando...", style = MaterialTheme.typography.bodySmall)
+                    val p = st.progress
+                    if (p != null) LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).testTag("aviso-version-progreso"))
+                    else LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                }
+                InstallState.Installing -> Text("Instalando... (si Android lo pide, confirma la instalacion)", style = MaterialTheme.typography.bodySmall)
+                InstallState.NeedsPermission -> Text(
+                    "Permite a LectorVoz instalar aplicaciones en el ajuste que se ha abierto y vuelve a pulsar Instalar.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                is InstallState.Failed -> Text(st.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                InstallState.Idle -> if (u.canInstall && r.apkSize > 0) {
+                    Text(
+                        "Descarga de ${r.apkSize / (1024 * 1024)} MB" + if (u.metered) " (estas con datos moviles)" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDismiss, modifier = Modifier.testTag("aviso-version-ocultar")) { Text("Ahora no") }
-                TextButton(onClick = onOpen, modifier = Modifier.testTag("aviso-version-ver")) { Text("Ver") }
+                val busy = u.install is InstallState.Downloading || u.install == InstallState.Installing
+                if (u.install is InstallState.Downloading) {
+                    TextButton(onClick = { onAction(UpdateAction.CANCEL) }, modifier = Modifier.testTag("aviso-version-cancelar")) { Text("Cancelar") }
+                } else {
+                    TextButton(onClick = { onAction(UpdateAction.SNOOZE) }, enabled = !busy, modifier = Modifier.testTag("aviso-version-omitir")) { Text("Omitir por ahora") }
+                }
+                if (u.canInstall) {
+                    TextButton(onClick = { onAction(UpdateAction.INSTALL) }, enabled = !busy, modifier = Modifier.testTag("aviso-version-instalar")) {
+                        Text(if (u.install is InstallState.Failed) "Reintentar" else "Instalar")
+                    }
+                } else {
+                    TextButton(onClick = { onAction(UpdateAction.OPEN_PAGE) }, modifier = Modifier.testTag("aviso-version-ver")) { Text("Ver") }
+                }
             }
         }
     }

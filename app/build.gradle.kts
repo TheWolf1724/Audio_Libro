@@ -11,8 +11,8 @@ android {
 
     defaultConfig {
         applicationId = "com.lectorvoz.app"
-        versionCode = 9
-        versionName = "1.1.0"
+        versionCode = 10
+        versionName = "1.2.0"
     }
 
     // Firma de release local: la clave vive fuera del repositorio, en ~/.lectorvoz/
@@ -53,7 +53,7 @@ android {
     // tts/INTEGRACION.md: los modelos se leen de assets con AssetManager, sin comprimir
     // (si no, se descomprimen en RAM).
     androidResources {
-        noCompress += listOf("onnx", "bin")
+        noCompress += listOf("onnx", "bin", "traineddata")
     }
 
     packaging {

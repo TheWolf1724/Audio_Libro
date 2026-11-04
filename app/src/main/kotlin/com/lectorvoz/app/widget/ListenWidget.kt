@@ -3,9 +3,13 @@ package com.lectorvoz.app.widget
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.PowerManager
+import androidx.core.content.ContextCompat
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
@@ -84,8 +88,9 @@ internal data class WidgetContent(
 
 /**
  * Mantiene el widget al dia. Solo observa la biblioteca y la voz mientras haya algun widget
- * en el escritorio, y repinta solo cuando cambia lo que se ve (libro, % entero, escuchando o
- * no), agrupando cambios seguidos: no cuesta nada mientras se escucha.
+ * en el escritorio Y la pantalla este encendida (con ella apagada nadie lo ve: no se hace
+ * nada y se pone al dia al encenderla), y repinta solo cuando cambia lo que se ve (libro, %
+ * entero, escuchando o no), agrupando cambios seguidos.
  */
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
 class ListenWidgetUpdater(
@@ -98,28 +103,62 @@ class ListenWidgetUpdater(
 ) {
     private val component = ComponentName(context, ListenWidget::class.java)
     private val active = MutableStateFlow(false)
+    private val screenOn = MutableStateFlow(true)
     @Volatile private var last: WidgetContent? = null
+    private var screenReceiver: BroadcastReceiver? = null
 
     // Ultima portada decodificada (el widget solo muestra una).
     private var coverKey: String? = null
     private var coverBitmap: Bitmap? = null
 
     fun start() {
-        active.value = hasWidgets()
+        setActive(hasWidgets())
         scope.launch {
-            active.flatMapLatest { on -> if (on) content() else emptyFlow() }
+            combine(active, screenOn) { a, s -> a && s }
+                .distinctUntilChanged()
+                .flatMapLatest { on -> if (on) content() else emptyFlow() }
                 .debounce(DEBOUNCE_MS)
-                .collect { render(it) }
+                // Al volver a encender, si nada cambio no se repinta.
+                .collect { if (it != last) render(it) }
         }
     }
 
     fun setActive(on: Boolean) {
         active.value = on
-        if (!on) {
+        if (on) watchScreen() else {
+            unwatchScreen()
             last = null
             coverKey = null
             coverBitmap = null
         }
+    }
+
+    /** Escucha encender/apagar la pantalla (solo mientras hay widgets). */
+    private fun watchScreen() {
+        if (screenReceiver != null) return
+        screenOn.value = (context.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.isInteractive ?: true
+        val r = object : BroadcastReceiver() {
+            override fun onReceive(c: Context, i: Intent) {
+                screenOn.value = i.action != Intent.ACTION_SCREEN_OFF
+            }
+        }
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }
+        try {
+            ContextCompat.registerReceiver(context, r, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+            screenReceiver = r
+        } catch (e: RuntimeException) {
+            screenOn.value = true
+        }
+    }
+
+    private fun unwatchScreen() {
+        val r = screenReceiver ?: return
+        screenReceiver = null
+        runCatching { context.unregisterReceiver(r) }
+        screenOn.value = true
     }
 
     /** Repintar (el sistema lo pide al anadir el widget o reiniciar el escritorio). */

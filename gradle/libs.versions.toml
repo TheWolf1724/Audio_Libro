@@ -34,6 +34,8 @@ coroutines = "1.11.0"
 # Formatos
 jsoup = "1.23.2"
 pdfium = "2.0.3"
+# OCR de PDF escaneados: Tesseract 5 para Android (Apache-2.0), sin OpenMP (un hilo: menos calor).
+tesseract4android = "4.9.0"
 
 # :format:pdf / :reader
 # RecyclerView (Apache-2.0) para el modo scroll; 1.4.0 comprobada en
@@ -94,6 +96,7 @@ kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-t
 # Formatos
 jsoup = { module = "org.jsoup:jsoup", version.ref = "jsoup" }
 pdfium = { module = "io.legere:pdfiumandroid", version.ref = "pdfium" }
+tesseract4android = { module = "cz.adaptech.tesseract4android:tesseract4android", version.ref = "tesseract4android" }
 
 # :format:pdf / :reader
 androidx-recyclerview = { module = "androidx.recyclerview:recyclerview", version.ref = "recyclerview" }

@@ -137,3 +137,28 @@ data class ReadingSessionEntity(
     /** Caracteres avanzados durante la sesion (aprox.). */
     val chars: Long,
 )
+
+/**
+ * Historial de lecturas (version 3): una fila por libro (por [quickHash], asi que reimportar el
+ * mismo fichero continua su fila). Sin clave ajena: se conserva aunque el libro se borre de la
+ * biblioteca ([bookId] pasa a nulo). [coverPath] es una miniatura propia del historial.
+ */
+@Entity(
+    tableName = "reading_history",
+    indices = [Index(value = ["quick_hash"], unique = true), Index(value = ["book_id"]), Index(value = ["updated_at"])],
+)
+data class ReadingHistoryEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "book_id") val bookId: Long?,
+    @ColumnInfo(name = "quick_hash") val quickHash: String,
+    val title: String,
+    /** Autores separados por '\n'. */
+    val authors: String,
+    val format: BookFormat,
+    @ColumnInfo(name = "cover_path") val coverPath: String?,
+    @ColumnInfo(name = "started_at") val startedAt: Long,
+    @ColumnInfo(name = "finished_at") val finishedAt: Long?,
+    /** Progreso 0..1 en el ultimo cambio registrado (al abrir, terminar o quitar el libro). */
+    val progress: Float,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)

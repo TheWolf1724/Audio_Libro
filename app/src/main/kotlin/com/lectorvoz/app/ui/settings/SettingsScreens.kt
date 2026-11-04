@@ -12,7 +12,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
+import com.lectorvoz.app.ocr.OcrStatus
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -77,6 +80,7 @@ object SettingsRoutes {
     const val STATS = "ajustes/estadisticas"
     const val EXPORT = "ajustes/exportar"
     const val ABOUT = "ajustes/acerca"
+    const val HISTORY = "ajustes/historial"
 }
 
 /** Menu principal de ajustes. */
@@ -87,6 +91,7 @@ fun SettingsHome(onNavigate: (String) -> Unit, onBack: () -> Unit) {
         NavRow("Voz", "Voz, velocidad, pausas, idioma y resaltado", R.drawable.ic_record_voice_over, { onNavigate(SettingsRoutes.VOICE) })
         NavRow("Diccionario de pronunciacion", "Como debe sonar cada palabra", R.drawable.ic_edit, { onNavigate(SettingsRoutes.DICTIONARY) })
         NavRow("Accesibilidad", "Texto grande, contraste, fuente para dislexia", R.drawable.ic_accessibility, { onNavigate(SettingsRoutes.ACCESSIBILITY) })
+        NavRow("Historial de lecturas", "Lo que has leido, con fechas de inicio y fin", R.drawable.ic_menu_book, { onNavigate(SettingsRoutes.HISTORY) })
         NavRow("Estadisticas", "Tiempo leido y escuchado", R.drawable.ic_check_circle, { onNavigate(SettingsRoutes.STATS) })
         NavRow("Exportar audio", "Guardar un capitulo o el libro entero en audio", R.drawable.ic_download, { onNavigate(SettingsRoutes.EXPORT) })
         NavRow("Acerca de", "Version y licencias", R.drawable.ic_info, { onNavigate(SettingsRoutes.ABOUT) })
@@ -98,7 +103,15 @@ private fun em(v: Float) = "%.2f em".format(v)
 
 /** Todos los ajustes de lectura (rangos de docs/diseno/TEMAS.md seccion 6). */
 @Composable
-fun ReadingSettingsContent(s: ReaderSettings, app: AppPrefs, onChange: ((ReaderSettings) -> ReaderSettings) -> Unit, onApp: ((AppPrefs) -> AppPrefs) -> Unit) {
+fun ReadingSettingsContent(
+    s: ReaderSettings,
+    app: AppPrefs,
+    onChange: ((ReaderSettings) -> ReaderSettings) -> Unit,
+    onApp: ((AppPrefs) -> AppPrefs) -> Unit,
+    ocr: OcrStatus? = null,
+    onClearOcr: () -> Unit = {},
+    onClearHistory: () -> Unit = {},
+) {
     val r = SettingsRanges
     SectionHeader("Tema")
     ChoiceRow("Tema", ThemeMode.entries, s.theme, ::themeLabel, { v -> onChange { it.copy(theme = v) } }, tag = "lectura-theme")
@@ -136,8 +149,44 @@ fun ReadingSettingsContent(s: ReaderSettings, app: AppPrefs, onChange: ((ReaderS
     SwitchRow("PDF con los colores del tema", s.pdfRecolor, { v -> onChange { it.copy(pdfRecolor = v) } }, summary = "Recolorea fondo y texto de los PDF", tag = "lectura-pdfRecolor")
     SectionHeader("Biblioteca")
     SwitchRow("Copiar los libros al importar", app.copyOnImport, { v -> onApp { it.copy(copyOnImport = v) } }, summary = "Si se desactiva, solo se guarda un enlace al fichero original")
+    SectionHeader("PDF escaneados")
+    SwitchRow(
+        "Reconocer el texto (OCR)", app.ocrEnabled, { v -> onApp { it.copy(ocrEnabled = v) } },
+        summary = "Para leer y escuchar PDF que son fotos de paginas. Se hace en el movil, sin conexion, por delante de donde lees; al terminar el libro se borra",
+        tag = "app-ocrEnabled",
+    )
+    ocr?.let { o ->
+        val mb = o.storedBytes / (1024.0 * 1024.0)
+        Text(
+            (if (o.working) "Reconociendo paginas... " else "") + "Texto reconocido guardado: " + (if (mb < 0.1) "casi nada" else "%.1f MB".format(mb)),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 16.dp).testTag("app-ocr-espacio"),
+        )
+        if (o.storedBytes > 0) TextButton(onClick = onClearOcr, modifier = Modifier.padding(horizontal = 8.dp)) { Text("Borrar el texto reconocido") }
+    }
+    SectionHeader("Historial de lecturas")
+    SwitchRow(
+        "Guardar el historial", app.historyEnabled, { v -> onApp { it.copy(historyEnabled = v) } },
+        summary = "Titulo, portada y fechas de cada libro, aunque lo quites de la biblioteca", tag = "app-historyEnabled",
+    )
+    SwitchRow("Mostrar portada", app.historyShowCover, { v -> onApp { it.copy(historyShowCover = v) } }, tag = "app-historyShowCover")
+    SwitchRow("Mostrar autor", app.historyShowAuthor, { v -> onApp { it.copy(historyShowAuthor = v) } }, tag = "app-historyShowAuthor")
+    SwitchRow("Mostrar fecha de inicio", app.historyShowStarted, { v -> onApp { it.copy(historyShowStarted = v) } }, tag = "app-historyShowStarted")
+    SwitchRow("Mostrar fecha de fin", app.historyShowFinished, { v -> onApp { it.copy(historyShowFinished = v) } }, tag = "app-historyShowFinished")
+    SwitchRow("Mostrar progreso", app.historyShowProgress, { v -> onApp { it.copy(historyShowProgress = v) } }, tag = "app-historyShowProgress")
+    var confirmHistory by remember { mutableStateOf(false) }
+    TextButton(onClick = { confirmHistory = true }, modifier = Modifier.padding(horizontal = 8.dp).testTag("app-historial-borrar")) { Text("Borrar el historial") }
+    if (confirmHistory) {
+        AlertDialog(
+            onDismissRequest = { confirmHistory = false },
+            title = { Text("Borrar el historial") },
+            text = { Text("Se borraran todas las lecturas anotadas. Los libros y su progreso no cambian.") },
+            confirmButton = { TextButton(onClick = { onClearHistory(); confirmHistory = false }) { Text("Borrar") } },
+            dismissButton = { TextButton(onClick = { confirmHistory = false }) { Text("Cancelar") } },
+        )
+    }
     SectionHeader("Actualizaciones")
-    SwitchRow("Avisar de nuevas versiones", app.checkUpdates, { v -> onApp { it.copy(checkUpdates = v) } }, summary = "Una vez al dia, al abrir la app, mira en GitHub si hay una version nueva (no envia ningun dato tuyo)", tag = "app-checkUpdates")
+    SwitchRow("Avisar de nuevas versiones", app.checkUpdates, { v -> onApp { it.copy(checkUpdates = v) } }, summary = "Una vez al dia, al abrir la app, mira en GitHub si hay una version nueva (no envia ningun dato tuyo). Desde el aviso se puede instalar u omitir 24 h", tag = "app-checkUpdates")
 }
 
 private fun speedText(v: Float) = "x" + "%.2f".format(v)

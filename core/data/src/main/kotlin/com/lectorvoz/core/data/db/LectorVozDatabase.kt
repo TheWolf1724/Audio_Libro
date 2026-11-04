@@ -16,8 +16,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BookCollectionCrossRef::class,
         PronunciationRuleEntity::class,
         ReadingSessionEntity::class,
+        ReadingHistoryEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class LectorVozDatabase : RoomDatabase() {
@@ -26,6 +27,7 @@ abstract class LectorVozDatabase : RoomDatabase() {
     abstract fun collectionDao(): CollectionDao
     abstract fun pronunciationRuleDao(): PronunciationRuleDao
     abstract fun readingSessionDao(): ReadingSessionDao
+    abstract fun readingHistoryDao(): ReadingHistoryDao
 
     companion object {
         const val NAME = "lectorvoz.db"
@@ -56,8 +58,35 @@ abstract class LectorVozDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * 2 -> 3: historial de lecturas (`reading_history`), rellenado con los libros ya
+         * empezados: inicio = primera sesion registrada (o la ultima apertura), fin = fecha de
+         * terminado. Las miniaturas de portada las crea la app despues.
+         */
+        val MIGRATION_2_3: Migration = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `reading_history` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`book_id` INTEGER, `quick_hash` TEXT NOT NULL, `title` TEXT NOT NULL, `authors` TEXT NOT NULL, " +
+                        "`format` TEXT NOT NULL, `cover_path` TEXT, `started_at` INTEGER NOT NULL, `finished_at` INTEGER, " +
+                        "`progress` REAL NOT NULL, `updated_at` INTEGER NOT NULL)",
+                )
+                db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_reading_history_quick_hash` ON `reading_history` (`quick_hash`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reading_history_book_id` ON `reading_history` (`book_id`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_reading_history_updated_at` ON `reading_history` (`updated_at`)")
+                db.execSQL(
+                    "INSERT OR IGNORE INTO `reading_history` (`book_id`, `quick_hash`, `title`, `authors`, `format`, `cover_path`, " +
+                        "`started_at`, `finished_at`, `progress`, `updated_at`) " +
+                        "SELECT b.`id`, b.`quick_hash`, b.`title`, b.`authors`, b.`format`, NULL, " +
+                        "COALESCE((SELECT MIN(s.`started_at`) FROM `reading_sessions` s WHERE s.`book_id` = b.`id`), b.`last_opened_at`), " +
+                        "b.`finished_at`, b.`progress`, COALESCE(b.`finished_at`, b.`last_opened_at`) " +
+                        "FROM `books` b WHERE b.`last_opened_at` IS NOT NULL",
+                )
+            }
+        }
+
         /** Migraciones entre versiones. */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 
         /** Construye la base de datos en disco. */
         fun build(context: Context): LectorVozDatabase =

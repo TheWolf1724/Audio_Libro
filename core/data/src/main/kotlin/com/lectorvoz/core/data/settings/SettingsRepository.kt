@@ -78,6 +78,16 @@ data class AppPrefs(
     val reduceMotion: Boolean = false,
     /** Avisar de nuevas versiones (consulta las publicaciones de GitHub como mucho una vez al dia). */
     val checkUpdates: Boolean = true,
+    /** Reconocer el texto de los PDF escaneados (OCR en el movil, de fondo). */
+    val ocrEnabled: Boolean = true,
+    /** Guardar el historial de lecturas (aunque los libros se quiten de la biblioteca). */
+    val historyEnabled: Boolean = true,
+    /** Datos que muestra el historial. */
+    val historyShowCover: Boolean = true,
+    val historyShowAuthor: Boolean = true,
+    val historyShowStarted: Boolean = true,
+    val historyShowFinished: Boolean = true,
+    val historyShowProgress: Boolean = true,
 )
 
 /** Ajustes persistentes de la app. Todos los valores salen ya saneados. */
@@ -367,6 +377,13 @@ class DataStoreSettingsRepository(
         val dyslexia = booleanPreferencesKey("app.dislexia")
         val reduceMotion = booleanPreferencesKey("app.reducir_movimiento")
         val checkUpdates = booleanPreferencesKey("app.avisar_versiones")
+        val ocr = booleanPreferencesKey("app.ocr")
+        val history = booleanPreferencesKey("app.historial")
+        val historyCover = booleanPreferencesKey("app.historial.portada")
+        val historyAuthor = booleanPreferencesKey("app.historial.autor")
+        val historyStarted = booleanPreferencesKey("app.historial.inicio")
+        val historyFinished = booleanPreferencesKey("app.historial.fin")
+        val historyProgress = booleanPreferencesKey("app.historial.progreso")
     }
 
     private fun readApp(p: Preferences): AppPrefs {
@@ -379,6 +396,13 @@ class DataStoreSettingsRepository(
             dyslexiaFont = p[A.dyslexia] ?: d.dyslexiaFont,
             reduceMotion = p[A.reduceMotion] ?: d.reduceMotion,
             checkUpdates = p[A.checkUpdates] ?: d.checkUpdates,
+            ocrEnabled = p[A.ocr] ?: d.ocrEnabled,
+            historyEnabled = p[A.history] ?: d.historyEnabled,
+            historyShowCover = p[A.historyCover] ?: d.historyShowCover,
+            historyShowAuthor = p[A.historyAuthor] ?: d.historyShowAuthor,
+            historyShowStarted = p[A.historyStarted] ?: d.historyShowStarted,
+            historyShowFinished = p[A.historyFinished] ?: d.historyShowFinished,
+            historyShowProgress = p[A.historyProgress] ?: d.historyShowProgress,
         )
     }
 
@@ -390,6 +414,13 @@ class DataStoreSettingsRepository(
         p[A.dyslexia] = s.dyslexiaFont
         p[A.reduceMotion] = s.reduceMotion
         p[A.checkUpdates] = s.checkUpdates
+        p[A.ocr] = s.ocrEnabled
+        p[A.history] = s.historyEnabled
+        p[A.historyCover] = s.historyShowCover
+        p[A.historyAuthor] = s.historyShowAuthor
+        p[A.historyStarted] = s.historyShowStarted
+        p[A.historyFinished] = s.historyShowFinished
+        p[A.historyProgress] = s.historyShowProgress
     }
 
     // ------------------------------------------------------------------ por libro

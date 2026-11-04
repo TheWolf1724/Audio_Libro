@@ -47,6 +47,16 @@ class PdfBook internal constructor(
     @Volatile
     private var closed = false
 
+    /**
+     * Texto de las paginas sin texto propio (PDF escaneados): lo pone la app con el OCR.
+     * Nulo = esas paginas quedan sin texto.
+     */
+    @Volatile
+    var textFallback: PageTextFallback? = null
+
+    /** Paginas de la cache cuyo texto vino de [textFallback] (mismo candado que la cache). */
+    private val fallbackPages = HashSet<Int>()
+
     private fun checkOpen() { if (closed) throw PdfException.Closed() }
 
     private fun checkIndex(index: Int) {
@@ -97,14 +107,29 @@ class PdfBook internal constructor(
         if (cleaner !== PageTextCleaner.Identity) {
             synchronized(textCache) { cleanedCache[index] }?.let { if (it.usesCleaner(cleaner)) return it }
         }
-        val base = synchronized(textCache) { textCache[index] } ?: withContext(dispatcher) {
-            checkOpen()
-            currentCoroutineContext().ensureActive()
-            synchronized(textCache) { textCache[index] } ?: run {
-                val raw = backend.pageText(index)
-                val size = sizes[index] ?: backend.pageSizePoints(index).also { sizes[index] = it }
-                PdfPageText(index, raw.text, raw.boxes, size).also {
-                    synchronized(textCache) { textCache[index] = it }
+        val base = synchronized(textCache) { textCache[index] } ?: run {
+            val own = withContext(dispatcher) {
+                checkOpen()
+                currentCoroutineContext().ensureActive()
+                synchronized(textCache) { textCache[index] } ?: run {
+                    val raw = backend.pageText(index)
+                    val size = sizes[index] ?: backend.pageSizePoints(index).also { sizes[index] = it }
+                    PdfPageText(index, raw.text, raw.boxes, size)
+                }
+            }
+            // Pagina escaneada: el texto lo da el OCR (fuera del hilo de pdfium, que lo usa
+            // para dibujar la pagina que reconoce).
+            val fb = textFallback
+            val recognized = if (fb != null && !hasReadableText(own.rawText)) {
+                fb.pageText(this, index)?.let { PdfPageText(index, it.text, it.boxes, own.pageSize) }
+            } else {
+                null
+            }
+            val page = recognized ?: own
+            synchronized(textCache) {
+                textCache[index] ?: page.also {
+                    textCache[index] = it
+                    if (recognized != null) fallbackPages += index else fallbackPages -= index
                 }
             }
         }
@@ -120,9 +145,27 @@ class PdfBook internal constructor(
             if (cleaner === PageTextCleaner.Identity) textCache[index] else cleanedCache[index]?.takeIf { it.usesCleaner(cleaner) }
         }
 
+    /**
+     * true si la pagina [index] trae texto propio (no hace falta OCR). No usa ni llena la
+     * cache: es para revisar el libro en segundo plano.
+     */
+    suspend fun hasOwnText(index: Int): Boolean {
+        checkIndex(index)
+        synchronized(textCache) { textCache[index]?.takeIf { index !in fallbackPages } }?.let { if (hasReadableText(it.rawText)) return true }
+        return withContext(dispatcher) {
+            checkOpen()
+            hasReadableText(backend.pageText(index).text)
+        }
+    }
+
+    /** Olvida el texto cacheado de [index] (el OCR acaba de reconocerla). */
+    fun invalidateText(index: Int) {
+        synchronized(textCache) { textCache.remove(index); cleanedCache.remove(index); fallbackPages -= index }
+    }
+
     /** Suelta el texto cacheado (respuesta a falta de memoria). */
     fun trimMemory() {
-        synchronized(textCache) { textCache.clear(); cleanedCache.clear() }
+        synchronized(textCache) { textCache.clear(); cleanedCache.clear(); fallbackPages.clear() }
     }
 
     /** Fuente de texto para la voz (una "pagina" = un capitulo). */
@@ -143,6 +186,16 @@ class PdfBook internal constructor(
 
     companion object {
         private const val TEXT_CACHE = 6
+
+        /** Minimo de letras o cifras para considerar que una pagina trae texto propio. */
+        private const val MIN_OWN_CHARS = 12
+
+        /** true si [text] tiene texto real (no solo espacios o un numero de pagina suelto). */
+        fun hasReadableText(text: String): Boolean {
+            var n = 0
+            for (c in text) if (c.isLetterOrDigit() && ++n >= MIN_OWN_CHARS) return true
+            return false
+        }
 
         /** Abre un PDF desde un Uri de SAF o content://. */
         suspend fun open(context: Context, uri: Uri, password: String? = null): PdfBook {
@@ -197,4 +250,10 @@ class PdfBook internal constructor(
             children = children.map { it.toToc() },
         )
     }
+}
+
+/** Texto alternativo de las paginas sin texto propio (OCR). */
+fun interface PageTextFallback {
+    /** Texto de la pagina [index] de [book] o nulo. Puede tardar (reconocerla). */
+    suspend fun pageText(book: PdfBook, index: Int): RawPageText?
 }

@@ -28,8 +28,15 @@ auriculares. Gratis, sin anuncios y sin enviar nada a ningun servidor.
 - **Comodidad y accesibilidad**: temas claro, oscuro y proteccion ocular (dia y noche), alto
   contraste, fuentes Literata, Atkinson Hyperlegible y OpenDyslexic, texto grande, reducir
   movimiento.
+- **PDF escaneados**: reconoce el texto (OCR) en el propio movil y sin conexion, por delante
+  de donde lees, para poder leerlos en voz alta, resaltarlos y buscar en ellos. Ocupa poco
+  (unos KB por pagina) y se borra solo al terminar el libro o quitarlo de la biblioteca.
+- **Historial de lecturas**: cada libro con su portada y las fechas de inicio y fin, aunque ya
+  no este en la biblioteca. Se elige que datos mostrar (o se desactiva) en Ajustes.
 - **Widget de escritorio**: portada, titulo y progreso del ultimo libro, con un boton para
-  escuchar o pausar sin abrir la app.
+  escuchar o pausar sin abrir la app (no hace nada con la pantalla apagada).
+- **Actualizaciones**: aviso de version nueva con el resumen de novedades; "Instalar" la
+  descarga y la instala, "Omitir por ahora" lo pospone 24 h.
 - **Extras**: marcadores, busqueda, indice, estadisticas de lectura y escucha, series, y
   exportar un capitulo o el libro entero a audio.
 
@@ -41,20 +48,21 @@ auriculares. Gratis, sin anuncios y sin enviar nada a ningun servidor.
    [Releases](https://github.com/TheWolf1724/Audio_Libro/releases).
 2. Abrelo en el movil y permite la instalacion desde esa fuente si Android lo pide.
 
-Requisitos: **Android 8.0 o superior**. La APK pesa unos 170 MB porque incluye la voz
-neuronal completa, que funciona sin conexion. Con 3 GB de RAM o mas va con soltura; en
+Requisitos: **Android 8.0 o superior**. La APK pesa unos 210 MB porque incluye la voz
+neuronal completa y los modelos de reconocimiento de texto, que funcionan sin conexion. Con 3 GB de RAM o mas va con soltura; en
 moviles con menos memoria la app precarga menos audio para no agotarla.
 
 ---
 
 ## Privacidad
 
-Todo ocurre en el telefono: los libros, la voz y las estadisticas no salen de el. La app no
-tiene anuncios ni analitica. Internet solo se usa para el aviso de nuevas versiones: como
-mucho una vez al dia, al abrir la app, pregunta a GitHub cual es la ultima publicacion de este
-repositorio (no envia ningun dato tuyo). Se puede desactivar en Ajustes > Lectura >
-Actualizaciones. La app no descarga ni instala nada por su cuenta: el aviso abre la pagina de
-la publicacion en el navegador.
+Todo ocurre en el telefono: los libros, la voz, el reconocimiento de texto (OCR), el historial
+y las estadisticas no salen de el. La app no tiene anuncios ni analitica. Internet solo se usa
+para las actualizaciones: como mucho una vez al dia, al abrir la app, pregunta a GitHub cual es
+la ultima publicacion de este repositorio (no envia ningun dato tuyo) y, si pulsas "Instalar",
+descarga esa APK de aqui mismo, comprueba su huella SHA-256 y se la entrega al instalador de
+Android (que exige que este firmada con la misma clave). Se puede desactivar en Ajustes >
+Lectura > Actualizaciones.
 
 ---
 
@@ -66,8 +74,9 @@ Necesitas **JDK 21** y el **Android SDK** (plataforma `android-37`).
 git clone https://github.com/TheWolf1724/Audio_Libro
 cd Audio_Libro
 
-# 1) Voz neuronal (no va en el repositorio): descarga Supertonic 3 de las releases oficiales
-#    de sherpa-onnx y el estimador optimizado para movil, verificando su SHA-256.
+# 1) Voz neuronal y modelos de OCR (no van en el repositorio): descarga Supertonic 3 de las
+#    releases oficiales de sherpa-onnx, el estimador optimizado para movil y los modelos de
+#    Tesseract (espanol e ingles), verificando su SHA-256.
 tools/descargar-voces.sh
 
 # 2) Opcional: biblioteca nativa de sherpa-onnx para Linux, para las pruebas con la voz real.
@@ -111,6 +120,9 @@ La APK incluye componentes con sus propias licencias (tambien listadas en la pan
 | [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) | Apache 2.0 |
 | ONNX Runtime | MIT |
 | pdfium (pdfiumandroid) | Apache 2.0 / BSD |
+| [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) y [Tesseract4Android](https://github.com/adaptech-cz/Tesseract4Android) | Apache 2.0 |
+| Modelos de idioma de Tesseract ([tessdata](https://github.com/tesseract-ocr/tessdata), espanol e ingles) | Apache 2.0 |
+| Leptonica, libjpeg y libpng (dentro de Tesseract4Android) | BSD 2 clausulas (Leptonica), IJG, libpng |
 | jsoup | MIT |
 | AndroidX, Jetpack Compose, Media3, Room, DataStore, Kotlin, kotlinx.coroutines, Apache Commons Compress | Apache 2.0 |
 | Fuentes Literata, Atkinson Hyperlegible Next y OpenDyslexic | SIL Open Font License 1.1 |

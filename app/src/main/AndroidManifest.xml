@@ -4,6 +4,9 @@
 
     <!-- El PlaybackService (Media3) y sus permisos vienen del manifest de :tts. -->
 
+    <!-- Instalar la version nueva descargada de GitHub (Android pide permiso al usuario). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <application
         android:name=".LectorVozApp"
         android:allowBackup="true"
@@ -66,6 +69,11 @@
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
+
+        <!-- Resultado del instalador del sistema al actualizar. -->
+        <receiver
+            android:name=".update.InstallResultReceiver"
+            android:exported="false" />
 
         <!-- Widget de escritorio "seguir escuchando". -->
         <receiver

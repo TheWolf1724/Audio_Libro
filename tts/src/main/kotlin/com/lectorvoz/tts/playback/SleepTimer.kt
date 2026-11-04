@@ -18,7 +18,11 @@ import kotlinx.coroutines.launch
  */
 class SleepTimer(
     private val scope: CoroutineScope,
-    /** Restante en ms; se llama cada segundo (y en cada paso del fundido). */
+    /**
+     * Restante en ms. Se avisa al empezar, al alargar, cada [PUBLISH_MS] y, en los ultimos
+     * [windowMs], cada segundo: la app muestra minutos, asi que avisar cada segundo solo
+     * despertaria a todos los que observan el estado de la voz.
+     */
     private val onTick: (remainingMs: Long) -> Unit,
     /** Factor de volumen 0..1 del fundido (1 = sin fundido). */
     private val onFade: (factor: Float) -> Unit,
@@ -72,6 +76,7 @@ class SleepTimer(
         job = scope.launch {
             onTick(remaining)
             updateWindow()
+            var published = remaining
             while (remaining > 0) {
                 val inFade = remaining <= fadeMs
                 val step = minOf(if (inFade) FADE_STEP_MS else TICK_MS, remaining)
@@ -80,7 +85,10 @@ class SleepTimer(
                 val realStep = if (!inFade && untilFade in 1 until step) untilFade else step
                 delay(realStep)
                 remaining -= realStep
-                onTick(remaining)
+                if (shouldPublish(remaining, published)) {
+                    onTick(remaining)
+                    published = remaining
+                }
                 updateWindow()
                 if (remaining <= fadeMs) onFade(remaining.toFloat() / fadeMs)
             }
@@ -108,6 +116,9 @@ class SleepTimer(
         setWindow(false)
         if (wasRunning) onFade(1f)
     }
+
+    private fun shouldPublish(ms: Long, published: Long): Boolean =
+        ms <= 0L || (ms <= windowMs && ms % TICK_MS == 0L) || ms % PUBLISH_MS == 0L || published - ms >= PUBLISH_MS
 
     private fun updateWindow() = setWindow(remaining in 1..windowMs)
 
@@ -139,6 +150,9 @@ class SleepTimer(
         const val SHAKE_EXTENSION_MS = 10 * 60_000L
 
         private const val TICK_MS = 1_000L
+
+        /** Fuera de los ultimos segundos, el restante se publica cada 10 s. */
+        const val PUBLISH_MS = 10_000L
         private const val FADE_STEP_MS = 200L
     }
 }

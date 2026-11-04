@@ -205,6 +205,20 @@ class Revision3AppTest {
             exportFiles = RecordingFiles(),
         )
 
+    /** La escucha guarda por la biblioteca observada: el historial se entera de que se termino. */
+    @Test
+    fun terminarEscuchandoLlegaAlHistorial() = runTest(UnconfinedTestDispatcher()) {
+        val playback = FakePlaybackPort()
+        val library = FakeLibraryRepository(listOf(book(7)))
+        val g = graph(backgroundScope, playback, library, FakeBookmarks())
+        g.start()
+        g.library.markOpened(7)
+        playback.mutable.value = VoiceUiState(bookId = 7, position = Locator(0, 5), playWhenReady = true, isPlaying = true)
+        playback.mutable.value = VoiceUiState(bookId = 7, position = Locator(0, 9), playWhenReady = false, ended = true)
+        val e = g.history.entries.first().single()
+        assertThat(e.finished).isTrue()
+    }
+
     @Test
     fun marcarDesdeLaNotificacionConLibroBorradoNoTumbaNiParaElRecolector() = runTest(UnconfinedTestDispatcher()) {
         val playback = FakePlaybackPort()

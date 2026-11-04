@@ -138,21 +138,74 @@ class ScreensTest {
     }
 
     @Test
-    fun avisoDeVersionNuevaSeAbreYSeDescarta() {
+    fun avisoDeVersionNuevaMuestraNovedadesEInstalaUOmite() {
         val actions = RecordingActions()
-        val r = com.lectorvoz.app.update.AppRelease("1.2.0", "https://github.com/TheWolf1724/Audio_Libro/releases/tag/v1.2.0")
-        var update by mutableStateOf<com.lectorvoz.app.update.AppRelease?>(r)
-        val opened = ArrayList<String>()
+        val r = com.lectorvoz.app.update.AppRelease(
+            "1.2.0", "https://github.com/TheWolf1724/Audio_Libro/releases/tag/v1.2.0",
+            notes = "\u2022 OCR para PDF escaneados", apkUrl = "https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/a.apk", apkSize = 170L * 1024 * 1024,
+        )
+        var ui by mutableStateOf<com.lectorvoz.app.ui.library.UpdateUi?>(
+            com.lectorvoz.app.ui.library.UpdateUi(r, com.lectorvoz.app.update.InstallState.Idle, metered = true, canInstall = true),
+        )
+        val done = ArrayList<com.lectorvoz.app.ui.library.UpdateAction>()
         rule.setContent {
-            MaterialTheme {
-                LibraryScreen(LibraryUiState(loading = false), covers, actions, update = update, onOpenUpdate = { opened += it.url }, onDismissUpdate = { update = null })
-            }
+            MaterialTheme { LibraryScreen(LibraryUiState(loading = false), covers, actions, update = ui, onUpdateAction = { done += it }) }
         }
         rule.onNodeWithText("Hay una version nueva: 1.2.0").assertIsDisplayed()
+        rule.onNodeWithText("\u2022 OCR para PDF escaneados").assertIsDisplayed()
+        rule.onNodeWithText("Descarga de 170 MB (estas con datos moviles)").assertIsDisplayed()
+        rule.onNodeWithTag("aviso-version-instalar").performClick()
+        // Descargando: progreso y cancelar en vez de omitir.
+        ui = ui!!.copy(install = com.lectorvoz.app.update.InstallState.Downloading(0.4f))
+        rule.waitForIdle()
+        rule.onNodeWithTag("aviso-version-progreso").assertIsDisplayed()
+        rule.onNodeWithTag("aviso-version-cancelar").performClick()
+        ui = ui!!.copy(install = com.lectorvoz.app.update.InstallState.Idle)
+        rule.waitForIdle()
+        rule.onNodeWithTag("aviso-version-omitir").performClick()
+        assertThat(done).containsExactly(
+            com.lectorvoz.app.ui.library.UpdateAction.INSTALL,
+            com.lectorvoz.app.ui.library.UpdateAction.CANCEL,
+            com.lectorvoz.app.ui.library.UpdateAction.SNOOZE,
+        ).inOrder()
+        // Sin APK (o en depuracion): solo ver la pagina.
+        ui = ui!!.copy(canInstall = false)
+        rule.waitForIdle()
+        rule.onNodeWithTag("aviso-version-instalar").assertDoesNotExist()
         rule.onNodeWithTag("aviso-version-ver").performClick()
-        assertThat(opened).containsExactly(r.url)
-        rule.onNodeWithTag("aviso-version-ocultar").performClick()
-        rule.onNodeWithTag("aviso-version").assertDoesNotExist()
+        assertThat(done.last()).isEqualTo(com.lectorvoz.app.ui.library.UpdateAction.OPEN_PAGE)
+    }
+
+    @Test
+    fun historialMuestraLoElegidoYFiltra() {
+        val terminado = com.lectorvoz.core.data.history.HistoryEntry(1, null, "Terminado", listOf("Ana"), com.lectorvoz.core.model.BookFormat.EPUB, null, 0L, 86_400_000L * 40, 1f, 2L)
+        val enCurso = com.lectorvoz.core.data.history.HistoryEntry(2, 5, "En curso", listOf("Luis"), com.lectorvoz.core.model.BookFormat.PDF, null, 0L, null, 0.25f, 1L)
+        var prefs by mutableStateOf(AppPrefs())
+        val opened = ArrayList<Long>()
+        rule.setContent {
+            MaterialTheme {
+                com.lectorvoz.app.ui.history.HistoryContent(
+                    com.lectorvoz.app.ui.history.HistoryUiState(listOf(terminado, enCurso), prefs, loading = false),
+                    covers, onBack = {}, onOpen = { opened += it }, onDelete = {},
+                )
+            }
+        }
+        rule.onNodeWithText("Ana").assertIsDisplayed()
+        rule.onNodeWithText("Leido: 25 %").assertIsDisplayed()
+        rule.onNodeWithText("Ya no esta en la biblioteca").assertIsDisplayed()
+        rule.onNodeWithText("Terminado:", substring = true).assertIsDisplayed()
+        // Abrir solo los que siguen en la biblioteca.
+        rule.onNodeWithTag("historial-2").performClick()
+        assertThat(opened).containsExactly(5L)
+        // Ocultar autor y progreso.
+        prefs = prefs.copy(historyShowAuthor = false, historyShowProgress = false)
+        rule.waitForIdle()
+        rule.onNodeWithText("Ana").assertDoesNotExist()
+        rule.onNodeWithText("Leido: 25 %").assertDoesNotExist()
+        // Filtro: solo terminadas.
+        rule.onNodeWithTag("historial-filtro-FINISHED").performClick()
+        rule.onNodeWithTag("historial-2").assertDoesNotExist()
+        rule.onNodeWithTag("historial-1").assertExists()
     }
 
     @Test
@@ -211,6 +264,9 @@ class ScreensTest {
         }
         for (c in fields(ReaderSettings::class.java)) rule.onNodeWithTag("lectura-$c").assertExists()
         rule.onNodeWithTag("app-checkUpdates").assertExists()
+        for (t in listOf("app-ocrEnabled", "app-historyEnabled", "app-historyShowCover", "app-historyShowAuthor", "app-historyShowStarted", "app-historyShowFinished", "app-historyShowProgress")) {
+            rule.onNodeWithTag(t).assertExists()
+        }
     }
 
     @Test

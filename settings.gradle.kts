@@ -21,7 +21,11 @@ dependencyResolutionManagement {
         // :tts - sherpa-onnx no esta en Maven Central; JitPack publica el AAR oficial
         // (mismo SHA-256 que el de GitHub Releases). Limitado a ese grupo.
         maven("https://jitpack.io") {
-            content { includeGroup("com.github.k2-fsa.sherpa-onnx") }
+            content {
+                includeGroup("com.github.k2-fsa.sherpa-onnx")
+                // :format:pdf - OCR (Tesseract4Android, Apache-2.0; AAR fijado por version).
+                includeGroup("cz.adaptech.tesseract4android")
+            }
         }
     }
 }
