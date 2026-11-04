@@ -53,6 +53,7 @@ import com.lectorvoz.app.books.SafExportFiles
 import com.lectorvoz.app.books.SharedBooks
 import com.lectorvoz.app.integration.BookContent
 import com.lectorvoz.app.playback.ListeningTracker
+import com.lectorvoz.app.playback.ReadingDiagnostics
 import com.lectorvoz.app.playback.VoiceSettingsSync
 import com.lectorvoz.core.data.pronunciation.PronunciationEntry
 import com.lectorvoz.core.model.Locator
@@ -153,6 +154,9 @@ class AppGraph(
 
     /** Widget de escritorio "seguir escuchando". */
     val widget = ListenWidgetUpdater(context, appScope, this.library, playback) { listenTo(it) }
+
+    /** Registro opcional de la secuencia de lectura (diagnostico de saltos de voz). */
+    val readingDiagnostics = ReadingDiagnostics(context)
 
     private val voiceSync = VoiceSettingsSync(appScope, playback, settings, pronunciation) { v, d -> speech.update(v, d) }
 

@@ -17,6 +17,7 @@ import com.lectorvoz.format.pdf.PdfBook
 import com.lectorvoz.format.pdf.PdfException
 import com.lectorvoz.reader.TextProgress
 import com.lectorvoz.tts.UtteranceProvider
+import com.lectorvoz.tts.playback.TtsConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.withContext
@@ -142,6 +143,12 @@ class UtteranceProviderImpl(
         // Troceo fuera del hilo de quien llama (el controlador lo pide desde el principal al
         // empezar, saltar o retroceder): un capitulo grande no debe congelar la interfaz.
         val list = withContext(Dispatchers.Default) { buildChapter(index, b, s) }
+        if (TtsConfig.diagnostics) {
+            TtsConfig.diag("PAGINA cap=$index n=${list.size} frases:")
+            list.forEachIndexed { i, u ->
+                TtsConfig.diag("  [$i] id=${u.id} off=${u.range.start.offset} '${TtsConfig.text40(u.displayText)}'")
+            }
+        }
         mutex.withLock { if (generation == gen) cache[index] = list }
         return list
     }

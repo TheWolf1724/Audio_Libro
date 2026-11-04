@@ -1,5 +1,8 @@
 package com.lectorvoz.app.ui.settings
 
+import android.content.Intent
+import android.widget.Toast
+import androidx.core.content.FileProvider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -59,6 +62,7 @@ import com.lectorvoz.core.data.library.Book
 import com.lectorvoz.core.data.pronunciation.PronunciationEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -347,6 +351,9 @@ fun AboutScreen(
     onCheckNow: () -> Unit = {},
     manual: ManualResult = ManualResult.NONE,
     onManualDismiss: () -> Unit = {},
+    diagnosticsEnabled: Boolean = false,
+    onDiagnosticsChange: (Boolean) -> Unit = {},
+    diagnosticsFile: () -> File? = { null },
 ) {
     val context = LocalContext.current
     var shown by rememberSaveable { mutableStateOf<String?>(null) }
@@ -385,6 +392,29 @@ fun AboutScreen(
                 modifier = Modifier.padding(horizontal = 16.dp).testTag("app-buscar-resultado"),
             )
         }
+        SectionHeader("Diagnostico")
+        SwitchRow(
+            "Registrar lectura (diagnostico)", diagnosticsEnabled, onDiagnosticsChange,
+            summary = "Guarda que frases lee la voz, para diagnosticar saltos. Activalo, reproduce la pagina y comparte el fichero.",
+            tag = "app-diagnostico-lectura",
+        )
+        Button(
+            onClick = {
+                val f = diagnosticsFile()
+                if (f == null) {
+                    Toast.makeText(context, "Aun no hay diagnostico. Activa el registro y reproduce una pagina.", Toast.LENGTH_LONG).show()
+                    return@Button
+                }
+                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                context.startActivity(Intent.createChooser(send, "Compartir diagnostico"))
+            },
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).heightIn(min = 48.dp).testTag("app-compartir-diagnostico"),
+        ) { Text("Compartir diagnostico") }
         SectionHeader("Licencias")
         LICENSES.forEach { (name, license, asset) ->
             Column(

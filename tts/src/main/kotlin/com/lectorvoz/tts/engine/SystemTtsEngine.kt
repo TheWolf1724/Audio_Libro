@@ -9,6 +9,7 @@ import android.speech.tts.Voice
 import com.lectorvoz.core.model.TtsEngineType
 import com.lectorvoz.core.model.Utterance
 import com.lectorvoz.core.model.VoiceSettings
+import com.lectorvoz.tts.playback.TtsConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeoutOrNull
@@ -115,6 +116,10 @@ class SystemTtsEngine(
             val pauseMs = Pauses.afterMs(u, s)
             if (pauseMs > 0) t.playSilentUtterance(pauseMs.toLong(), TextToSpeech.QUEUE_ADD, SILENCE_PREFIX + idOf(u))
             pending.addLast(u)
+            if (TtsConfig.diagnostics) {
+                val loc = u.range.start
+                TtsConfig.diag("SYS-ENCOLA id=${u.id} cap=${loc.chapter} off=${loc.offset} '${TtsConfig.text40(u.displayText)}'")
+            }
         }
 
         suspend fun refill() {
@@ -148,13 +153,17 @@ class SystemTtsEngine(
                         // Las anteriores (si el motor no notifico alguna) tambien terminaron.
                         while (pending.isNotEmpty()) {
                             val head = pending.removeFirst()
+                            if (TtsConfig.diagnostics) TtsConfig.diag("SYS-DONE id=${head.id}")
                             listener.onUtteranceDone(head)
                             if (head === u) break
                         }
                         refill()
                         if (pending.isEmpty() && exhausted) return
                     }
-                    is Event.Failed -> throw SpeechEngineException("Error del motor TTS (codigo ${ev.code})")
+                    is Event.Failed -> {
+                        if (TtsConfig.diagnostics) TtsConfig.diag("SYS-ERROR id=${u.id} codigo=${ev.code}")
+                        throw SpeechEngineException("Error del motor TTS (codigo ${ev.code})")
+                    }
                 }
             }
         } finally {
