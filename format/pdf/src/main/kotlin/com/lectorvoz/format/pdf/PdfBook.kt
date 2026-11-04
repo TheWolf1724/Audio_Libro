@@ -72,12 +72,28 @@ class PdfBook internal constructor(
             if (field == value) return
             field = value
             synchronized(textCache) {
+                forceFallbackGen++
                 textCache.clear()
                 cleanedCache.clear()
                 fallbackPages.clear()
                 failedPages.clear()
             }
         }
+
+    /**
+     * Generacion del estado de [forceFallback] (sube en cada cambio, bajo el candado de la
+     * cache). [pageText] la captura al decidir el OCR y la revisa antes de cachear: si cambio
+     * en medio (carrera con el setter, M1) no cachea una pagina incoherente.
+     */
+    @Volatile
+    private var forceFallbackGen: Int = 0
+
+    /**
+     * Punto de prueba: se invoca tras decidir el OCR y antes de insertar en la cache, para
+     * reproducir de forma determinista la carrera con el setter de [forceFallback] (M1). Nulo
+     * en produccion (coste: una comprobacion de nulo por pagina no cacheada).
+     */
+    internal var onBeforeCacheForTest: (() -> Unit)? = null
 
     private fun checkOpen() { if (closed) throw PdfException.Closed() }
 
@@ -146,6 +162,8 @@ class PdfBook internal constructor(
             // Pagina escaneada: el texto lo da el OCR (fuera del hilo de pdfium, que lo usa
             // para dibujar la pagina que reconoce).
             val fb = textFallback
+            // Generacion del flag al decidir el OCR: si cambia antes de cachear, no se cachea.
+            val gen = forceFallbackGen
             val needsFallback = fb != null && (forceFallback || !hasReadableText(own.rawText))
             var failed = false
             val recognized = if (needsFallback) {
@@ -169,8 +187,17 @@ class PdfBook internal constructor(
                 return if (cleaner === PageTextCleaner.Identity) own else own.withCleaner(cleaner)
             }
             val page = recognized ?: own
+            onBeforeCacheForTest?.invoke()
             synchronized(textCache) {
-                textCache[index] ?: page.also {
+                textCache[index]?.let { return@run it }
+                // M1: si el flag de OCR cambio tras decidir el OCR (el setter se intercalo entre
+                // el calculo y esta insercion) y la pagina que ibamos a cachear no trae OCR
+                // aunque ahora se exija, no se cachea: seria incoherente (quedaria sin OCR hasta
+                // invalidarla). Se devuelve provisional y la siguiente peticion la recalcula.
+                if (gen != forceFallbackGen && forceFallback && recognized == null && fb != null) {
+                    return if (cleaner === PageTextCleaner.Identity) page else page.withCleaner(cleaner)
+                }
+                page.also {
                     textCache[index] = it
                     if (recognized != null) fallbackPages += index else fallbackPages -= index
                 }

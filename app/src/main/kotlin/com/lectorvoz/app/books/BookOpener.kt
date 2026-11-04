@@ -51,7 +51,7 @@ class OpenedBook(
 }
 
 /** Abre libros de la biblioteca con los motores de formato (fuera del hilo principal). */
-class BookOpener(private val context: Context) {
+open class BookOpener(private val context: Context) {
     /** Texto de las paginas escaneadas de un PDF (OCR); nulo = sin OCR. */
     @Volatile var pdfTextFallback: ((Book) -> com.lectorvoz.format.pdf.PageTextFallback?)? = null
 
@@ -68,7 +68,7 @@ class BookOpener(private val context: Context) {
      * el libro ya abierto se cierra aqui (si no, el `ZipFile` o el documento pdfium quedaria
      * abierto sin nadie que lo cierre) y se relanza la cancelacion.
      */
-    suspend fun open(book: Book, skipPdfHeaders: Boolean = true): OpenedBook {
+    open suspend fun open(book: Book, skipPdfHeaders: Boolean = true): OpenedBook {
         val epubFile = if (book.format == BookFormat.EPUB) withContext(Dispatchers.IO) { fileFor(book) } else null
         val opened = withContext(NonCancellable + Dispatchers.IO) {
             when (book.format) {
@@ -164,15 +164,31 @@ class SharedBooks(private val opener: BookOpener) {
 
     /** Abre [book] (o reutiliza la instancia abierta). */
     suspend fun acquire(book: Book, skipPdfHeaders: Boolean): Lease = openLock.withLock {
-        synchronized(open) {
-            open[book.id]?.let { e ->
-                e.refs++
-                return@withLock Lease(e)
-            }
+        val existing = synchronized(open) { open[book.id]?.also { it.refs++ } }
+        if (existing != null) {
+            // Al reutilizar un Entry, la preferencia "forzar OCR" del libro pudo cambiar
+            // mientras seguia abierto (activar OCR con la voz fuera del libro, A1): se reaplica
+            // para que la voz, la busqueda y la exportacion no lean el texto incompleto.
+            reapplyForceOcr(existing.opened, book)
+            return@withLock Lease(existing)
         }
         val e = Entry(opener.open(book, skipPdfHeaders), 1)
         synchronized(open) { open[book.id] = e }
         Lease(e)
+    }
+
+    /**
+     * Reaplica la preferencia "forzar OCR" por libro a una instancia PDF ya abierta. Si el flag
+     * cambia, [PdfBook.forceFallback] olvida el texto cacheado y se reinicia el limpiador para
+     * no servir texto preparado sin OCR.
+     */
+    private suspend fun reapplyForceOcr(opened: OpenedBook, book: Book) {
+        val pdf = opened.content as? BookContent.Pdf ?: return
+        val force = opener.pdfForceOcr?.invoke(book) ?: return
+        if (pdf.book.forceFallback != force) {
+            pdf.book.forceFallback = force
+            pdf.cleaner.reset()
+        }
     }
 
     /** Numero de libros abiertos (pruebas). */

@@ -129,6 +129,23 @@ class OcrTest {
     }
 
     @Test
+    fun forzarOcrEntreElCalculoYLaCacheNoDejaLaPaginaSinOcr() = runTest {
+        // M1: el setter de forceFallback se intercala entre el calculo del texto (fuera del
+        // candado) y su insercion. Sin la correccion, la pagina quedaba cacheada SIN OCR pese a
+        // exigirse; con ella no se cachea una pagina incoherente y la siguiente peticion la rehace.
+        val backend = Backend()
+        val book = PdfBook.create(backend, Dispatchers.Unconfined, "x")
+        book.textFallback = PageTextFallback { _, _, _ -> recognized() }
+        // Simula el cambio de flag justo antes de insertar en la cache (la ventana de la carrera).
+        book.onBeforeCacheForTest = { book.forceFallback = true; book.onBeforeCacheForTest = null }
+        // Esta peticion decidio "sin OCR" (la pagina trae texto): devuelve provisional su texto...
+        assertThat(book.pageText(0).rawText).isEqualTo("Esta pagina trae su propio texto.")
+        // ...pero no lo cachea: la siguiente peticion recalcula con el flag nuevo y da el OCR.
+        assertThat(book.pageText(0).rawText).isEqualTo("Hola mundo\n\nOtra linea")
+        assertThat(book.hasOwnText(0)).isFalse()
+    }
+
+    @Test
     fun idiomaDelModelo() {
         assertThat(OcrEngine.languageFor("en-GB")).isEqualTo("eng")
         assertThat(OcrEngine.languageFor("es")).isEqualTo("spa")
