@@ -209,6 +209,31 @@ class OcrManagerTest {
         assertThat(recognized).hasSize(2)
     }
 
+    /**
+     * S2-1: el forzado de OCR por libro (decision explicita del usuario) reconoce A DEMANDA
+     * aunque el OCR automatico global este apagado; sin forzar, con el global apagado, una pagina
+     * con texto propio no pide OCR (se respeta el ajuste global).
+     */
+    @Test
+    fun forzarOcrPorLibroReconoceAunConElOcrGlobalApagado() = runBlocking {
+        val b = pdfBook(book(1))
+        val library = FakeLibraryRepository(listOf(b))
+        val store = OcrStore(tmp.root)
+        // Todas las paginas traen texto propio (pdfium incompleto, p.ej. versalitas).
+        val pdf = PdfBook.create(Backend(3, withText = setOf(0, 1, 2)), Dispatchers.Unconfined, "x")
+        val m = manager(library, pdf, store)
+        pdf.textFallback = m.fallbackFor(b)
+        // OCR global apagado.
+        m.setEnabled(false)
+        // Sin forzado por libro: la pagina con texto propio no pasa por OCR.
+        assertThat(pdf.pageText(0).rawText).isEqualTo("Texto propio de la pagina 0 del libro")
+        assertThat(recognized).isEmpty()
+        // El usuario fuerza el OCR en este libro: la lectura a demanda reconoce igualmente.
+        pdf.forceFallback = true
+        assertThat(pdf.pageText(0).rawText).isEqualTo("Pagina reconocida 0")
+        assertThat(recognized.map { it.first }).contains(0)
+    }
+
     /** M4: desactivar el OCR cancela un reconocimiento en vuelo (no reinstala ni recarga modelos). */
     @Test
     fun desactivarCancelaElReconocimientoEnVuelo() = runBlocking {

@@ -143,10 +143,14 @@ class OcrManager(
      */
     fun fallbackFor(book: Book): PageTextFallback = PageTextFallback { pdf, index, wait ->
         withContext(Dispatchers.IO) { store.read(book.id, index) } ?: run {
-            if (!wait || !enabled.value) return@run null
-            val r = page(book, pdf, index, urgent = true) ?: throw java.io.IOException("No se pudo reconocer el texto de la pagina ${index + 1}")
+            // El interruptor global ([enabled]) gobierna el OCR AUTOMATICO de los PDF escaneados.
+            // El forzado por libro ([PdfBook.forceFallback]) es una decision explicita del usuario:
+            // su lectura a demanda (wait) reconoce aunque el OCR global este apagado (S2-1).
+            val forced = pdf.forceFallback
+            if (!wait || (!enabled.value && !forced)) return@run null
+            val r = page(book, pdf, index, urgent = true, force = forced) ?: throw java.io.IOException("No se pudo reconocer el texto de la pagina ${index + 1}")
             // La voz va pagina a pagina: la siguiente se adelanta de fondo.
-            if (index + 1 < pdf.pageCount) scope.launch { runCatching { page(book, pdf, index + 1, urgent = false) } }
+            if (index + 1 < pdf.pageCount) scope.launch { runCatching { page(book, pdf, index + 1, urgent = false, force = forced) } }
             r
         }
     }
@@ -156,14 +160,15 @@ class OcrManager(
      * reconocimiento no depende de quien lo pide: si este se cancela (pausa, salto, la app pasa
      * a segundo plano) la pagina se termina y se guarda igual, sin tirar el trabajo hecho.
      */
-    private suspend fun page(book: Book, pdf: PdfBook, index: Int, urgent: Boolean): RawPageText? {
+    private suspend fun page(book: Book, pdf: PdfBook, index: Int, urgent: Boolean, force: Boolean = false): RawPageText? {
         withContext(Dispatchers.IO) { store.read(book.id, index) }?.let { return it }
         val key = (book.id shl 24) or index.toLong()
         val job = inFlight.computeIfAbsent(key) {
             scope.async(Dispatchers.IO, start = CoroutineStart.LAZY) {
                 try {
-                    // Si se desactivo el OCR entre el encolado y el arranque, no se instala ni usa el modelo.
-                    if (!enabled.value) return@async null
+                    // Si se desactivo el OCR entre el encolado y el arranque, no se instala ni usa el
+                    // modelo; salvo forzado por libro ([force]), peticion explicita del usuario (S2-1).
+                    if (!enabled.value && !force) return@async null
                     mutableRecognizing.update { it + key }
                     val r = recognizer.recognize(pdf, index, OcrEngine.languageFor(book.language), urgent)
                     if (r != null) {
@@ -226,6 +231,12 @@ class OcrManager(
     private suspend fun process(bookId: Long, focused: Boolean, pdfOf: suspend (Book) -> PdfBook?) {
         var book = library.get(bookId) ?: return
         if (book.format != BookFormat.PDF || !shouldProcess(book, focused)) return
+        // TODO(S2-2, futura "pre-OCR"): si el libro quedo marcado "textual" (y sus paginas como
+        // native) en una pasada anterior, al forzar OCR por libro el seguimiento de fondo lo sigue
+        // viendo como textual (ventana corta por delante) y salta las paginas native sin
+        // reconocerlas; la voz obtiene el OCR a demanda ([fallbackFor] con wait), con posible
+        // latencia entre paginas. Pendiente: al forzar OCR, ignorar o invalidar esas marcas para
+        // preleer por delante. No se implementa aqui.
         val textual = withContext(Dispatchers.IO) { store.isTextual(bookId) }
         val native = withContext(Dispatchers.IO) { store.nativePages(bookId) }.toHashSet()
         val stored = withContext(Dispatchers.IO) { store.recognizedPages(bookId) }.toHashSet()

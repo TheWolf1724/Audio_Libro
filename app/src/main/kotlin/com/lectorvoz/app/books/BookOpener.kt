@@ -163,28 +163,33 @@ class SharedBooks(private val opener: BookOpener) {
     }
 
     /** Abre [book] (o reutiliza la instancia abierta). */
-    suspend fun acquire(book: Book, skipPdfHeaders: Boolean): Lease = openLock.withLock {
-        val existing = synchronized(open) { open[book.id]?.also { it.refs++ } }
-        if (existing != null) {
-            // Al reutilizar un Entry, la preferencia "forzar OCR" del libro pudo cambiar
-            // mientras seguia abierto (activar OCR con la voz fuera del libro, A1): se reaplica
-            // para que la voz, la busqueda y la exportacion no lean el texto incompleto.
-            reapplyForceOcr(existing.opened, book)
-            return@withLock Lease(existing)
+    suspend fun acquire(book: Book, skipPdfHeaders: Boolean): Lease {
+        // La preferencia "forzar OCR" (lectura suspendida de DataStore) se lee FUERA de openLock:
+        // asi una adquisicion no serializa a las demas (inicio de voz, busqueda, exportacion,
+        // seguimiento del OCR) detras de esa IO (S2-3). Dentro del candado solo se aplica el flag.
+        val force = opener.pdfForceOcr?.invoke(book)
+        return openLock.withLock {
+            val existing = synchronized(open) { open[book.id]?.also { it.refs++ } }
+            if (existing != null) {
+                // Al reutilizar un Entry, la preferencia "forzar OCR" del libro pudo cambiar
+                // mientras seguia abierto (activar OCR con la voz fuera del libro, A1): se reaplica
+                // para que la voz, la busqueda y la exportacion no lean el texto incompleto.
+                if (force != null) reapplyForceOcr(existing.opened, force)
+                return@withLock Lease(existing)
+            }
+            val e = Entry(opener.open(book, skipPdfHeaders), 1)
+            synchronized(open) { open[book.id] = e }
+            Lease(e)
         }
-        val e = Entry(opener.open(book, skipPdfHeaders), 1)
-        synchronized(open) { open[book.id] = e }
-        Lease(e)
     }
 
     /**
-     * Reaplica la preferencia "forzar OCR" por libro a una instancia PDF ya abierta. Si el flag
-     * cambia, [PdfBook.forceFallback] olvida el texto cacheado y se reinicia el limpiador para
-     * no servir texto preparado sin OCR.
+     * Reaplica el valor ya resuelto de "forzar OCR" por libro a una instancia PDF ya abierta. Si
+     * el flag cambia, [PdfBook.forceFallback] olvida el texto cacheado y se reinicia el limpiador
+     * para no servir texto preparado sin OCR. No hace IO: el valor se leyo fuera del candado.
      */
-    private suspend fun reapplyForceOcr(opened: OpenedBook, book: Book) {
+    private fun reapplyForceOcr(opened: OpenedBook, force: Boolean) {
         val pdf = opened.content as? BookContent.Pdf ?: return
-        val force = opener.pdfForceOcr?.invoke(book) ?: return
         if (pdf.book.forceFallback != force) {
             pdf.book.forceFallback = force
             pdf.cleaner.reset()
