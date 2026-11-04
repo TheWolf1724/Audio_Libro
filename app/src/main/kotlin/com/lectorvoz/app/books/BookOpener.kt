@@ -55,6 +55,9 @@ class BookOpener(private val context: Context) {
     /** Texto de las paginas escaneadas de un PDF (OCR); nulo = sin OCR. */
     @Volatile var pdfTextFallback: ((Book) -> com.lectorvoz.format.pdf.PageTextFallback?)? = null
 
+    /** Si un PDF debe forzar el OCR aunque traiga capa de texto (ajuste por libro). */
+    @Volatile var pdfForceOcr: (suspend (Book) -> Boolean)? = null
+
     /** Un cerrojo por libro: dos aperturas a la vez no escriben la misma copia temporal. */
     private val copyLocks = ConcurrentHashMap<String, Mutex>()
 
@@ -74,6 +77,7 @@ class BookOpener(private val context: Context) {
                     val pdf = book.localFile?.let { PdfBook.open(context, it) } ?: PdfBook.open(context, book.uri.toUri())
                     try {
                         pdf.textFallback = pdfTextFallback?.invoke(book)
+                        pdf.forceFallback = pdfForceOcr?.invoke(book) ?: false
                         OpenedBook(book, BookContent.Pdf(pdf, PdfCleanerAdapter(pdf, skipPdfHeaders)), pdf.toc)
                     } catch (t: Throwable) {
                         pdf.close()

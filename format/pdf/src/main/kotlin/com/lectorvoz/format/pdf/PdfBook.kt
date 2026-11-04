@@ -61,6 +61,24 @@ class PdfBook internal constructor(
     /** Paginas escaneadas cuyo reconocimiento fallo en la ultima peticion (mismo candado). */
     private val failedPages = HashSet<Int>()
 
+    /**
+     * Fuerza el OCR ([textFallback]) aunque la pagina traiga su capa de texto: para PDF con
+     * texto incompleto (p. ej. versalitas que pdfium no extrae y la voz se saltaria). Al
+     * cambiar se olvida el texto ya extraido para volver a obtenerlo por OCR.
+     */
+    @Volatile
+    var forceFallback: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            synchronized(textCache) {
+                textCache.clear()
+                cleanedCache.clear()
+                fallbackPages.clear()
+                failedPages.clear()
+            }
+        }
+
     private fun checkOpen() { if (closed) throw PdfException.Closed() }
 
     private fun checkIndex(index: Int) {
@@ -128,7 +146,7 @@ class PdfBook internal constructor(
             // Pagina escaneada: el texto lo da el OCR (fuera del hilo de pdfium, que lo usa
             // para dibujar la pagina que reconoce).
             val fb = textFallback
-            val needsFallback = fb != null && !hasReadableText(own.rawText)
+            val needsFallback = fb != null && (forceFallback || !hasReadableText(own.rawText))
             var failed = false
             val recognized = if (needsFallback) {
                 try {
@@ -176,6 +194,8 @@ class PdfBook internal constructor(
      */
     suspend fun hasOwnText(index: Int): Boolean {
         checkIndex(index)
+        // Con el OCR forzado ninguna pagina cuenta como "con texto propio": todas pasan por OCR.
+        if (forceFallback) return false
         synchronized(textCache) { textCache[index]?.takeIf { index !in fallbackPages } }?.let { if (hasReadableText(it.rawText)) return true }
         return withContext(dispatcher) {
             checkOpen()

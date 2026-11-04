@@ -84,6 +84,8 @@ fun AppearancePanel(
     onOverrides: ((BookOverrides) -> BookOverrides) -> Unit,
     modifier: Modifier = Modifier,
     onPreview: ((ReaderSettings) -> ReaderSettings) -> Unit = {},
+    /** true si el libro es PDF: habilita el ajuste "Leer este PDF con OCR". */
+    isPdf: Boolean = false,
 ) {
     val perBook = overrides.fontFamily != null || overrides.fontSizeSp != null || overrides.readingMode != null
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp).testTag("panel-apariencia")) {
@@ -149,6 +151,20 @@ fun AppearancePanel(
                     onReader { it.copy(pageAnimationMillis = v.roundToInt()) }
                 })
             }
+        }
+
+        if (isPdf) {
+            SectionHeader("Reconocimiento del texto")
+            SwitchRow(
+                "Leer este PDF con OCR",
+                overrides.forceOcr,
+                { v -> onOverrides { it.copy(forceOcr = v) } },
+                summary = "Actívalo solo si, al escuchar este PDF, la voz se salta o no lee algunas frases " +
+                    "(por ejemplo, palabras en versalitas o con una tipografía especial que el PDF no expone " +
+                    "como texto). La app reconocerá el texto a partir de la imagen de la página. El " +
+                    "reconocimiento tarda un poco más y se aplica únicamente a este libro.",
+                tag = "apariencia-forzar-ocr",
+            )
         }
 
         SectionHeader("Brillo")

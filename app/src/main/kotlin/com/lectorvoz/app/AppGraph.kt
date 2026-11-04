@@ -123,7 +123,10 @@ class AppGraph(
     val library: LibraryRepository = ObservedLibrary(rawLibrary, listOf(historyRecorder, ocr))
 
     /** Libros abiertos compartidos (voz, busqueda del lector, exportar). */
-    val books = SharedBooks(opener).also { opener.pdfTextFallback = { b -> ocr.fallbackFor(b) } }
+    val books = SharedBooks(opener).also {
+        opener.pdfTextFallback = { b -> ocr.fallbackFor(b) }
+        opener.pdfForceOcr = { b -> settings.forceOcr(b.id).first() }
+    }
 
     /** Libro abierto para la voz (independiente del lector: sigue sonando al salir). */
     val speech = SpeechBooks(this)

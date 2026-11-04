@@ -202,7 +202,7 @@ fun ReaderScreen(
         val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = panel != ReaderPanel.APPEARANCE)
         ModalBottomSheet(onDismissRequest = { panel = ReaderPanel.NONE }, sheetState = sheet) {
             when (panel) {
-                ReaderPanel.APPEARANCE -> AppearancePanel(state.settings, state.overrides, systemDark, vm::updateReader, vm::updateOverrides, onPreview = vm::previewReader)
+                ReaderPanel.APPEARANCE -> AppearancePanel(state.settings, state.overrides, systemDark, vm::updateReader, vm::updateOverrides, onPreview = vm::previewReader, isPdf = state.book?.format == com.lectorvoz.core.model.BookFormat.PDF)
                 ReaderPanel.TOC -> TocList(state.toc, state.locator.chapter) { vm.goTo(it); panel = ReaderPanel.NONE }
                 ReaderPanel.BOOKMARKS -> BookmarkList(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteBookmark, onAdd = vm::addBookmark)
                 ReaderPanel.SEARCH -> SearchPanel(state.search, vm::search, { vm.openSearchResult(it); panel = ReaderPanel.NONE }, vm::clearSearch)
