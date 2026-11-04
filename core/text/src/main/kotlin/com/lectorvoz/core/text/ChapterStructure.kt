@@ -78,6 +78,7 @@ internal class ChapterStructure(
                 }
             }
             markVerseRuns(text, paras)
+            skipBorderPageNumbers(text, paras)
             val calls = scanNoteCalls(text, paras, emptyList())
             return ChapterStructure(text, paras, calls, IntArray(0), emptyMap())
         }
@@ -117,6 +118,7 @@ internal class ChapterStructure(
                 }
             }
             markVerseRuns(text, paras)
+            skipBorderPageNumbers(text, paras)
             markTableHeaders(text, paras, textBlocks)
             val calls = scanNoteCalls(text, paras, links)
             val local = HashMap<String, String>()
@@ -176,7 +178,7 @@ internal class ChapterStructure(
             val line = text.substring(s, e)
             val type = when {
                 CELL_SEPARATOR in line -> ParaType.TABLE_ROW
-                '\n' !in line && isPageNumber(line) -> ParaType.SKIP
+                '\n' !in line && isDecoratedPageNumber(line) -> ParaType.SKIP
                 line.length <= 80 && '\n' !in line && (HEADING_WORDS.matches(line) && !line.trimEnd().endsWith(",")) -> ParaType.HEADING
                 ROMAN_HEADING.matches(line) -> ParaType.HEADING
                 line.length <= 60 && isAllCaps(line) -> ParaType.HEADING
@@ -193,6 +195,33 @@ internal class ChapterStructure(
             val letters = line.filter { it in "ivxlc" }
             // "xii" si; "civil" no (no es un romano valido).
             return letters.isEmpty() || line.any { isAsciiDigit(it) } || SpanishNormalizer.isRoman(letters.uppercase())
+        }
+
+        /** Numero "pelado": solo digitos ascii (sin adornos ni palabras), p.ej. "3000". */
+        internal fun isBareNumber(line: String): Boolean {
+            val t = line.trim()
+            return t.isNotEmpty() && t.all { isAsciiDigit(it) }
+        }
+
+        /**
+         * Numero de pagina DECORADO: adornado ("Pag 12", "12 de 300", "- 12 -") o romano
+         * ("xii"), pero NO un numero pelado ("3000"). El decorado se descarta en cualquier
+         * posicion; el pelado es contenido (puede ser un valor de una tarjeta de juego) y solo
+         * se descarta en el borde del capitulo via [skipBorderPageNumbers].
+         */
+        internal fun isDecoratedPageNumber(line: String): Boolean = isPageNumber(line) && !isBareNumber(line)
+
+        /**
+         * Red de seguridad: descarta un numero PELADO que sea el primer o ultimo parrafo de
+         * contenido del capitulo (resto tipico de numero de pagina de borde), solo si hay al
+         * menos 2 parrafos de contenido. Un numero pelado a mitad de texto se lee (contenido).
+         */
+        private fun skipBorderPageNumbers(text: String, paras: List<Para>) {
+            val content = paras.filter { it.type != ParaType.SEPARATOR && it.type != ParaType.SKIP }
+            if (content.size < 2) return
+            for (p in listOf(content.first(), content.last())) {
+                if (isBareNumber(text.substring(p.start, p.end))) p.type = ParaType.SKIP
+            }
         }
 
         private fun isBlank(text: String, s: Int, e: Int): Boolean {

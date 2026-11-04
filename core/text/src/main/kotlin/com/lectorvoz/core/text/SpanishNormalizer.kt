@@ -142,7 +142,7 @@ class SpanishNormalizer(
             if (w.length < 2) return false
             for (c in w) if (c !in 'A'..'Z' && c != 'Ñ') return false
             if (w in wordAcronyms) return false
-            val spell = w in spellAcronyms || (!capsSentence && !isRoman(w) && !pronounceable(w))
+            val spell = w in spellAcronyms || (!capsSentence && !isRoman(w) && !pronounceable(w) && !isWordLikeCaps(w))
             if (!spell) return false
             val sb = StringBuilder()
             for (c in w) {
@@ -805,6 +805,18 @@ class SpanishNormalizer(
             if (t > 1) return false
             if (t == 1 && w.last() !in CODAS) return false
             return true
+        }
+
+        /**
+         * Heuristica: true si una palabra larga toda en mayusculas parece una palabra real
+         * (no una sigla), p.ej. "DESBLOQUEADO". Larga (>=5) y con proporcion de vocales de
+         * palabra (>=25% pero no todas), para no deletrearla aunque [pronounceable] falle por
+         * un grupo consonantico que cruza silaba ("SBL").
+         */
+        internal fun isWordLikeCaps(w: String): Boolean {
+            if (w.length < 5) return false
+            val vowels = w.count { it in VOWELS }
+            return vowels * 100 >= w.length * 25 && vowels < w.length
         }
 
         private fun isCapsSentence(s: String): Boolean {
