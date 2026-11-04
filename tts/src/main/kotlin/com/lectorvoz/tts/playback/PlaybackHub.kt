@@ -60,6 +60,12 @@ class PlaybackHub {
     /** Nivel de precarga que usa ahora el motor (nulo si no ha leido aun en este proceso). */
     val preload: StateFlow<PreloadStatus?> = mutablePreload.asStateFlow()
 
+    /**
+     * El lector esta en pantalla (lo pone la app): solo entonces hace falta seguir la voz al
+     * instante para el resaltado; si no, el motor mira la reproduccion con menos frecuencia.
+     */
+    val readerVisible = MutableStateFlow(false)
+
     /** Ajustes de voz vigentes; la UI los escribe y el servicio los aplica. */
     val settings = MutableStateFlow(VoiceSettings())
 

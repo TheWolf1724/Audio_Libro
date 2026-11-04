@@ -76,6 +76,8 @@ data class AppPrefs(
     val dyslexiaFont: Boolean = false,
     /** Reducir movimiento: sin curl ni deslizamientos. */
     val reduceMotion: Boolean = false,
+    /** Avisar de nuevas versiones (consulta las publicaciones de GitHub como mucho una vez al dia). */
+    val checkUpdates: Boolean = true,
 )
 
 /** Ajustes persistentes de la app. Todos los valores salen ya saneados. */
@@ -364,6 +366,7 @@ class DataStoreSettingsRepository(
         val largeText = booleanPreferencesKey("app.texto_grande")
         val dyslexia = booleanPreferencesKey("app.dislexia")
         val reduceMotion = booleanPreferencesKey("app.reducir_movimiento")
+        val checkUpdates = booleanPreferencesKey("app.avisar_versiones")
     }
 
     private fun readApp(p: Preferences): AppPrefs {
@@ -375,6 +378,7 @@ class DataStoreSettingsRepository(
             largeText = p[A.largeText] ?: d.largeText,
             dyslexiaFont = p[A.dyslexia] ?: d.dyslexiaFont,
             reduceMotion = p[A.reduceMotion] ?: d.reduceMotion,
+            checkUpdates = p[A.checkUpdates] ?: d.checkUpdates,
         )
     }
 
@@ -385,6 +389,7 @@ class DataStoreSettingsRepository(
         p[A.largeText] = s.largeText
         p[A.dyslexia] = s.dyslexiaFont
         p[A.reduceMotion] = s.reduceMotion
+        p[A.checkUpdates] = s.checkUpdates
     }
 
     // ------------------------------------------------------------------ por libro

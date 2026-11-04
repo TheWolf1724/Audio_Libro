@@ -521,6 +521,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         if (visible == v) return
         val wasActive = renderActive
         visible = v
+        graph.playback.setReaderVisible(v)
         switchSegment()
         if (!v) graph.appScope.launch { saveProgress() }
         if (!wasActive && renderActive) viewModelScope.launch { highlightVoicePosition() }
@@ -549,6 +550,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     }
 
     override fun onCleared() {
+        graph.playback.setReaderVisible(false)
         closeSegment()
         untrim()
         val info = controller.pageInfo.value

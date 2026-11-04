@@ -51,6 +51,10 @@ class PlaybackFacade(
 
     override val preloadStatus: StateFlow<PreloadStatus?> get() = hub.preload
 
+    override fun setReaderVisible(visible: Boolean) {
+        hub.readerVisible.value = visible
+    }
+
     override val bookmarkRequests: Flow<Locator> get() = hub.bookmarkRequests
 
     override val activeSettings: Flow<VoiceSettings> get() = hub.settings

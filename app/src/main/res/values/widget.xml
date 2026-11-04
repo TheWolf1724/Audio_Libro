@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="widget_fondo">#F7F9FC</color>
+    <color name="widget_texto">#1A1C1E</color>
+    <color name="widget_texto_suave">#5A6270</color>
+    <color name="widget_acento">#1F3A5F</color>
+    <string name="widget_descripcion">Ultimo libro: portada, progreso y escuchar o pausar</string>
+    <string name="widget_sin_libro">Abre un libro para empezar</string>
+    <string name="widget_escuchar">Escuchar</string>
+    <string name="widget_pausar">Pausar</string>
+</resources>

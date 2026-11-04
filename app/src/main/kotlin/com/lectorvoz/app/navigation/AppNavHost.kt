@@ -68,7 +68,7 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
     NavHost(navController = nav, startDestination = Routes.LIBRARY) {
         composable(Routes.LIBRARY) {
             val vm: LibraryViewModel = viewModel(factory = viewModelFactory { initializer { LibraryViewModel(graph.library, graph.collections, graph.settings, onDelete = graph::deleteBook) } })
-            LibraryRoute(vm, graph.covers, onOpen = { nav.openReader(it.id) }, onSettings = { nav.navigate(Routes.SETTINGS) })
+            LibraryRoute(vm, graph.covers, onOpen = { nav.openReader(it.id) }, onSettings = { nav.navigate(Routes.SETTINGS) }, updates = graph.updates)
         }
         composable(Routes.READER, arguments = listOf(navArgument("libro") { type = NavType.LongType })) { entry ->
             val id = entry.arguments?.getLong("libro") ?: return@composable

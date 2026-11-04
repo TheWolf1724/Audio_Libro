@@ -22,6 +22,7 @@ import com.lectorvoz.app.navigation.LocalAppGraph
 import com.lectorvoz.app.navigation.openReader
 import com.lectorvoz.app.ui.theme.LectorVozTheme
 import com.lectorvoz.core.model.ReaderSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
@@ -98,6 +99,23 @@ class MainActivity : ComponentActivity() {
                 val id = (application as LectorVozApp).graph.playback.state.value.bookId ?: return
                 navRequests.trySend(id)
             }
+            ACTION_OPEN_BOOK -> intent.getLongExtra(EXTRA_BOOK, -1L).takeIf { it >= 0 }?.let { navRequests.trySend(it) }
+            ACTION_LISTEN -> {
+                val id = intent.getLongExtra(EXTRA_BOOK, -1L).takeIf { it >= 0 } ?: return
+                navRequests.trySend(id)
+                val graph = (application as LectorVozApp).graph
+                // En el ambito de la app: girar la pantalla no corta el arranque de la voz.
+                graph.appScope.launch {
+                    val book = graph.library.get(id) ?: return@launch
+                    try {
+                        graph.listenTo(book)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Toast.makeText(graph.context, "No se pudo iniciar la voz: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                }
+            }
             Intent.ACTION_VIEW -> intent.data?.let { importAndOpen(listOf(it)) }
             Intent.ACTION_SEND -> streamOf(intent)?.let { importAndOpen(listOf(it)) }
             Intent.ACTION_SEND_MULTIPLE -> streamsOf(intent).takeIf { it.isNotEmpty() }?.let { importAndOpen(it) }
@@ -121,5 +139,13 @@ class MainActivity : ComponentActivity() {
     companion object {
         /** Accion del toque en la notificacion: abrir el libro que suena. */
         const val ACTION_OPEN_PLAYING = "com.lectorvoz.app.ABRIR_LO_QUE_SUENA"
+
+        /** Widget: abrir el libro [EXTRA_BOOK]. */
+        const val ACTION_OPEN_BOOK = "com.lectorvoz.app.ABRIR_LIBRO"
+
+        /** Widget: abrir el libro [EXTRA_BOOK] y empezar a escucharlo desde donde se dejo. */
+        const val ACTION_LISTEN = "com.lectorvoz.app.ESCUCHAR_LIBRO"
+
+        const val EXTRA_BOOK = "libro"
     }
 }

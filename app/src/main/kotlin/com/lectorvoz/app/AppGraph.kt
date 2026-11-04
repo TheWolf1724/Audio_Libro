@@ -10,7 +10,12 @@ import com.lectorvoz.app.books.BookOpener
 import com.lectorvoz.app.books.CoverExtractorImpl
 import com.lectorvoz.app.books.CoverLoader
 import com.lectorvoz.app.books.OpenedBook
+import com.lectorvoz.app.integration.BookForVoice
 import com.lectorvoz.app.integration.PlaybackFacade
+import com.lectorvoz.app.integration.TimerChoice
+import com.lectorvoz.app.update.AppRelease
+import com.lectorvoz.app.update.UpdateChecker
+import com.lectorvoz.app.widget.ListenWidgetUpdater
 import com.lectorvoz.app.integration.PlaybackPort
 import com.lectorvoz.app.integration.UtteranceProviderImpl
 import com.lectorvoz.app.integration.VoicesFacade
@@ -79,6 +84,8 @@ class AppGraph(
     val fonts: FontProvider = AppFontProvider(context),
     val opener: BookOpener = BookOpener(context),
     exportFiles: ExportFiles = SafExportFiles(context),
+    /** Consulta de la ultima version (sin red por defecto: las pruebas no salen a Internet). */
+    updateFetch: suspend () -> AppRelease? = { null },
 ) {
     /** Libros abiertos compartidos (voz, busqueda del lector, exportar). */
     val books = SharedBooks(opener)
@@ -94,6 +101,12 @@ class AppGraph(
 
     /** Posicion y estadisticas de escucha aunque el lector este cerrado. */
     val listening = ListeningTracker(appScope, playback, library, stats, progressOf = { id, loc -> speech.progressOf(id, loc) })
+
+    /** Aviso de nueva version publicada en GitHub. */
+    val updates: UpdateChecker by lazy { UpdateChecker(context, appScope, BuildConfig.VERSION_NAME, updateFetch) }
+
+    /** Widget de escritorio "seguir escuchando". */
+    val widget = ListenWidgetUpdater(context, appScope, library, playback) { listenTo(it) }
 
     private val voiceSync = VoiceSettingsSync(appScope, playback, settings, pronunciation) { v, d -> speech.update(v, d) }
 
@@ -124,6 +137,29 @@ class AppGraph(
         }
         voiceSync.start()
         listening.start()
+        widget.start()
+        // Aviso de nueva version: al abrir la app (y al activarlo), como mucho una vez al dia.
+        appScope.launch {
+            settings.app.map { it.checkUpdates }.distinctUntilChanged().collect { on ->
+                if (on) updates.checkIfDue(true) else updates.disable()
+            }
+        }
+    }
+
+    /**
+     * Empieza a escuchar [book] desde su posicion guardada con sus ajustes de voz (desde el
+     * widget). Si ya es el libro de la voz, solo reanuda. Solo tras un toque del usuario.
+     */
+    suspend fun listenTo(book: Book) {
+        if (playback.state.value.bookId == book.id) {
+            if (!playback.state.value.playWhenReady) playback.play()
+            return
+        }
+        val voice = settings.voiceFor(book.id).first()
+        val (opened, provider) = speech.providerFor(book)
+        playback.updateSettings(voice)
+        playback.start(BookForVoice(book.id, book.title, book.author, book.coverPath, opened.chapterTitles), provider, book.locator, autoPlay = true)
+        voice.sleepTimerMinutes?.let { playback.setSleepTimer(TimerChoice.Minutes(it)) }
     }
 
     private suspend fun addBookmarkFromNotification(loc: Locator) {
@@ -184,6 +220,7 @@ class AppGraph(
                 collections = RoomCollectionRepository(db),
                 playback = PlaybackFacade(app, scope),
                 voices = VoicesFacade(app),
+                updateFetch = UpdateChecker::fetchLatest,
             )
         }
     }

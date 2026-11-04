@@ -138,6 +138,24 @@ class ScreensTest {
     }
 
     @Test
+    fun avisoDeVersionNuevaSeAbreYSeDescarta() {
+        val actions = RecordingActions()
+        val r = com.lectorvoz.app.update.AppRelease("1.2.0", "https://github.com/TheWolf1724/Audio_Libro/releases/tag/v1.2.0")
+        var update by mutableStateOf<com.lectorvoz.app.update.AppRelease?>(r)
+        val opened = ArrayList<String>()
+        rule.setContent {
+            MaterialTheme {
+                LibraryScreen(LibraryUiState(loading = false), covers, actions, update = update, onOpenUpdate = { opened += it.url }, onDismissUpdate = { update = null })
+            }
+        }
+        rule.onNodeWithText("Hay una version nueva: 1.2.0").assertIsDisplayed()
+        rule.onNodeWithTag("aviso-version-ver").performClick()
+        assertThat(opened).containsExactly(r.url)
+        rule.onNodeWithTag("aviso-version-ocultar").performClick()
+        rule.onNodeWithTag("aviso-version").assertDoesNotExist()
+    }
+
+    @Test
     fun ajustesDeVozMuestranTodosLosCampos() {
         var v by mutableStateOf(VoiceSettings())
         val voices = FakeVoices()
@@ -192,6 +210,7 @@ class ScreensTest {
             }
         }
         for (c in fields(ReaderSettings::class.java)) rule.onNodeWithTag("lectura-$c").assertExists()
+        rule.onNodeWithTag("app-checkUpdates").assertExists()
     }
 
     @Test

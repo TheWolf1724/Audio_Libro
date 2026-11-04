@@ -28,6 +28,8 @@ auriculares. Gratis, sin anuncios y sin enviar nada a ningun servidor.
 - **Comodidad y accesibilidad**: temas claro, oscuro y proteccion ocular (dia y noche), alto
   contraste, fuentes Literata, Atkinson Hyperlegible y OpenDyslexic, texto grande, reducir
   movimiento.
+- **Widget de escritorio**: portada, titulo y progreso del ultimo libro, con un boton para
+  escuchar o pausar sin abrir la app.
 - **Extras**: marcadores, busqueda, indice, estadisticas de lectura y escucha, series, y
   exportar un capitulo o el libro entero a audio.
 
@@ -48,8 +50,11 @@ moviles con menos memoria la app precarga menos audio para no agotarla.
 ## Privacidad
 
 Todo ocurre en el telefono: los libros, la voz y las estadisticas no salen de el. La app no
-tiene anuncios ni analitica. El permiso de Internet solo existe para un futuro descargador de
-voces adicionales (hoy no se usa).
+tiene anuncios ni analitica. Internet solo se usa para el aviso de nuevas versiones: como
+mucho una vez al dia, al abrir la app, pregunta a GitHub cual es la ultima publicacion de este
+repositorio (no envia ningun dato tuyo). Se puede desactivar en Ajustes > Lectura >
+Actualizaciones. La app no descarga ni instala nada por su cuenta: el aviso abre la pagina de
+la publicacion en el navegador.
 
 ---
 

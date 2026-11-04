@@ -51,7 +51,8 @@ object TimeStretch {
         val search = sampleRate * SEARCH_MS / 1000
         // Sin cuerpo suficiente que acelerar antes del apagado: compresion normal.
         if (cut < 2 * (sampleRate * FRAME_MS / 1000) + search + xf) return stretch(input, sampleRate, factor)
-        val body = stretch(input.copyOfRange(0, cut + xf), sampleRate, factor)
+        // Solo el cuerpo (hasta cut + xf), leido en el sitio, sin copiarlo.
+        val body = stretchPrefix(input, cut + xf, sampleRate, factor)
         if (body.size <= xf) return stretch(input, sampleRate, factor)
         // Empalme: donde el original continua mejor el final del cuerpo acelerado.
         val ref = body.copyOfRange(body.size - xf, body.size)
@@ -88,20 +89,25 @@ object TimeStretch {
     fun stretch(input: FloatArray, sampleRate: Int, factor: Float): FloatArray {
         require(factor > 0f && factor.isFinite()) { "factor invalido: $factor" }
         if (abs(factor - 1f) < IDENTITY_TOLERANCE || input.isEmpty()) return input
-        val n = input.size
+        return stretchPrefix(input, input.size, sampleRate, factor)
+    }
+
+    /** [stretch] de las primeras [n] muestras de [input] (sin copiarlas); siempre devuelve uno nuevo. */
+    private fun stretchPrefix(input: FloatArray, n: Int, sampleRate: Int, factor: Float): FloatArray {
         val outLen = (n / factor).roundToInt().coerceAtLeast(1)
         val frame = (sampleRate * FRAME_MS / 1000).coerceAtLeast(4) and 1.inv() // par
         val hop = frame / 2
         // Entradas mas cortas que dos tramas: no hay periodicidad que preservar (son clics o
         // silencio); se remuestrea linealmente a la longitud exacta.
-        if (n < 2 * frame || outLen < frame) return resampleLinear(input, outLen)
+        if (n < 2 * frame || outLen < frame) return resampleLinear(input, n, outLen)
 
-        val window = FloatArray(frame) { (0.5 - 0.5 * cos(2.0 * Math.PI * it / frame)).toFloat() }
+        val window = hann(frame)
         val search = sampleRate * SEARCH_MS / 1000
-        val out = FloatArray(outLen + frame)
+        // Exacta: la ultima trama se recorta al sumarla (lo que sobresale se descartaba igual).
+        val out = FloatArray(outLen)
         // Trama 0: tal cual desde el principio.
         var prev = 0
-        overlapAdd(out, 0, input, 0, window)
+        overlapAdd(out, 0, input, n, 0, window)
         var k = 1
         while (k * hop < outLen) {
             val nominal = (k * hop * factor).roundToInt()
@@ -109,12 +115,21 @@ object TimeStretch {
             val ref = prev + hop
             val lo = (nominal - search).coerceAtLeast(0)
             val hi = (nominal + search).coerceAtMost(n - hop)
-            val pos = if (hi <= lo) lo.coerceAtMost(n - 1) else bestMatch(input, ref, lo, hi, nominal, hop)
-            overlapAdd(out, k * hop, input, pos, window)
+            val pos = if (hi <= lo) lo.coerceAtMost(n - 1) else bestMatch(input, n, ref, lo, hi, nominal, hop)
+            overlapAdd(out, k * hop, input, n, pos, window)
             prev = pos
             k++
         }
-        return out.copyOf(outLen)
+        return out
+    }
+
+    // Ventana de Hann de la ultima longitud usada (siempre la misma con una frecuencia de
+    // muestreo fija): se calcula una vez. Solo se lee, asi que compartirla entre hilos es seguro.
+    @Volatile private var hannCache: FloatArray = FloatArray(0)
+
+    private fun hann(frame: Int): FloatArray {
+        hannCache.let { if (it.size == frame) return it }
+        return FloatArray(frame) { (0.5 - 0.5 * cos(2.0 * Math.PI * it / frame)).toFloat() }.also { hannCache = it }
     }
 
     /**
@@ -122,8 +137,7 @@ object TimeStretch {
      * (correlacion normalizada), buscando primero a saltos de 4 y afinando despues. En empate
      * (silencio) gana la mas cercana a [nominal].
      */
-    private fun bestMatch(input: FloatArray, ref: Int, lo: Int, hi: Int, nominal: Int, len: Int): Int {
-        val n = input.size
+    private fun bestMatch(input: FloatArray, n: Int, ref: Int, lo: Int, hi: Int, nominal: Int, len: Int): Int {
         var refEnergy = 0.0
         val refEnd = minOf(ref + len, n)
         for (i in ref until refEnd) refEnergy += input[i] * input[i]
@@ -163,14 +177,13 @@ object TimeStretch {
         return best
     }
 
-    private fun overlapAdd(out: FloatArray, outPos: Int, input: FloatArray, inPos: Int, window: FloatArray) {
-        val len = minOf(window.size, input.size - inPos, out.size - outPos)
+    private fun overlapAdd(out: FloatArray, outPos: Int, input: FloatArray, n: Int, inPos: Int, window: FloatArray) {
+        val len = minOf(window.size, n - inPos, out.size - outPos)
         for (i in 0 until len) out[outPos + i] += window[i] * input[inPos + i]
     }
 
     /** Remuestreo lineal a [outLen] muestras (cambia el tono; solo para tramos minusculos). */
-    private fun resampleLinear(input: FloatArray, outLen: Int): FloatArray {
-        val n = input.size
+    private fun resampleLinear(input: FloatArray, n: Int, outLen: Int): FloatArray {
         if (n == 1) return FloatArray(outLen) { input[0] }
         val out = FloatArray(outLen)
         val step = (n - 1).toDouble() / maxOf(1, outLen - 1)

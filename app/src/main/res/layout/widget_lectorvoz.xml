@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget "seguir escuchando": portada, titulo, progreso y escuchar/pausar. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_raiz"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_fondo"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="10dp">
+
+    <!-- Portada o, sin ella, un icono coloreado (dos vistas: el color no debe tocar la portada). -->
+    <FrameLayout
+        android:layout_width="40dp"
+        android:layout_height="56dp">
+
+        <ImageView
+            android:id="@+id/widget_icono"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="fitCenter"
+            android:src="@drawable/ic_menu_book"
+            android:tint="@color/widget_acento" />
+
+        <ImageView
+            android:id="@+id/widget_portada"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:importantForAccessibility="no"
+            android:scaleType="centerCrop"
+            android:visibility="gone" />
+    </FrameLayout>
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_marginEnd="8dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/widget_titulo"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/app_name"
+            android:textColor="@color/widget_texto"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_detalle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="@string/widget_sin_libro"
+            android:textColor="@color/widget_texto_suave"
+            android:textSize="13sp" />
+
+        <ProgressBar
+            android:id="@+id/widget_progreso"
+            style="@android:style/Widget.Material.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:layout_marginTop="6dp"
+            android:max="1000"
+            android:progressTint="@color/widget_acento" />
+    </LinearLayout>
+
+    <ImageButton
+        android:id="@+id/widget_boton"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="@drawable/widget_boton"
+        android:contentDescription="@string/widget_escuchar"
+        android:scaleType="center"
+        android:src="@drawable/ic_play_arrow" />
+</LinearLayout>

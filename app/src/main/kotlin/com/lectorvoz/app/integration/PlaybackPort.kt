@@ -67,6 +67,9 @@ interface PlaybackPort {
     val state: StateFlow<VoiceUiState>
     val events: Flow<PlaybackEvent>
 
+    /** El lector esta en pantalla (la voz sigue al instante el resaltado; si no, ahorra). */
+    fun setReaderVisible(visible: Boolean) {}
+
     /** Nivel de precarga que usa ahora la voz (nulo si no ha leido aun). Ver Ajustes > Voz. */
     val preloadStatus: StateFlow<PreloadStatus?> get() = NO_PRELOAD
 

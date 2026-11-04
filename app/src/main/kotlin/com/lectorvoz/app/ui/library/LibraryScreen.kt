@@ -31,6 +31,10 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.ui.platform.LocalUriHandler
+import com.lectorvoz.app.update.AppRelease
+import com.lectorvoz.app.update.UpdateChecker
+import kotlinx.coroutines.flow.MutableStateFlow
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -98,8 +102,10 @@ interface LibraryActions {
 
 /** Ruta de la biblioteca: une ViewModel, selector de ficheros y pantalla. */
 @Composable
-fun LibraryRoute(vm: LibraryViewModel, covers: CoverLoader, onOpen: (Book) -> Unit, onSettings: () -> Unit) {
+fun LibraryRoute(vm: LibraryViewModel, covers: CoverLoader, onOpen: (Book) -> Unit, onSettings: () -> Unit, updates: UpdateChecker? = null) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val update by (updates?.available ?: remember { MutableStateFlow<AppRelease?>(null) }).collectAsStateWithLifecycle()
+    val uri = LocalUriHandler.current
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         vm.import(uris)
     }
@@ -123,13 +129,28 @@ fun LibraryRoute(vm: LibraryViewModel, covers: CoverLoader, onOpen: (Book) -> Un
             override fun messageShown() = vm.consumeMessage()
         }
     }
-    LibraryScreen(state, covers, actions)
+    LibraryScreen(
+        state, covers, actions,
+        update = update,
+        onOpenUpdate = { r ->
+            // Solo paginas del propio repositorio (lo garantiza tambien la lectura de la respuesta).
+            if (r.url.startsWith(UpdateChecker.RELEASES_PREFIX)) runCatching { uri.openUri(r.url) }
+        },
+        onDismissUpdate = { updates?.dismiss() },
+    )
 }
 
 /** Pantalla de biblioteca. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(state: LibraryUiState, covers: CoverLoader, actions: LibraryActions) {
+fun LibraryScreen(
+    state: LibraryUiState,
+    covers: CoverLoader,
+    actions: LibraryActions,
+    update: AppRelease? = null,
+    onOpenUpdate: (AppRelease) -> Unit = {},
+    onDismissUpdate: () -> Unit = {},
+) {
     val snackbar = remember { SnackbarHostState() }
     var searching by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
     var menuBook by remember { mutableStateOf<Book?>(null) }
@@ -190,6 +211,7 @@ fun LibraryScreen(state: LibraryUiState, covers: CoverLoader, actions: LibraryAc
             if (state.importing > 0) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().testTag("importando").semantics { contentDescription = "Importando ${state.importing} libros" })
             }
+            update?.let { UpdateBanner(it, { onOpenUpdate(it) }, onDismissUpdate) }
             if (!state.loading && state.totalCount == 0) {
                 EmptyLibrary(actions::import)
                 return@Column
@@ -409,6 +431,24 @@ private fun ContinueCard(b: Book, covers: CoverLoader, onClick: () -> Unit) {
                 Text(b.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 LinearProgressIndicator(progress = { b.progress }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp))
                 Text("${(b.progress * 100).roundToInt()} % leido", style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+/** Aviso de nueva version: ver la publicacion (en el navegador) o descartarla. */
+@Composable
+private fun UpdateBanner(r: AppRelease, onOpen: () -> Unit, onDismiss: () -> Unit) {
+    Card(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp).testTag("aviso-version")) {
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp, bottom = 4.dp)) {
+            Text("Hay una version nueva: ${r.version}", style = MaterialTheme.typography.titleSmall)
+            Text(
+                "Se descarga desde la pagina de la publicacion en GitHub y se instala encima (se conservan los libros y ajustes).",
+                style = MaterialTheme.typography.bodySmall,
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss, modifier = Modifier.testTag("aviso-version-ocultar")) { Text("Ahora no") }
+                TextButton(onClick = onOpen, modifier = Modifier.testTag("aviso-version-ver")) { Text("Ver") }
             }
         }
     }

@@ -33,6 +33,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -97,6 +99,7 @@ class PlaybackService : MediaSessionService() {
             // Precarga segun el terminal (30-10-2026): alta = ~la pagina siguiente (2 parrafos +
             // 60 s), media = el parrafo siguiente + 30 s, baja = las frases siguientes (~15 s).
             preloadPolicy = DevicePreload(this, hub)::policy,
+            fastTick = { hub.readerVisible.value },
         )
         hub.renderer = neural
         val engineFactory: (TtsEngineType) -> SpeechEngine = { type ->
@@ -126,10 +129,11 @@ class PlaybackService : MediaSessionService() {
         openPendingBook()
         scope.launch { hub.settings.drop(1).collect { controller.updateSettings(it) } }
         scope.launch {
-            controller.state.collect { s ->
-                setNoisyReceiver(s.playWhenReady)
+            // Solo cuando cambia lo que se usa (no con cada frase ni cada segundo del temporizador).
+            controller.state.map { Triple(it.playWhenReady, it.focusSuppressed, it.engine) }.distinctUntilChanged().collect { (play, suppressed, engine) ->
+                setNoisyReceiver(play)
                 // Sin WakeLock durante una llamada (foco perdido temporalmente: no hay audio).
-                wakeLock.set(s.playWhenReady && !s.focusSuppressed && s.engine == TtsEngineType.NEURAL)
+                wakeLock.set(play && !suppressed && engine == TtsEngineType.NEURAL)
             }
         }
         battery = AndroidBatteryMonitor(this)

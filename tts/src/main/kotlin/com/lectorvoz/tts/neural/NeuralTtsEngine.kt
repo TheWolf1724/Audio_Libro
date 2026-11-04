@@ -125,6 +125,13 @@ class NeuralTtsEngine(
     private val groupMaxChars: Int = 0,
     private val idleReleaseMs: Long = 5 * 60_000L,
     private val tickMs: Long = 20L,
+    /**
+     * Si hace falta seguir la reproduccion al instante (resaltado en pantalla). Si no, el reloj
+     * mira cada [SLOW_TICK_MS] en vez de cada [tickMs]: con la pantalla apagada solo importan los
+     * cambios de frase (notificacion, posicion), y 50 despertares por segundo son bateria tirada.
+     * El audio no depende de este reloj.
+     */
+    private val fastTick: () -> Boolean = { true },
     /** Cache de audio en disco (preparar mientras carga); nula = sin cache. */
     private val diskCache: AudioDiskCache? = null,
 ) : SpeechEngine, UtteranceRenderer, Pregenerator {
@@ -291,6 +298,11 @@ class NeuralTtsEngine(
                 val params = paramsFor(u, settings, ref)
                 val chapter = u.range.start.chapter
                 if (cache.contains(book, chapter, ref.voiceId, params, u.spokenText)) return@background false
+                // Ya sintetizado en esta sesion (precarga o lectura): se guarda sin repetir el modelo.
+                memory[RawKey(ref.voiceId, params, u.spokenText)]?.let { pcm ->
+                    cache.put(book, chapter, ref.voiceId, params, u.spokenText, pcm, active.sampleRate)
+                    return@background true
+                }
                 val job = coroutineContext.job
                 val pcm = synthesizeComplete(active, u.spokenText, params) { !job.isActive || preempted() }
                     ?: run {
@@ -702,7 +714,7 @@ class NeuralTtsEngine(
                 val played = sink.playedFrames()
                 tracker.update(played)
                 ahead.played(played)
-                delay(tickMs)
+                delay(if (fastTick()) tickMs else maxOf(tickMs, SLOW_TICK_MS))
             }
         }
         try {
@@ -871,6 +883,9 @@ class NeuralTtsEngine(
          * hilo de audio; la pausa no depende de esto (se libera la salida con flush).
          */
         const val BLOCK = 8192
+        /** Reloj de reproduccion sin resaltado en pantalla (ver `fastTick`). */
+        const val SLOW_TICK_MS = 200L
+
         /** Olvido de la media de velocidad de sintesis por frase (~las ultimas 10-20 frases). */
         const val RTF_DECAY = 0.9
 

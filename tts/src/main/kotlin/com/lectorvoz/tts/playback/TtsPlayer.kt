@@ -16,6 +16,8 @@ import com.lectorvoz.tts.BookInfo
 import com.lectorvoz.tts.PlaybackState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 /**
@@ -42,10 +44,18 @@ class TtsPlayer(
 ) : SimpleBasePlayer(looper) {
 
     // getState() lee el estado del controlador directamente (se actualiza en el acto al
-    // pulsar play/pausa); esta recogida solo avisa a Media3 de los cambios.
+    // pulsar play/pausa); esta recogida solo avisa a Media3 de los cambios QUE LE AFECTAN: la
+    // cuenta atras del temporizador (cada segundo), la bateria o la preparacion en disco no los
+    // usa getState() y antes rehacian su estado igualmente.
     private val collector: Job = scope.launch {
-        controller.state.collect { invalidateState() }
+        controller.state.map { it.mediaKey() }.distinctUntilChanged().collect { invalidateState() }
     }
+
+    /** Campos de [PlaybackState] que usa [getState] (si cambia alguno, hay que avisar a Media3). */
+    private fun PlaybackState.mediaKey(): List<Any?> = listOf(
+        bookId, position?.chapter, position?.offset, utteranceId, playWhenReady, isPlaying, isPreparing,
+        ended, focusSuppressed, charsPerSecond, chapterLength, engine, voiceId,
+    )
 
     override fun getState(): State {
         val s: PlaybackState = controller.state.value

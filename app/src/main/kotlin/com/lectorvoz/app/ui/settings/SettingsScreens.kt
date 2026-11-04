@@ -136,6 +136,8 @@ fun ReadingSettingsContent(s: ReaderSettings, app: AppPrefs, onChange: ((ReaderS
     SwitchRow("PDF con los colores del tema", s.pdfRecolor, { v -> onChange { it.copy(pdfRecolor = v) } }, summary = "Recolorea fondo y texto de los PDF", tag = "lectura-pdfRecolor")
     SectionHeader("Biblioteca")
     SwitchRow("Copiar los libros al importar", app.copyOnImport, { v -> onApp { it.copy(copyOnImport = v) } }, summary = "Si se desactiva, solo se guarda un enlace al fichero original")
+    SectionHeader("Actualizaciones")
+    SwitchRow("Avisar de nuevas versiones", app.checkUpdates, { v -> onApp { it.copy(checkUpdates = v) } }, summary = "Una vez al dia, al abrir la app, mira en GitHub si hay una version nueva (no envia ningun dato tuyo)", tag = "app-checkUpdates")
 }
 
 private fun speedText(v: Float) = "x" + "%.2f".format(v)
