@@ -688,8 +688,17 @@ class NeuralTtsEngine(
         return out
     }
 
+    /**
+     * Frase candidata a agruparse: con texto, de tipo frase o item de lista y de al menos
+     * [MIN_GROUP_CHARS] caracteres. Las frases muy cortas (fragmentos tipo "Si.", numeros de
+     * tarjeta, codigos) generan muy poco audio, con lo que la pausa que las separa es dificil de
+     * localizar y el reparto por silencios es menos fiable; ademas son baratas de sintetizar
+     * sueltas. Dejarlas fuera del grupo quita el mayor riesgo con un coste de CPU despreciable.
+     * El numero de frases por grupo ya esta acotado por [GROUP_MAX_SIZE].
+     */
     private fun groupable(u: Utterance): Boolean =
-        u.spokenText.isNotBlank() && (u.kind == UtteranceKind.SENTENCE || u.kind == UtteranceKind.LIST_ITEM)
+        u.spokenText.isNotBlank() && u.spokenText.length >= MIN_GROUP_CHARS &&
+            (u.kind == UtteranceKind.SENTENCE || u.kind == UtteranceKind.LIST_ITEM)
 
     /**
      * Sintetiza [group] de una vez y guarda en la cache el audio crudo de cada frase, partido por
@@ -943,6 +952,9 @@ class NeuralTtsEngine(
 
         /** Frases como mucho en un grupo (ver `groupMaxChars`). */
         const val GROUP_MAX_SIZE = 8
+
+        /** Longitud minima (caracteres) para agrupar una frase (ver `groupable`). */
+        const val MIN_GROUP_CHARS = 14
 
         /** Muestras de audio crudo en la cache de memoria (~12 MB en float: unas 24 frases). */
         const val MEMORY_CACHE_SAMPLES = 3_000_000L

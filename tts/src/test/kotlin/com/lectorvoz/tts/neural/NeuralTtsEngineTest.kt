@@ -206,12 +206,13 @@ class NeuralTtsEngineTest {
             loader = { _, _ -> synth }, sinkFactory = { FakeSink(testScheduler, capacity = 100_000) },
             synthDispatcher = d, audioDispatcher = d, tickDispatcher = d, tickMs = 5, groupMaxChars = 180,
         )
-        val texts = FakeUtteranceProvider(listOf(listOf("Hola.", "Que tal estas hoy.", "Muy bien.")))
+        // Frases cortas de dialogo pero por encima del minimo para agrupar (>= 14 caracteres).
+        val texts = FakeUtteranceProvider(listOf(listOf("Hola buenas tardes.", "Que tal estas hoy.", "Muy bien gracias.")))
         engine.prepare(VoiceSettings(engine = TtsEngineType.NEURAL, speed = SIN_ESTIRAR, punctuationPause = 0f))
         val listener = RecordingListener()
         engine.speak(texts.all.first(), texts::next, listener)
         // Una sola llamada al modelo para las tres frases.
-        assertThat(synth.calls).containsExactly("Hola. Que tal estas hoy. Muy bien.")
+        assertThat(synth.calls).containsExactly("Hola buenas tardes. Que tal estas hoy. Muy bien gracias.")
         val log = listener.snapshot().filter { !it.startsWith("word") }
         assertThat(log).containsExactly("start:1", "done:1", "start:2", "done:2", "start:3", "done:3").inOrder()
     }
@@ -225,11 +226,14 @@ class NeuralTtsEngineTest {
             loader = { _, _ -> synth }, sinkFactory = { FakeSink(testScheduler, capacity = 100_000) },
             synthDispatcher = d, audioDispatcher = d, tickDispatcher = d, tickMs = 5, groupMaxChars = 180,
         )
-        val texts = FakeUtteranceProvider(listOf(listOf("Hola.", "Que tal.")))
+        // Frases agrupables (>= 14 caracteres) pero sin pausa clara en el audio: fallback.
+        val texts = FakeUtteranceProvider(listOf(listOf("Hola buenas tardes.", "Que tal estas hoy.")))
         engine.prepare(VoiceSettings(engine = TtsEngineType.NEURAL, speed = SIN_ESTIRAR, punctuationPause = 0f))
         val listener = RecordingListener()
         engine.speak(texts.all.first(), texts::next, listener)
-        assertThat(synth.calls).containsExactly("Hola. Que tal.", "Hola.", "Que tal.").inOrder()
+        assertThat(synth.calls).containsExactly(
+            "Hola buenas tardes. Que tal estas hoy.", "Hola buenas tardes.", "Que tal estas hoy.",
+        ).inOrder()
         assertThat(listener.snapshot().filter { it.startsWith("done") }).containsExactly("done:1", "done:2").inOrder()
     }
 
