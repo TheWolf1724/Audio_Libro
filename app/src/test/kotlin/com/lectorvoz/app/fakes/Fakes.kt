@@ -67,6 +67,8 @@ class FakeLibraryRepository(initial: List<Book> = emptyList()) : LibraryReposito
     val list = MutableStateFlow(initial)
     /** Resultado por Uri al importar (por defecto, un libro nuevo). */
     val results = HashMap<String, ImportResult>()
+    /** Uris cuyo import() lanza una excepcion (para probar la robustez del lote). */
+    val throwOn = HashSet<String>()
     val imported = ArrayList<Pair<Uri, Boolean>>()
     private var next = 1000L
 
@@ -76,6 +78,7 @@ class FakeLibraryRepository(initial: List<Book> = emptyList()) : LibraryReposito
     override suspend fun get(id: Long): Book? = list.value.firstOrNull { it.id == id }
     override suspend fun import(uri: Uri, copy: Boolean): ImportResult {
         imported += uri to copy
+        if (uri.toString() in throwOn) throw RuntimeException("fallo de prueba al importar")
         results[uri.toString()]?.let { return it }
         val b = book(next++, title = uri.lastPathSegment ?: "nuevo")
         list.update { it + b }

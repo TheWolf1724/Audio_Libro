@@ -27,6 +27,9 @@ data class AppRelease(
     val apkSha256: String? = null,
 )
 
+/** Resultado de una comprobacion manual de actualizaciones (boton "Buscar ahora" de Ajustes). */
+enum class ManualResult { NONE, CHECKING, NEW_AVAILABLE, UP_TO_DATE, FAILED }
+
 /**
  * Aviso de nueva version. Como mucho una vez al dia (al abrir la app y si el usuario no lo ha
  * desactivado) pide a GitHub la ultima publicacion del repositorio y la compara con la
@@ -49,44 +52,98 @@ class UpdateChecker(
     /** Version mas nueva que la instalada y no pospuesta; nula si no hay. */
     val available: StateFlow<AppRelease?> = mutable
 
+    private val mutableManual = MutableStateFlow(ManualResult.NONE)
+
+    /** Resultado de la ultima comprobacion manual (para el boton de Ajustes). */
+    val manual: StateFlow<ManualResult> = mutableManual
+
     private var running = false
 
-    /** Comprueba si toca (24 h desde la ultima vez). Llamar desde el hilo principal. */
+    /** Comprueba si toca (24 h desde la ultima vez; un reintento corto si fallo). Llamar desde el hilo principal. */
     fun checkIfDue(enabled: Boolean) {
         if (!enabled) return
         mutable.value = stored()
         if (running) return
         val now = clock()
-        // Nunca comprobado: toca. Si el reloj fue hacia atras (diferencia negativa), tambien.
-        if (prefs.contains(K_LAST_CHECK) && now - prefs.getLong(K_LAST_CHECK, 0L) in 0 until INTERVAL_MS) return
+        // Nunca comprobado: toca. Si el reloj fue hacia atras (diferencia negativa), tambien. El
+        // intervalo es de 24 h tras una consulta con exito, pero mas corto tras un fallo (sin
+        // red, 403, timeout) para reintentar pronto sin reconsultar en cada apertura.
+        if (prefs.contains(K_LAST_CHECK)) {
+            val interval = if (prefs.getBoolean(K_LAST_OK, true)) INTERVAL_MS else RETRY_MS
+            if (now - prefs.getLong(K_LAST_CHECK, 0L) in 0 until interval) return
+        }
         running = true
         scope.launch {
+            try { refresh(now) } finally { running = false }
+        }
+    }
+
+    /**
+     * Comprobacion manual (boton "Buscar actualizaciones ahora"): ignora el intervalo y deja el
+     * resultado en [manual] para avisar al usuario.
+     */
+    fun checkNow() {
+        if (running) return
+        running = true
+        mutableManual.value = ManualResult.CHECKING
+        scope.launch {
             try {
-                val latest = fetch() ?: return@launch
-                prefs.edit()
-                    .putLong(K_LAST_CHECK, now)
-                    .putString(K_VERSION, latest.version)
-                    .putString(K_URL, latest.url)
-                    .putString(K_NOTES, latest.notes)
-                    .putString(K_APK_URL, latest.apkUrl)
-                    .putLong(K_APK_SIZE, latest.apkSize)
-                    .putString(K_APK_SHA, latest.apkSha256)
-                    .apply()
-                mutable.value = stored()
+                val ok = refresh(clock())
+                mutableManual.value = when {
+                    !ok -> ManualResult.FAILED
+                    mutable.value != null -> ManualResult.NEW_AVAILABLE
+                    else -> ManualResult.UP_TO_DATE
+                }
             } catch (e: CancellationException) {
+                mutableManual.value = ManualResult.NONE
                 throw e
-            } catch (e: Exception) {
-                Log.i(TAG, "Sin comprobar versiones: ${e.message}")
             } finally {
                 running = false
             }
         }
     }
 
+    /** Olvida el resultado de la ultima comprobacion manual (al salir de la pantalla). */
+    fun clearManual() { mutableManual.value = ManualResult.NONE }
+
+    /**
+     * Pide la ultima publicacion y guarda el resultado y el instante (con exito o con fallo, para
+     * el throttle). Devuelve true si GitHub respondio con una publicacion.
+     */
+    private suspend fun refresh(now: Long): Boolean =
+        try {
+            val latest = fetch()
+            val edit = prefs.edit().putLong(K_LAST_CHECK, now).putBoolean(K_LAST_OK, latest != null)
+            if (latest != null) {
+                edit.putString(K_VERSION, latest.version)
+                    .putString(K_URL, latest.url)
+                    .putString(K_NOTES, latest.notes)
+                    .putString(K_APK_URL, latest.apkUrl)
+                    .putLong(K_APK_SIZE, latest.apkSize)
+                    .putString(K_APK_SHA, latest.apkSha256)
+            }
+            edit.apply()
+            mutable.value = stored()
+            latest != null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.i(TAG, "Sin comprobar versiones: ${e.message}")
+            // Se apunta el fallo para reintentar pronto (no en cada apertura) en vez de ignorarlo.
+            prefs.edit().putLong(K_LAST_CHECK, now).putBoolean(K_LAST_OK, false).apply()
+            false
+        }
+
     /** "Omitir por ahora": el aviso vuelve a salir pasadas 24 h. */
     fun snooze() {
-        // Solo para la version avisada: si sale otra mas nueva, se avisa de esa.
-        prefs.edit().putLong(K_SNOOZE_UNTIL, clock() + INTERVAL_MS).putString(K_SNOOZE_VERSION, prefs.getString(K_VERSION, null)).apply()
+        // Solo para la version avisada: si sale otra mas nueva, se avisa de esa. Se guarda el
+        // instante (K_SNOOZE_AT) para que un reloj hacia atras no haga reaparecer el aviso antes.
+        val now = clock()
+        prefs.edit()
+            .putLong(K_SNOOZE_UNTIL, now + INTERVAL_MS)
+            .putLong(K_SNOOZE_AT, now)
+            .putString(K_SNOOZE_VERSION, prefs.getString(K_VERSION, null))
+            .apply()
         mutable.value = null
     }
 
@@ -102,9 +159,14 @@ class UpdateChecker(
         if (!isNewer(version, installed)) return null
         val until = prefs.getLong(K_SNOOZE_UNTIL, 0L)
         val now = clock()
-        // Pospuesto (con margen por si el reloj se atraso mucho: nunca mas de 24 h).
         val snoozed = prefs.getString(K_SNOOZE_VERSION, null)
-        if (now < until && until - now <= INTERVAL_MS && (snoozed == null || snoozed == version)) return null
+        // Pospuesto si desde que se omitio han pasado menos de 24 h. Se mide contra el instante de
+        // omitir (K_SNOOZE_AT), no contra `until`: si el reloj va hacia atras, now - at es negativo
+        // (seguimos pospuestos) en vez de hacer reaparecer el aviso antes de tiempo (revision B3).
+        if (until > 0L) {
+            val at = prefs.getLong(K_SNOOZE_AT, until - INTERVAL_MS)
+            if (now - at < INTERVAL_MS && (snoozed == null || snoozed == version)) return null
+        }
         return AppRelease(
             version = version,
             url = url,
@@ -119,6 +181,7 @@ class UpdateChecker(
         private const val TAG = "UpdateChecker"
         private const val PREFS = "actualizaciones"
         private const val K_LAST_CHECK = "ultima_comprobacion"
+        private const val K_LAST_OK = "ultima_comprobacion_ok"
         private const val K_VERSION = "version"
         private const val K_URL = "url"
         private const val K_NOTES = "novedades"
@@ -126,8 +189,12 @@ class UpdateChecker(
         private const val K_APK_SIZE = "apk_bytes"
         private const val K_APK_SHA = "apk_sha256"
         private const val K_SNOOZE_UNTIL = "pospuesta_hasta"
+        private const val K_SNOOZE_AT = "pospuesta_en"
         private const val K_SNOOZE_VERSION = "pospuesta_version"
         const val INTERVAL_MS = 24L * 60 * 60 * 1000
+
+        /** Reintento tras un fallo de red: mucho antes que las 24 h, para no reconsultar sin parar. */
+        const val RETRY_MS = 2L * 60 * 60 * 1000
 
         private const val API = "https://api.github.com/repos/TheWolf1724/Audio_Libro/releases/latest"
 

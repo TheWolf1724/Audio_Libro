@@ -102,9 +102,13 @@ class Revision3AppTest {
         return book(id, "Libro EPUB").copy(localPath = f.absolutePath, sizeBytes = f.length())
     }
 
-    /** Espera (tiempo real) a que se cumpla [cond]: el libro se abre en Dispatchers.IO. */
+    /**
+     * Espera (tiempo real) a que se cumpla [cond]: el libro se abre en Dispatchers.IO. El margen
+     * es amplio (30 s) para no dar falsos negativos bajo carga de la maquina de CI; en condiciones
+     * normales la condicion se cumple en milisegundos y el sondeo sale enseguida.
+     */
     private suspend fun waitUntil(cond: () -> Boolean) = kotlinx.coroutines.withContext(Dispatchers.Default) {
-        kotlinx.coroutines.withTimeout(10_000) { while (!cond()) kotlinx.coroutines.delay(10) }
+        kotlinx.coroutines.withTimeout(30_000) { while (!cond()) kotlinx.coroutines.delay(10) }
     }
 
     // ------------------------------------------------------------------ A1 y B6

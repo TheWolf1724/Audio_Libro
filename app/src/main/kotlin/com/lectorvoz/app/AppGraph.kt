@@ -219,6 +219,11 @@ class AppGraph(
         appScope.launch { if (settings.app.first().checkUpdates) updates.checkIfDue(true) }
     }
 
+    /** Boton "Buscar actualizaciones ahora" (Ajustes > Acerca de): ignora el ajuste y el intervalo. */
+    fun checkUpdatesNowManual() {
+        updates.checkNow()
+    }
+
     /**
      * Empieza a escuchar [book] desde su posicion guardada con sus ajustes de voz (desde el
      * widget). Si ya es el libro de la voz, solo reanuda. Solo tras un toque del usuario.

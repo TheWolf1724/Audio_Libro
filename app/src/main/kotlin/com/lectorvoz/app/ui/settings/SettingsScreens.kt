@@ -12,7 +12,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.TextButton
 import com.lectorvoz.app.ocr.OcrStatus
@@ -104,10 +103,10 @@ fun SettingsHome(onNavigate: (String) -> Unit, onBack: () -> Unit) {
     SettingsScaffold("Ajustes", onBack) {
         NavRow("Lectura", "Tema, fuente, margenes, paginas y animaciones", R.drawable.ic_menu_book, { onNavigate(SettingsRoutes.READING) })
         NavRow("Voz", "Voz, velocidad, pausas, idioma y resaltado", R.drawable.ic_record_voice_over, { onNavigate(SettingsRoutes.VOICE) })
-        NavRow("Diccionario de pronunciacion", "Como debe sonar cada palabra", R.drawable.ic_edit, { onNavigate(SettingsRoutes.DICTIONARY) })
+        NavRow("Diccionario de pronunciacion", "Como debe sonar cada palabra", R.drawable.ic_spellcheck, { onNavigate(SettingsRoutes.DICTIONARY) })
         NavRow("Accesibilidad", "Texto grande, contraste, fuente para dislexia", R.drawable.ic_accessibility, { onNavigate(SettingsRoutes.ACCESSIBILITY) })
-        NavRow("Historial de lecturas", "Lo que has leido, con fechas de inicio y fin", R.drawable.ic_menu_book, { onNavigate(SettingsRoutes.HISTORY) })
-        NavRow("Estadisticas", "Tiempo leido y escuchado", R.drawable.ic_check_circle, { onNavigate(SettingsRoutes.STATS) })
+        NavRow("Historial de lecturas", "Lo que has leido, con fechas de inicio y fin", R.drawable.ic_history, { onNavigate(SettingsRoutes.HISTORY) })
+        NavRow("Estadisticas", "Tiempo leido y escuchado", R.drawable.ic_insights, { onNavigate(SettingsRoutes.STATS) })
         NavRow("Exportar audio", "Guardar un capitulo o el libro entero en audio", R.drawable.ic_download, { onNavigate(SettingsRoutes.EXPORT) })
         NavRow("Acerca de", "Version y licencias", R.drawable.ic_info, { onNavigate(SettingsRoutes.ABOUT) })
     }
@@ -125,12 +124,11 @@ fun ReadingSettingsContent(
     onApp: ((AppPrefs) -> AppPrefs) -> Unit,
     ocr: OcrStatus? = null,
     onClearOcr: () -> Unit = {},
-    onClearHistory: () -> Unit = {},
 ) {
     val r = SettingsRanges
     SectionHeader("Tema")
     ChoiceRow("Tema", ThemeMode.entries, s.theme, ::themeLabel, { v -> onChange { it.copy(theme = v) } }, tag = "lectura-theme")
-    SwitchRow("Aumento de contraste", s.highContrast, { v -> onChange { it.copy(highContrast = v) } }, tag = "lectura-highContrast")
+    // "Aumento de contraste" vive solo en Accesibilidad (antes estaba tambien aqui, duplicado).
     SectionHeader("Texto")
     ChoiceRow("Fuente", r.fontFamilies, s.fontFamily, ::fontLabel, { v -> onChange { it.copy(fontFamily = v) } }, tag = "lectura-fontFamily")
     SliderRow("Tamano", s.fontSizeSp, r.fontSizeSp.min..r.fontSizeSp.max, r.fontSizeSp.step, { "${it.roundToInt()} sp" }, { v -> onChange { it.copy(fontSizeSp = v) } }, tag = "lectura-fontSizeSp")
@@ -184,29 +182,8 @@ fun ReadingSettingsContent(
         )
         if (o.storedBytes > 0) TextButton(onClick = onClearOcr, modifier = Modifier.padding(horizontal = 8.dp)) { Text("Borrar el texto reconocido") }
     }
-    SectionHeader("Historial de lecturas")
-    SwitchRow(
-        "Guardar el historial", app.historyEnabled, { v -> onApp { it.copy(historyEnabled = v) } },
-        summary = "Titulo, portada y fechas de cada libro, aunque lo quites de la biblioteca", tag = "app-historyEnabled",
-    )
-    SwitchRow("Mostrar portada", app.historyShowCover, { v -> onApp { it.copy(historyShowCover = v) } }, tag = "app-historyShowCover")
-    SwitchRow("Mostrar autor", app.historyShowAuthor, { v -> onApp { it.copy(historyShowAuthor = v) } }, tag = "app-historyShowAuthor")
-    SwitchRow("Mostrar fecha de inicio", app.historyShowStarted, { v -> onApp { it.copy(historyShowStarted = v) } }, tag = "app-historyShowStarted")
-    SwitchRow("Mostrar fecha de fin", app.historyShowFinished, { v -> onApp { it.copy(historyShowFinished = v) } }, tag = "app-historyShowFinished")
-    SwitchRow("Mostrar progreso", app.historyShowProgress, { v -> onApp { it.copy(historyShowProgress = v) } }, tag = "app-historyShowProgress")
-    var confirmHistory by rememberSaveable { mutableStateOf(false) }
-    TextButton(onClick = { confirmHistory = true }, modifier = Modifier.padding(horizontal = 8.dp).testTag("app-historial-borrar")) { Text("Borrar el historial") }
-    if (confirmHistory) {
-        AlertDialog(
-            onDismissRequest = { confirmHistory = false },
-            title = { Text("Borrar el historial") },
-            text = { Text("Se borraran todas las lecturas anotadas. Los libros y su progreso no cambian.") },
-            confirmButton = { TextButton(onClick = { onClearHistory(); confirmHistory = false }) { Text("Borrar") } },
-            dismissButton = { TextButton(onClick = { confirmHistory = false }) { Text("Cancelar") } },
-        )
-    }
-    SectionHeader("Actualizaciones")
-    SwitchRow("Avisar de nuevas versiones", app.checkUpdates, { v -> onApp { it.copy(checkUpdates = v) } }, summary = "Una vez al dia, al abrir la app, mira en GitHub si hay una version nueva (no envia ningun dato tuyo). Desde el aviso se puede instalar u omitir 24 h", tag = "app-checkUpdates")
+    // Los ajustes del historial viven ahora en la pantalla "Historial de lecturas" (junto al
+    // listado); el aviso de nuevas versiones, en "Acerca de".
 }
 
 private fun speedText(v: Float) = "x" + "%.2f".format(v)
@@ -278,7 +255,7 @@ fun VoiceSettingsContent(
     PauseSlider("Seccion", v.pauseSectionMs, "voz-pauseSectionMs") { x -> onChange { it.copy(pauseSectionMs = x) } }
     PauseSlider("Capitulo", v.pauseChapterMs, "voz-pauseChapterMs") { x -> onChange { it.copy(pauseChapterMs = x) } }
 
-    SectionHeader("Lectura")
+    SectionHeader("Narracion")
     ChoiceRow("Resaltado", HighlightMode.entries, v.highlightMode, {
         when (it) { HighlightMode.SENTENCE -> "Frase"; HighlightMode.WORD -> "Frase y palabra"; HighlightMode.NONE -> "Ninguno" }
     }, { m -> onChange { it.copy(highlightMode = m) } }, tag = "voz-highlightMode")

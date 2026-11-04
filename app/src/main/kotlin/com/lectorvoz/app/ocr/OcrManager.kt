@@ -122,7 +122,12 @@ class OcrManager(
         val was = enabled.value
         enabled.value = on
         mutableStatus.value = mutableStatus.value.copy(enabled = on)
-        if (was && !on) discardModels()
+        if (was && !on) {
+            // Cancela los reconocimientos en vuelo antes de soltar el modelo: si no, uno a medio
+            // hacer volveria a instalar (~40 MB) y a cargar los modelos recien borrados (M4).
+            inFlight.values.forEach { it.cancel() }
+            discardModels()
+        }
     }
 
     /** Pausar con ahorro de bateria o bateria baja (Ajustes, activado por defecto). */
@@ -156,8 +161,10 @@ class OcrManager(
         val key = (book.id shl 24) or index.toLong()
         val job = inFlight.computeIfAbsent(key) {
             scope.async(Dispatchers.IO, start = CoroutineStart.LAZY) {
-                mutableRecognizing.update { it + key }
                 try {
+                    // Si se desactivo el OCR entre el encolado y el arranque, no se instala ni usa el modelo.
+                    if (!enabled.value) return@async null
+                    mutableRecognizing.update { it + key }
                     val r = recognizer.recognize(pdf, index, OcrEngine.languageFor(book.language), urgent)
                     if (r != null) {
                         store.write(book.id, index, r)
@@ -367,10 +374,11 @@ class OcrManager(
         release(book.id)
     }
 
-    /** Libera lo guardado de [bookId]: texto reconocido y audio. */
+    /** Libera lo guardado de [bookId]: texto reconocido, audio y el recuento de paginas en memoria. */
     private suspend fun release(bookId: Long) = withContext(Dispatchers.IO) {
         store.deleteBook(bookId)
         removeAudio(bookId)
+        pageCounts.remove(bookId) // B10: no dejar un Int por libro procesado durante la vida del proceso.
         refreshSize()
     }
 

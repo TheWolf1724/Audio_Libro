@@ -54,6 +54,8 @@ import com.lectorvoz.app.R
 import com.lectorvoz.app.books.CoverLoader
 import com.lectorvoz.app.ui.components.AppIconButton
 import com.lectorvoz.app.ui.components.BookCover
+import com.lectorvoz.app.ui.components.SwitchRow
+import androidx.compose.foundation.clickable
 import com.lectorvoz.core.data.history.HistoryEntry
 import com.lectorvoz.core.data.history.ReadingHistoryRepository
 import com.lectorvoz.core.data.library.LibraryRepository
@@ -87,7 +89,7 @@ data class HistoryUiState(
 class HistoryViewModel(
     private val history: ReadingHistoryRepository,
     library: LibraryRepository,
-    settings: SettingsRepository,
+    private val settings: SettingsRepository,
     private val recorder: HistoryRecorder? = null,
 ) : ViewModel() {
     val state: StateFlow<HistoryUiState> = combine(history.entries, library.books, settings.app) { entries, books, prefs ->
@@ -103,6 +105,12 @@ class HistoryViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
 
     fun delete(e: HistoryEntry) = viewModelScope.launch { history.delete(e.id) }
+
+    /** Cambia los ajustes del historial (guardar, que mostrar) desde esta misma pantalla. */
+    fun app(t: (AppPrefs) -> AppPrefs) = viewModelScope.launch { settings.updateApp(t) }
+
+    /** Borra todas las lecturas anotadas (los libros y su progreso no cambian). */
+    fun clearHistory() = viewModelScope.launch { history.clear() }
 
     /** Lecturas con las que se puede unir [e] (otra edicion del mismo libro). */
     suspend fun mergeOptions(e: HistoryEntry): List<HistoryEntry> = recorder?.mergeOptions(e).orEmpty()
@@ -127,7 +135,7 @@ internal fun historyDetails(e: HistoryEntry, p: AppPrefs): List<String> = buildL
 @Composable
 fun HistoryScreen(vm: HistoryViewModel, covers: CoverLoader, onBack: () -> Unit, onOpen: (Long) -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
-    HistoryContent(s, covers, onBack, onOpen, vm::delete, mergeOptions = vm::mergeOptions, onMerge = vm::merge)
+    HistoryContent(s, covers, onBack, onOpen, vm::delete, mergeOptions = vm::mergeOptions, onMerge = vm::merge, onApp = vm::app, onClearHistory = vm::clearHistory)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -140,11 +148,15 @@ fun HistoryContent(
     onDelete: (HistoryEntry) -> Unit,
     mergeOptions: suspend (HistoryEntry) -> List<HistoryEntry> = { emptyList() },
     onMerge: (HistoryEntry, HistoryEntry) -> Unit = { _, _ -> },
+    onApp: ((AppPrefs) -> AppPrefs) -> Unit = {},
+    onClearHistory: () -> Unit = {},
 ) {
     var filter by rememberSaveable { mutableStateOf(HistoryFilter.ALL) }
     var menu by remember { mutableStateOf<HistoryEntry?>(null) }
     var confirm by remember { mutableStateOf<HistoryEntry?>(null) }
     var merging by remember { mutableStateOf<Pair<HistoryEntry, List<HistoryEntry>>?>(null) }
+    var confirmClear by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     Scaffold(
         topBar = { TopAppBar(title = { Text("Historial de lecturas") }, navigationIcon = { AppIconButton(R.drawable.ic_arrow_back, "Volver", onBack) }) },
@@ -168,7 +180,7 @@ fun HistoryContent(
             }
             if (!s.prefs.historyEnabled) {
                 Text(
-                    "El historial esta desactivado (Ajustes > Lectura). Lo anotado antes se conserva.",
+                    "El historial esta desactivado (ajustes aqui arriba). Lo anotado antes se conserva.",
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(16.dp),
                 )
@@ -187,6 +199,36 @@ fun HistoryContent(
                 )
             }
             LazyColumn(contentPadding = PaddingValues(bottom = 32.dp), modifier = Modifier.fillMaxSize().testTag("historial-lista")) {
+                // Ajustes del historial (ARRIBA del listado): plegables para no tapar las lecturas.
+                item(key = "historial-ajustes") {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 56.dp)
+                            .clickable(role = Role.Button) { showSettings = !showSettings }
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .testTag("historial-ajustes-cabecera"),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("Ajustes del historial", style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                        AppIconButton(
+                            if (showSettings) R.drawable.ic_keyboard_arrow_up else R.drawable.ic_keyboard_arrow_down,
+                            if (showSettings) "Ocultar los ajustes" else "Mostrar los ajustes",
+                            { showSettings = !showSettings },
+                        )
+                    }
+                    if (showSettings) {
+                        SwitchRow(
+                            "Guardar el historial", s.prefs.historyEnabled, { v -> onApp { it.copy(historyEnabled = v) } },
+                            summary = "Titulo, portada y fechas de cada libro, aunque lo quites de la biblioteca", tag = "app-historyEnabled",
+                        )
+                        SwitchRow("Mostrar portada", s.prefs.historyShowCover, { v -> onApp { it.copy(historyShowCover = v) } }, tag = "app-historyShowCover")
+                        SwitchRow("Mostrar autor", s.prefs.historyShowAuthor, { v -> onApp { it.copy(historyShowAuthor = v) } }, tag = "app-historyShowAuthor")
+                        SwitchRow("Mostrar fecha de inicio", s.prefs.historyShowStarted, { v -> onApp { it.copy(historyShowStarted = v) } }, tag = "app-historyShowStarted")
+                        SwitchRow("Mostrar fecha de fin", s.prefs.historyShowFinished, { v -> onApp { it.copy(historyShowFinished = v) } }, tag = "app-historyShowFinished")
+                        SwitchRow("Mostrar progreso", s.prefs.historyShowProgress, { v -> onApp { it.copy(historyShowProgress = v) } }, tag = "app-historyShowProgress")
+                        TextButton(onClick = { confirmClear = true }, modifier = Modifier.padding(horizontal = 8.dp).testTag("app-historial-borrar")) { Text("Borrar el historial") }
+                    }
+                    HorizontalDivider()
+                }
                 items(shown, key = { it.id }) { e ->
                     val details = historyDetails(e, s.prefs)
                     Row(
@@ -259,6 +301,15 @@ fun HistoryContent(
             text = { Text("Se quitara \"${e.title}\" del historial. El libro de la biblioteca no cambia.") },
             confirmButton = { TextButton(onClick = { onDelete(e); confirm = null }) { Text("Quitar") } },
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancelar") } },
+        )
+    }
+    if (confirmClear) {
+        AlertDialog(
+            onDismissRequest = { confirmClear = false },
+            title = { Text("Borrar el historial") },
+            text = { Text("Se borraran todas las lecturas anotadas. Los libros y su progreso no cambian.") },
+            confirmButton = { TextButton(onClick = { onClearHistory(); confirmClear = false }) { Text("Borrar") } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancelar") } },
         )
     }
 }

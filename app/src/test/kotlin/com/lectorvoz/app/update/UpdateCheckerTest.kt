@@ -125,13 +125,62 @@ class UpdateCheckerTest {
     }
 
     @Test
-    fun unFalloDeRedNoRompeNadaYReintentaOtroDia() = runTest(UnconfinedTestDispatcher()) {
+    fun unFalloDeRedApuntaLaConsultaYReintentaAntesDe24h() = runTest(UnconfinedTestDispatcher()) {
+        var now = 1_000_000L
         var calls = 0
-        val c = UpdateChecker(prefs, this, "1.0.0", fetch = { calls++; error("sin red") })
+        val c = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { calls++; error("sin red") })
         c.checkIfDue(enabled = true)
         assertThat(c.available.value).isNull()
-        // Sin respuesta valida no se apunta la consulta: se reintenta en la siguiente apertura.
+        assertThat(calls).isEqualTo(1)
+        // Tras un fallo se apunta la consulta con un reintento corto: no se reconsulta al instante
+        // (antes golpeaba la API en cada apertura y agravaba el rate-limit).
+        c.checkIfDue(enabled = true)
+        assertThat(calls).isEqualTo(1)
+        // Pero el reintento llega mucho antes que el dia completo.
+        assertThat(UpdateChecker.RETRY_MS).isLessThan(UpdateChecker.INTERVAL_MS)
+        now += UpdateChecker.RETRY_MS
         c.checkIfDue(enabled = true)
         assertThat(calls).isEqualTo(2)
+    }
+
+    @Test
+    fun elBotonManualIgnoraElThrottleYAvisaDelResultado() = runTest(UnconfinedTestDispatcher()) {
+        var now = 1_000_000L
+        var calls = 0
+        var release: AppRelease? = AppRelease("1.1.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.1.0")
+        val c = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { calls++; release })
+        c.checkIfDue(enabled = true)
+        assertThat(calls).isEqualTo(1)
+        // El throttle bloquea una consulta automatica inmediata...
+        c.checkIfDue(enabled = true)
+        assertThat(calls).isEqualTo(1)
+        // ...pero el boton manual la fuerza igualmente y avisa de que hay version nueva.
+        c.checkNow()
+        assertThat(calls).isEqualTo(2)
+        assertThat(c.manual.value).isEqualTo(ManualResult.NEW_AVAILABLE)
+        // Sin novedad: "ya tienes la ultima".
+        release = AppRelease("1.0.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.0.0")
+        c.checkNow()
+        assertThat(c.manual.value).isEqualTo(ManualResult.UP_TO_DATE)
+        // Fallo de red: se avisa del fallo.
+        val d = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { error("sin red") })
+        d.checkNow()
+        assertThat(d.manual.value).isEqualTo(ManualResult.FAILED)
+    }
+
+    @Test
+    fun omitirSigueEnPieAunqueElRelojVayaHaciaAtras() = runTest(UnconfinedTestDispatcher()) {
+        var now = 1_000_000_000L
+        val release = AppRelease("1.1.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.1.0")
+        fun checker() = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { release })
+        val c = checker()
+        c.checkIfDue(enabled = true)
+        c.snooze()
+        assertThat(c.available.value).isNull()
+        // El reloj retrocede (zona horaria, ajuste manual): el aviso NO debe reaparecer antes de tiempo.
+        now -= 60_000
+        assertThat(checker().stored()).isNull()
+        now -= UpdateChecker.INTERVAL_MS
+        assertThat(checker().stored()).isNull()
     }
 }

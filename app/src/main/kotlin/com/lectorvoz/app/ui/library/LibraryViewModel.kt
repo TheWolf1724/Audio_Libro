@@ -112,7 +112,12 @@ class LibraryViewModel(
 
     fun consumeMessage() = local.update { it.copy(message = null) }
 
-    /** Importa varios ficheros; al terminar deja un resumen en [LibraryUiState.message]. */
+    /**
+     * Importa varios ficheros; al terminar deja un resumen en [LibraryUiState.message]. Cada
+     * fichero se envuelve por separado: si uno lanza, se cuenta como fallido y se sigue con los
+     * demas (el lote no se aborta), y el contador "importando" se baja SIEMPRE (el spinner no se
+     * queda colgado), tambien si la corrutina se cancela a mitad.
+     */
     fun import(uris: List<Uri>) {
         if (uris.isEmpty()) return
         viewModelScope.launch {
@@ -120,16 +125,32 @@ class LibraryViewModel(
             val copy = settings.app.first().copyOnImport
             var ok = 0
             var dup = 0
+            var processed = 0
             val failed = ArrayList<String>()
-            for (u in uris) {
-                when (val r = library.import(u, copy)) {
-                    is ImportResult.Imported -> ok++
-                    is ImportResult.Duplicate -> dup++
-                    is ImportResult.Failed -> failed += "${r.name}: ${errorText(r.error)}"
+            try {
+                for (u in uris) {
+                    try {
+                        when (val r = library.import(u, copy)) {
+                            is ImportResult.Imported -> ok++
+                            is ImportResult.Duplicate -> dup++
+                            is ImportResult.Failed -> failed += "${r.name}: ${errorText(r.error)}"
+                        }
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        failed += "${u.lastPathSegment ?: u}: ${errorText(ImportError.UNREADABLE)}"
+                    } finally {
+                        processed++
+                        local.update { it.copy(importing = (it.importing - 1).coerceAtLeast(0)) }
+                    }
                 }
-                local.update { it.copy(importing = (it.importing - 1).coerceAtLeast(0)) }
+                local.update { it.copy(message = importSummary(ok, dup, failed)) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                // Cancelado a mitad: baja el contador de los que quedaban (el actual ya lo bajo su finally).
+                val remaining = uris.size - processed
+                if (remaining > 0) local.update { it.copy(importing = (it.importing - remaining).coerceAtLeast(0)) }
+                throw e
             }
-            local.update { it.copy(message = importSummary(ok, dup, failed)) }
         }
     }
 

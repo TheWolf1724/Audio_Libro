@@ -89,6 +89,27 @@ class ViewModelsTest {
         assertThat(vm.state.value.message).isNull()
     }
 
+    /** A1: si un fichero del lote lanza, no se aborta el resto ni se queda colgado el spinner. */
+    @Test
+    fun importarSiguePeseAUnFicheroQueLanza() = runTest {
+        val repo = FakeLibraryRepository(libros)
+        val boom = Uri.parse("content://x/explota.epub")
+        repo.throwOn += boom.toString()
+        val settings = FakeSettingsRepository()
+        val vm = LibraryViewModel(repo, FakeCollectionRepository(), settings, compute = Dispatchers.Main)
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
+        vm.import(listOf(Uri.parse("content://x/uno.epub"), boom, Uri.parse("content://x/tres.epub")))
+        val s = vm.state.value
+        // El que lanza se cuenta como fallido; los otros dos se importan.
+        assertThat(s.totalCount).isEqualTo(libros.size + 2)
+        // El spinner no se queda colgado.
+        assertThat(s.importing).isEqualTo(0)
+        assertThat(s.message).contains("2 libros importados")
+        assertThat(s.message).contains("explota.epub")
+        // Se intentaron los tres (el fallo de uno no corta el lote).
+        assertThat(repo.imported).hasSize(3)
+    }
+
     @Test
     fun seguirLeyendoBorrarYColecciones() = runTest {
         val repo = FakeLibraryRepository(libros)

@@ -262,11 +262,16 @@ class ScreensTest {
                 }
             }
         }
-        for (c in fields(ReaderSettings::class.java)) rule.onNodeWithTag("lectura-$c").assertExists()
-        rule.onNodeWithTag("app-checkUpdates").assertExists()
-        for (t in listOf("app-ocrEnabled", "app-historyEnabled", "app-historyShowCover", "app-historyShowAuthor", "app-historyShowStarted", "app-historyShowFinished", "app-historyShowProgress")) {
-            rule.onNodeWithTag(t).assertExists()
+        for (c in fields(ReaderSettings::class.java)) {
+            // "Aumento de contraste" vive solo en Accesibilidad (ya no esta duplicado en Lectura).
+            if (c == "highContrast") continue
+            rule.onNodeWithTag("lectura-$c").assertExists()
         }
+        // OCR sigue en Lectura; el aviso de versiones se movio a "Acerca de" y los ajustes del
+        // historial, a la pantalla "Historial de lecturas".
+        for (t in listOf("app-ocrEnabled", "app-ocrSaveBattery")) rule.onNodeWithTag(t).assertExists()
+        rule.onNodeWithTag("app-checkUpdates").assertDoesNotExist()
+        rule.onNodeWithTag("app-historyEnabled").assertDoesNotExist()
     }
 
     @Test
