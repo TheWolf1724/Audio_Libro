@@ -2,15 +2,18 @@ package com.lectorvoz.app.ui.settings
 
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
@@ -29,9 +32,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -46,6 +52,7 @@ import com.lectorvoz.app.ui.components.SwitchRow
 import com.lectorvoz.app.ui.reader.animationLabel
 import com.lectorvoz.app.ui.reader.fontLabel
 import com.lectorvoz.app.ui.reader.themeLabel
+import com.lectorvoz.app.update.ManualCheck
 import com.lectorvoz.core.data.settings.AppPrefs
 import com.lectorvoz.core.data.settings.SettingsRanges
 import com.lectorvoz.tts.neural.PreloadStatus
@@ -126,6 +133,10 @@ fun ReadingSettingsContent(
     ocr: OcrStatus? = null,
     onClearOcr: () -> Unit = {},
     onClearHistory: () -> Unit = {},
+    /** Resultado de la comprobacion manual de versiones ("Buscar ahora"). */
+    manualUpdate: ManualCheck = ManualCheck.Idle,
+    /** Lanza la comprobacion manual; nulo cuando no procede (p. ej. vistas previas). */
+    onCheckUpdatesNow: (() -> Unit)? = null,
 ) {
     val r = SettingsRanges
     SectionHeader("Tema")
@@ -207,6 +218,44 @@ fun ReadingSettingsContent(
     }
     SectionHeader("Actualizaciones")
     SwitchRow("Avisar de nuevas versiones", app.checkUpdates, { v -> onApp { it.copy(checkUpdates = v) } }, summary = "Una vez al dia, al abrir la app, mira en GitHub si hay una version nueva (no envia ningun dato tuyo). Desde el aviso se puede instalar u omitir 24 h", tag = "app-checkUpdates")
+    // Justo debajo del interruptor y solo con el activado: comprobacion manual que ignora el limite diario.
+    if (app.checkUpdates && onCheckUpdatesNow != null) {
+        val checking = manualUpdate is ManualCheck.Checking
+        Button(
+            onClick = onCheckUpdatesNow,
+            enabled = !checking,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).heightIn(min = 48.dp)
+                .semantics { contentDescription = "Buscar actualizaciones ahora" }
+                .testTag("app-buscar-actualizaciones"),
+        ) { Text("Buscar actualizaciones ahora") }
+        when (val m = manualUpdate) {
+            ManualCheck.Idle -> {}
+            ManualCheck.Checking -> Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("app-actualizaciones-estado"),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                Text("Comprobando...", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(start = 12.dp))
+            }
+            is ManualCheck.UpToDate -> Text(
+                "Ya tienes la ultima version (${m.installed}).",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("app-actualizaciones-estado"),
+            )
+            is ManualCheck.Found -> Text(
+                "Nueva version disponible: ${m.release.version}.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("app-actualizaciones-estado"),
+            )
+            is ManualCheck.Error -> Text(
+                m.message,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("app-actualizaciones-estado"),
+            )
+        }
+    }
 }
 
 private fun speedText(v: Float) = "x" + "%.2f".format(v)

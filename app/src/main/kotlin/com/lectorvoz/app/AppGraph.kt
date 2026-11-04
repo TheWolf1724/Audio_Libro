@@ -220,6 +220,14 @@ class AppGraph(
     }
 
     /**
+     * "Buscar actualizaciones ahora" (desde ajustes): comprobacion manual que ignora el limite
+     * diario. Solo si el aviso de versiones esta activado (si no, la UI oculta el boton).
+     */
+    fun checkUpdatesNowManual() {
+        appScope.launch { if (settings.app.first().checkUpdates) updates.checkNow() }
+    }
+
+    /**
      * Empieza a escuchar [book] desde su posicion guardada con sus ajustes de voz (desde el
      * widget). Si ya es el libro de la voz, solo reanuda. Solo tras un toque del usuario.
      */
