@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.google.common.truth.Truth.assertThat
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -133,5 +134,62 @@ class UpdateCheckerTest {
         // Sin respuesta valida no se apunta la consulta: se reintenta en la siguiente apertura.
         c.checkIfDue(enabled = true)
         assertThat(calls).isEqualTo(2)
+    }
+
+    /** La comprobacion manual consulta aunque ya se haya consultado hoy, y avisa de la version mas nueva. */
+    @Test
+    fun comprobacionManualIgnoraElLimiteYEncuentraVersionNueva() = runTest(UnconfinedTestDispatcher()) {
+        val now = 5_000_000L
+        var calls = 0
+        val release = AppRelease("2.0.0", UpdateChecker.RELEASES_PREFIX + "tag/v2.0.0")
+        val c = UpdateChecker(prefs, this, "1.0.0", clock = { now }, fetch = { calls++; release })
+        // Ya comprobado hoy: la automatica no vuelve a preguntar.
+        c.checkIfDue(enabled = true)
+        c.checkIfDue(enabled = true)
+        assertThat(calls).isEqualTo(1)
+        // La manual consulta igualmente (salta el limite de 24 h).
+        c.checkNow()
+        assertThat(calls).isEqualTo(2)
+        assertThat(c.manualState.value).isEqualTo(ManualCheck.Found(release))
+        assertThat(c.available.value).isEqualTo(release)
+    }
+
+    /** Si la instalada ya es la ultima publicada, la manual dice que esta al dia. */
+    @Test
+    fun comprobacionManualConLaUltimaInstaladaDiceUpToDate() = runTest(UnconfinedTestDispatcher()) {
+        val release = AppRelease("1.0.0", UpdateChecker.RELEASES_PREFIX + "tag/v1.0.0")
+        val c = UpdateChecker(prefs, this, "1.0.0", fetch = { release })
+        c.checkNow()
+        assertThat(c.manualState.value).isEqualTo(ManualCheck.UpToDate("1.0.0"))
+        assertThat(c.available.value).isNull()
+    }
+
+    /** Un fallo en la comprobacion manual da un error amable, sin romper nada. */
+    @Test
+    fun comprobacionManualConFalloDaErrorAmable() = runTest(UnconfinedTestDispatcher()) {
+        val c = UpdateChecker(prefs, this, "1.0.0", fetch = { error("sin red") })
+        c.checkNow()
+        val m = c.manualState.value
+        assertThat(m).isInstanceOf(ManualCheck.Error::class.java)
+        assertThat((m as ManualCheck.Error).message).contains("sin conexion")
+        assertThat(c.available.value).isNull()
+    }
+
+    /** Dos pulsaciones seguidas no lanzan dos consultas: la segunda espera a que acabe la primera. */
+    @Test
+    fun comprobacionManualNoSeSolapaSiYaHayUnaEnCurso() = runTest(UnconfinedTestDispatcher()) {
+        val gate = CompletableDeferred<Unit>()
+        var calls = 0
+        val release = AppRelease("2.0.0", UpdateChecker.RELEASES_PREFIX + "tag/v2.0.0")
+        val c = UpdateChecker(prefs, this, "1.0.0", fetch = { calls++; gate.await(); release })
+        c.checkNow()
+        assertThat(calls).isEqualTo(1)
+        assertThat(c.manualState.value).isEqualTo(ManualCheck.Checking)
+        // Segunda pulsacion mientras la primera sigue en curso: no consulta de nuevo.
+        c.checkNow()
+        assertThat(calls).isEqualTo(1)
+        // Al terminar la primera queda su resultado.
+        gate.complete(Unit)
+        assertThat(c.manualState.value).isEqualTo(ManualCheck.Found(release))
     }
 }

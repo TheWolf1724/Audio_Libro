@@ -103,10 +103,12 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
             val vm = settingsVm(graph)
             val s by vm.state.collectAsStateWithLifecycle()
             val ocr by graph.ocr.status.collectAsStateWithLifecycle()
+            val manualUpdate by graph.updates.manualState.collectAsStateWithLifecycle()
             SettingsScaffold("Lectura", back) {
                 ReadingSettingsContent(
                     s.reader, s.app, { vm.reader(it) }, { vm.app(it) },
                     ocr = ocr, onClearOcr = { graph.ocr.clearAll() }, onClearHistory = { graph.historyRecorder.clear() },
+                    manualUpdate = manualUpdate, onCheckUpdatesNow = { graph.checkUpdatesNowManual() },
                 )
             }
         }
