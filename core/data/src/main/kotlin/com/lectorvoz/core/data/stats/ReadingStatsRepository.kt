@@ -57,7 +57,11 @@ class RoomReadingStatsRepository(
     private val sessions: ReadingSessionDao,
     private val books: BookDao,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val zone: TimeZone = TimeZone.getDefault(),
+    /**
+     * Zona horaria de los limites de dia; se lee en cada calculo (no se captura una vez) para
+     * que "Hoy" y "ultimos 7 dias" sigan al cambio de zona o del reloj sin reiniciar (M5).
+     */
+    private val zone: () -> TimeZone = { TimeZone.getDefault() },
 ) : ReadingStatsRepository {
 
     /**
@@ -101,14 +105,14 @@ class RoomReadingStatsRepository(
             )
         }
 
-    private fun dayStart(t: Long): Long = Calendar.getInstance(zone).run {
+    private fun dayStart(t: Long): Long = Calendar.getInstance(zone()).run {
         timeInMillis = t
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
         timeInMillis
     }
 
     /** Inicio del dia [n] dias despues de [dayStart] en la zona local. */
-    internal fun addDays(dayStart: Long, n: Int): Long = Calendar.getInstance(zone).run {
+    internal fun addDays(dayStart: Long, n: Int): Long = Calendar.getInstance(zone()).run {
         timeInMillis = dayStart
         add(Calendar.DAY_OF_MONTH, n)
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)

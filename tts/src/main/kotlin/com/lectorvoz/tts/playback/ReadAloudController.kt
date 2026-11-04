@@ -292,8 +292,10 @@ class ReadAloudController(
             null -> Unit
             is SleepTimerMode.Minutes -> {
                 sleepTimer.start(mode.minutes * 60_000L)
-                // Sin lectura en marcha la cuenta espera a que se reanude.
-                if (!state.value.playWhenReady) sleepTimer.pause()
+                // Sin lectura sonando la cuenta espera: tambien durante una llamada (foco
+                // suprimido), aunque playWhenReady siga a true; al recuperar el foco se reanuda (B8).
+                val s = state.value
+                if (!s.playWhenReady || s.focusSuppressed) sleepTimer.pause()
             }
             SleepTimerMode.EndOfChapter -> {
                 timerChapter = current?.range?.start?.chapter ?: startLocator.chapter
@@ -437,6 +439,9 @@ class ReadAloudController(
         previous?.cancel()
         val mySession = synchronized(sessionLock) { ++session }
         pendingAfterStop = null
+        // El fundido de fin de capitulo es un Job aparte: al (re)empezar a hablar hay que
+        // cancelarlo y devolver el volumen a 1, o la nueva frase arrancaria casi muda (A2).
+        cancelChapterFade()
         sleepTimer.resume()
         hub.mutableState.update {
             it.copy(playWhenReady = true, isPreparing = true, ended = false, error = null, focusSuppressed = false)
@@ -568,10 +573,16 @@ class ReadAloudController(
                 }
                 if (playing) speakJob?.cancel()
                 pendingAfterStop = null
+                // Navegar durante el fundido de fin de capitulo lo anula y restaura el volumen;
+                // si no, la frase de destino sonaria casi muda (A2).
+                cancelChapterFade()
                 // "Fin de capitulo" pasa a ser el final del capitulo al que se salta.
                 if (stopAtChapterEnd) timerChapter = t.range.start.chapter
                 pausedAtMs = null
                 lastStarted = null
+                // Navegar fija una posicion valida: el libro ya no esta "terminado", asi que al
+                // pulsar play se lee desde aqui y no desde el principio (B7).
+                if (state.value.ended) hub.mutableState.update { it.copy(ended = false) }
                 publishPosition(t)
                 hub.mutableEvents.tryEmit(PlaybackEvent.UtteranceStarted(t.id, t.range))
                 if (playing) startSpeaking()
@@ -674,11 +685,21 @@ class ReadAloudController(
 
     /** Si [u] es la ultima frase del capitulo del temporizador, funde el volumen (hilo principal). */
     private suspend fun maybeStartChapterFade(u: Utterance, mySession: Long) {
-        if (!stopAtChapterEnd || u.range.start.chapter < timerChapter) return
+        if (!stopAtChapterEnd || u.range.start.chapter < timerChapter) {
+            // Antes del capitulo del temporizador el fundido no procede; si venia de uno
+            // interrumpido, se restaura el volumen (A2).
+            if (session == mySession) cancelChapterFade()
+            return
+        }
         val p = provider ?: return
         val n = p.next(u)
-        if (session != mySession || !stopAtChapterEnd) return
-        if (n != null && n.range.start.chapter == u.range.start.chapter) return
+        if (session != mySession) return
+        if (!stopAtChapterEnd || (n != null && n.range.start.chapter == u.range.start.chapter)) {
+            // La frase ya no es la ultima del capitulo (o se quito el temporizador): se cancela
+            // cualquier fundido anterior y se devuelve el volumen a 1 (A2).
+            cancelChapterFade()
+            return
+        }
         val cps = rate.charsPerSecond() ?: DEFAULT_CPS
         val durationMs = (u.displayText.length / cps * 1000).toLong().coerceIn(MIN_CHAPTER_FADE_MS, SleepTimer.FADE_MS)
         cancelChapterFade()

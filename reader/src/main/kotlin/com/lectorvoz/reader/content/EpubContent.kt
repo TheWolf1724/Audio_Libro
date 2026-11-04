@@ -40,6 +40,7 @@ class EpubContent(
     fonts: FontProvider = FontProvider.Default,
     images: ImageLoader? = DocumentImageLoader(source),
     imageCacheBytes: Long = defaultImageCacheBytes(),
+    paginator: EpubPaginator? = null,
 ) : PagedContent {
 
     private val loader = images
@@ -59,7 +60,7 @@ class EpubContent(
         }
     }
 
-    private val paginator = EpubPaginator(fonts, sizedLoader)
+    private val paginator = paginator ?: EpubPaginator(fonts, sizedLoader)
     private val imageCache = BitmapLru<String>(imageCacheBytes)
 
     /** Se sustituye en el hilo principal y se lee en el de render: volatil y leido una vez. */
@@ -135,6 +136,13 @@ class EpubContent(
         unavailable(chapter, "Memoria insuficiente para abrir el capitulo.") to false
     }
 
+    /** Suelta las caches de maquetacion, documentos e imagenes para recuperar memoria tras un OOM. */
+    private fun freeForDegrade() {
+        imageCache.clear()
+        synchronized(layouts) { layouts.clear() }
+        synchronized(docs) { docs.clear() }
+    }
+
     private fun unavailable(chapter: Int, reason: String?): ChapterDocument {
         val heading = UNAVAILABLE
         val why = reason?.takeIf { it.isNotBlank() } ?: "El capitulo no se puede leer."
@@ -159,7 +167,15 @@ class EpubContent(
             // no se guarda nada y con una nueva la configuracion leida tambien lo es.
             val gen = synchronized(layouts) { generation }
             val cfg = requireConfig()
-            val cl = paginator.paginate(document(chapter), cfg.layout, cfg.viewport)
+            val cl = try {
+                paginator.paginate(document(chapter), cfg.layout, cfg.viewport)
+            } catch (e: OutOfMemoryError) {
+                // Un capitulo gigantesco (p. ej. un EPUB de un unico capitulo enorme) puede agotar
+                // la memoria al construir su StaticLayout. Como `loadDocument`, se libera memoria y
+                // se degrada a una pagina de aviso en lugar de cerrar la app (A3).
+                freeForDegrade()
+                paginator.paginate(unavailable(chapter, OVERSIZED), cfg.layout, cfg.viewport)
+            }
             synchronized(layouts) {
                 if (gen == generation) {
                     layouts[chapter] = cl
@@ -190,7 +206,14 @@ class EpubContent(
             val count = synchronized(layouts) { layouts[ch] }?.pageCount ?: run {
                 val doc = synchronized(docs) { docs[ch] } ?: loadDocument(ch).first.also { noteChars(ch, it) }
                 currentCoroutineContext().ensureActive()
-                paginator.paginate(doc, cfg.layout, cfg.viewport, dispatcher).pageCount
+                try {
+                    paginator.paginate(doc, cfg.layout, cfg.viewport, dispatcher).pageCount
+                } catch (e: OutOfMemoryError) {
+                    // Capitulo demasiado grande para maquetar: se contabiliza como la pagina de
+                    // aviso (1) y no se tumba el conteo en segundo plano (A3).
+                    imageCache.clear()
+                    1
+                }
             }
             synchronized(layouts) { if (gen == generation && pageCounts[ch] < 0) pageCounts[ch] = count }
             currentCoroutineContext().ensureActive()
@@ -198,7 +221,8 @@ class EpubContent(
     }
 
     override suspend fun keyFor(locator: Locator): PageKey {
-        val ch = locator.chapter.coerceIn(0, chapterCount - 1)
+        // Con 0 capitulos `chapterCount - 1` seria -1 y `coerceIn(0, -1)` lanzaria (B4).
+        val ch = locator.chapter.coerceIn(0, (chapterCount - 1).coerceAtLeast(0))
         val cl = layout(ch)
         return PageKey(ch, cl.pageForOffset(locator.offset))
     }
@@ -286,8 +310,8 @@ class EpubContent(
 
     override suspend fun textOf(range: LocatorRange): String? {
         if (range.isEmpty) return null
-        val first = range.start.chapter.coerceIn(0, chapterCount - 1)
-        val last = range.endExclusive.chapter.coerceIn(first, chapterCount - 1)
+        val first = range.start.chapter.coerceIn(0, (chapterCount - 1).coerceAtLeast(0))
+        val last = range.endExclusive.chapter.coerceIn(first, (chapterCount - 1).coerceAtLeast(first))
         val sb = StringBuilder()
         for (ch in first..last) {
             val text = document(ch).plainText
@@ -370,6 +394,9 @@ class EpubContent(
 
         /** Titulo del capitulo que sustituye a uno ilegible. */
         const val UNAVAILABLE = "Capitulo no disponible"
+
+        /** Motivo mostrado cuando un capitulo es demasiado grande para maquetarlo (OOM). */
+        const val OVERSIZED = "El capitulo es demasiado grande para mostrarlo."
 
         /** Presupuesto de imagenes decodificadas: 1/16 del heap, como mucho 48 MB. */
         fun defaultImageCacheBytes(): Long = minOf(Runtime.getRuntime().maxMemory() / 16, 48L * 1024 * 1024)

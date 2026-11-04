@@ -105,7 +105,7 @@ class ReposTest {
         val id = libro("c")
         libro("d", finished = true)
         val now = 10L * 24 * 3600 * 1000 + 12L * 3600 * 1000
-        val repo = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = TimeZone.getTimeZone("UTC"))
+        val repo = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = { TimeZone.getTimeZone("UTC") })
         repo.record(id, SessionKind.READ, now - 1000, 120_000, 2_000)
         repo.record(id, SessionKind.LISTEN, now - 5000, 60_000, 900)
         repo.record(id, SessionKind.READ, now, 1_000, 10) // demasiado corta: se descarta

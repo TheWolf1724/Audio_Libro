@@ -23,6 +23,7 @@ import com.lectorvoz.reader.layout.Viewport
 import com.lectorvoz.reader.render.Highlights
 import com.lectorvoz.reader.view.PageKey
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -243,6 +244,34 @@ class ContentTest {
         assertThat(pages).isGreaterThan(10)
         // Objetivo orientativo 300 ms en dispositivo; en Robolectric se deja margen amplio.
         assertThat(best).isLessThan(3_000L)
+    }
+
+    /** Paginador que agota la memoria en el primer intento y despues deja paginar (degradado). */
+    private class OomPaginator : EpubPaginator() {
+        var calls = 0
+        override suspend fun paginate(
+            chapter: ChapterDocument,
+            settings: LayoutSettings,
+            viewport: Viewport,
+            dispatcher: CoroutineDispatcher,
+        ): com.lectorvoz.reader.layout.ChapterLayout {
+            calls++
+            if (calls == 1) throw OutOfMemoryError("capitulo gigante")
+            return super.paginate(chapter, settings, viewport, dispatcher)
+        }
+    }
+
+    /** A3: un OOM al paginar un capitulo gigante degrada a una pagina de aviso sin cerrar la app. */
+    @Test
+    fun capitulo_gigante_que_agota_la_memoria_degrada_sin_cerrar() = runTest {
+        val paginator = OomPaginator()
+        val content = EpubContent(Source(listOf(paragraphs(0, 50))), images = null, paginator = paginator)
+        content.configure(cfg())
+        // No propaga OutOfMemoryError: cae a la pagina de aviso.
+        val key = content.keyFor(Locator(0, 0))
+        assertThat(content.pageText(key)).contains("demasiado grande")
+        // Hubo intento real (OOM) y reintento degradado.
+        assertThat(paginator.calls).isAtLeast(2)
     }
 
     @Test
