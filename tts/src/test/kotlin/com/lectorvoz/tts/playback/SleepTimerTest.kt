@@ -62,6 +62,39 @@ class SleepTimerTest {
         assertThat(expired).isFalse()
     }
 
+    /** Pausar a mitad de un paso descuenta lo ya transcurrido: pausar mucho no alarga la cuenta. */
+    @Test
+    fun pausarYReanudarNoAlargaLaCuenta() = runTest {
+        val ticks = ArrayList<Long>()
+        var expiredAt = -1L
+        val timer = SleepTimer(
+            scope = backgroundScope,
+            onTick = { ticks += it },
+            onFade = {},
+            onExpire = { expiredAt = testScheduler.currentTime },
+            clock = { testScheduler.currentTime },
+        )
+        timer.start(60_000)
+        runCurrent()
+        var pausedMs = 0L
+        repeat(20) {
+            // Siempre a 0,7 s del ultimo arranque: dentro de un paso de 1 s.
+            advanceTimeBy(700)
+            runCurrent()
+            timer.pause()
+            advanceTimeBy(5_000)
+            runCurrent()
+            pausedMs += 5_000
+            timer.resume()
+            runCurrent()
+        }
+        advanceTimeBy(120_000)
+        runCurrent()
+        assertThat(expiredAt).isEqualTo(60_000 + pausedMs)
+        // Tras realinear, en los ultimos 30 s se sigue publicando cada segundo.
+        assertThat(ticks).containsAtLeast(29_000L, 5_000L, 1_000L, 0L)
+    }
+
     @Test
     fun cicloDelBotonDeNotificacion() {
         var m: com.lectorvoz.tts.SleepTimerMode? = null

@@ -32,10 +32,19 @@ class SleepTimer(
     private val onWindow: (Boolean) -> Unit = {},
     private val fadeMs: Long = FADE_MS,
     private val windowMs: Long = WINDOW_MS,
+    /**
+     * Reloj monotono en ms para descontar al pausar lo ya transcurrido del paso en curso (si
+     * no, cada pausa alargaba la cuenta hasta un paso). En pruebas, el tiempo virtual.
+     */
+    private val clock: () -> Long = { System.nanoTime() / 1_000_000 },
 ) {
     private var job: Job? = null
     private var remaining = 0L
     private var inWindow = false
+
+    // Paso en curso de la cuenta (para descontarlo al pausar): inicio y duracion; 0 = ninguno.
+    private var stepStartedAt = 0L
+    private var stepMs = 0L
 
     /** Cuenta congelada por [pause] (se reanuda con [resume]). */
     var isPaused: Boolean = false
@@ -59,6 +68,12 @@ class SleepTimer(
         if (!isRunning || remaining <= 0) return
         job?.cancel()
         job = null
+        // Lo que ya corrio del paso en curso cuenta (sin llegar a 0: [resume] lo termina).
+        if (stepMs > 0) {
+            val done = (clock() - stepStartedAt).coerceIn(0L, stepMs)
+            remaining = (remaining - done).coerceAtLeast(1L)
+            stepMs = 0L
+        }
         isPaused = true
         setWindow(false)
         onFade(1f)
@@ -79,11 +94,18 @@ class SleepTimer(
             var published = remaining
             while (remaining > 0) {
                 val inFade = remaining <= fadeMs
-                val step = minOf(if (inFade) FADE_STEP_MS else TICK_MS, remaining)
+                val base = if (inFade) FADE_STEP_MS else TICK_MS
+                // Tras una pausa a mitad de paso, el primero realinea la cuenta a pasos enteros
+                // (asi se sigue publicando cada segundo en los ultimos [windowMs]).
+                val misaligned = remaining % base
+                val step = if (misaligned != 0L) misaligned else minOf(base, remaining)
                 // Al entrar en la zona de fundido, el paso se ajusta para caer justo en ella.
                 val untilFade = remaining - fadeMs
                 val realStep = if (!inFade && untilFade in 1 until step) untilFade else step
+                stepStartedAt = clock()
+                stepMs = realStep
                 delay(realStep)
+                stepMs = 0L
                 remaining -= realStep
                 if (shouldPublish(remaining, published)) {
                     onTick(remaining)
@@ -112,6 +134,7 @@ class SleepTimer(
         val wasRunning = job?.isActive == true
         job?.cancel()
         job = null
+        stepMs = 0L
         isPaused = false
         setWindow(false)
         if (wasRunning) onFade(1f)

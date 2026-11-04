@@ -8,8 +8,12 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.os.Bundle
+import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import androidx.core.content.ContextCompat
+import androidx.media3.common.C
+import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
@@ -20,6 +24,7 @@ import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
+import com.google.common.util.concurrent.SettableFuture
 import com.lectorvoz.core.model.TtsEngineType
 import com.lectorvoz.tts.R
 import com.lectorvoz.tts.cache.AudioDiskCache
@@ -32,6 +37,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -46,6 +53,18 @@ object TtsConfig {
      * arranque de la app.
      */
     @Volatile var sessionActivityIntent: ((Context) -> Intent)? = null
+
+    /**
+     * Ultimo libro para reanudar la voz tras morir el proceso ("play" desde el auricular, la
+     * notificacion o el coche con el servicio recien creado y sin libro). La app devuelve el
+     * libro, su fuente de frases y la posicion guardada, y deja antes sus ajustes de voz en
+     * `PlaybackHub.default.settings`; nulo = no hay libro que reanudar. Se llama en el hilo
+     * principal con el servicio ya en primer plano. Nulo (sin configurar) = no se reanuda.
+     */
+    @Volatile var resumeBook: (suspend (Context) -> BookRequest?)? = null
+
+    /** true si la app esta en pantalla: el modelo neuronal no se suelta enseguida al pausar. */
+    @Volatile var keepModelWarm: (() -> Boolean)? = null
 
     /** Hilos de inferencia de la voz neuronal. */
     @Volatile var neuralThreads: Int = 2
@@ -106,6 +125,10 @@ class PlaybackService : MediaSessionService() {
             // 60 s), media = el parrafo siguiente + 30 s, baja = las frases siguientes (~15 s).
             preloadPolicy = DevicePreload(this, hub)::policy,
             fastTick = { hub.readerVisible.value },
+            // En pausa con el lector fuera de la pantalla, el modelo se libera enseguida, y la
+            // espera cuenta el tiempo con el movil dormido.
+            keepWarm = { hub.readerVisible.value || TtsConfig.keepModelWarm?.invoke() == true },
+            sleepClock = SystemClock::elapsedRealtime,
         )
         hub.renderer = neural
         val engineFactory: (TtsEngineType) -> SpeechEngine = { type ->
@@ -136,10 +159,17 @@ class PlaybackService : MediaSessionService() {
         scope.launch { hub.settings.drop(1).collect { controller.updateSettings(it) } }
         scope.launch {
             // Solo cuando cambia lo que se usa (no con cada frase ni cada segundo del temporizador).
-            controller.state.map { Triple(it.playWhenReady, it.focusSuppressed, it.engine) }.distinctUntilChanged().collect { (play, suppressed, engine) ->
+            controller.state.map { Triple(it.playWhenReady, it.focusSuppressed, it.engine) }.distinctUntilChanged().collectLatest { (play, suppressed, engine) ->
                 setNoisyReceiver(play)
                 // Sin WakeLock durante una llamada (foco perdido temporalmente: no hay audio).
-                wakeLock.set(play && !suppressed && engine == TtsEngineType.NEURAL)
+                val needed = play && !suppressed && engine == TtsEngineType.NEURAL
+                wakeLock.set(needed)
+                // Lectura continua sin cambios de estado (horas): se renueva antes de que caduque.
+                // collectLatest corta esta espera en el siguiente cambio; onDestroy lo suelta.
+                while (needed) {
+                    delay(WakeLockHolder.RENEW_MS)
+                    wakeLock.renew()
+                }
             }
         }
         battery = AndroidBatteryMonitor(this)
@@ -250,6 +280,44 @@ class PlaybackService : MediaSessionService() {
 
     private inner class SessionCallback : MediaSession.Callback {
         /**
+         * "Play" sin libro (proceso recien creado tras morir con la voz en pausa): se abre el
+         * ultimo libro en su posicion ([TtsConfig.resumeBook]) y Media3 reproduce. Media3 ya
+         * paso el servicio a primer plano al pedir reproducir; si no hay libro, se suelta el
+         * servicio para no dejar una notificacion vacia. Sin `isForPlayback` (la tarjeta de
+         * "reanudar" del sistema solo pide los datos) no se abre nada.
+         */
+        override fun onPlaybackResumption(
+            mediaSession: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            isForPlayback: Boolean,
+        ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> {
+            val hook = TtsConfig.resumeBook
+            if (!isForPlayback || hook == null) {
+                return Futures.immediateFailedFuture(UnsupportedOperationException("Sin libro que reanudar"))
+            }
+            val result = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
+            val resumption = PlaybackResumption(
+                this@PlaybackService.controller, hub, { hook(this@PlaybackService) },
+                onError = { Log.w(TAG, "No se pudo abrir el ultimo libro", it) },
+            )
+            val job = scope.launch {
+                val id = resumption.resume()
+                if (id == null) {
+                    result.setException(UnsupportedOperationException("Sin libro que reanudar"))
+                    // Despues de que Media3 atienda el fallo (en el mismo hilo).
+                    launch { if (this@PlaybackService.controller.book == null) pauseAllPlayersAndStopSelf() }
+                    return@launch
+                }
+                // Estado al dia ya: Media3 pide reproducir justo al completar el futuro.
+                player.refresh()
+                val item = MediaItem.Builder().setMediaId(id).build()
+                result.set(MediaSession.MediaItemsWithStartPosition(listOf(item), 0, C.TIME_UNSET))
+            }
+            job.invokeOnCompletion { if (!result.isDone) result.setException(it ?: IllegalStateException("Sin resultado")) }
+            return result
+        }
+
+        /**
          * Los comandos propios (abrir libro, saltar a posicion, temporizador, marcar,
          * capitulos) solo para controladores de confianza: la propia app, la notificacion,
          * los del sistema (SystemUI, Bluetooth: `isTrusted`) y Android Auto. El resto (otra
@@ -310,18 +378,29 @@ class PlaybackService : MediaSessionService() {
          * Boton del auricular: con `headphoneDoubleTapRewind`, toque simple = reproducir o
          * pausar y doble toque = frase anterior (Media3 haria "siguiente"). KEYCODE_MEDIA_PREVIOUS
          * sigue el camino normal (seekToPrevious = frase anterior).
+         *
+         * No se aplica al boton de la notificacion (un toque responde al momento, sin esperar
+         * a un posible segundo toque) ni sin libro abierto: ese "play" tiene que llegar a
+         * Media3 para reanudar el ultimo libro ([onPlaybackResumption]) y pasar a primer plano
+         * (si no, el servicio arrancado por el boton no llegaria a primer plano a tiempo).
          */
         override fun onMediaButtonEvent(
             session: MediaSession,
             controllerInfo: MediaSession.ControllerInfo,
             intent: Intent,
         ): Boolean {
-            if (!this@PlaybackService.controller.currentSettings.headphoneDoubleTapRewind) return false
+            val c = this@PlaybackService.controller
+            if (!c.currentSettings.headphoneDoubleTapRewind) return false
+            if (c.book == null || session.isMediaNotificationController(controllerInfo)) return false
             @Suppress("DEPRECATION")
             val key = intent.getParcelableExtra<KeyEvent>(Intent.EXTRA_KEY_EVENT) ?: return false
             if (key.keyCode != KeyEvent.KEYCODE_HEADSETHOOK && key.keyCode != KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE) return false
             if (key.action == KeyEvent.ACTION_DOWN && key.repeatCount == 0) headsetTaps.onTap()
             return true
         }
+    }
+
+    private companion object {
+        const val TAG = "PlaybackService"
     }
 }

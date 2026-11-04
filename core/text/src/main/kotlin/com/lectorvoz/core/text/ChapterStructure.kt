@@ -42,6 +42,11 @@ internal class ChapterStructure(
         private const val MAX_VERSE_LINE = 60
         private val SUPERSCRIPT_DIGITS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
         private val UNIT_WORDS = hashSetOf("km", "cm", "mm", "dm", "in", "ft")
+
+        /** Palabras que suelen ir seguidas de su numero ("nivel 3", "nivel³", "nivel [3]"): no es una nota. */
+        private val NUMBERED_NOUNS = hashSetOf(
+            "nivel", "niveles", "piso", "planta", "rango", "fase", "temporada", "grado", "capitulo", "capítulo", "tomo", "volumen",
+        )
         private const val NUM_WORDS = "uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve|diez|once|doce|" +
             "primero|primera|segundo|segunda|tercero|tercera|cuarto|cuarta|quinto|quinta|sexto|sexta|" +
             "s[eé]ptimo|s[eé]ptima|octavo|octava|noveno|novena|d[eé]cimo|d[eé]cima|[uú]ltimo|[uú]ltima|" +
@@ -208,10 +213,13 @@ internal class ChapterStructure(
 
         private fun isDecorative(text: String, s: Int, e: Int): Boolean {
             var any = false
-            for (k in s until e) {
-                val c = text[k]
-                if (c.isWhitespace()) continue
-                if (c.isLetterOrDigit()) return false
+            var k = s
+            while (k < e) {
+                // Por punto de codigo: las letras "estilizadas" (cursiva matematica) van en pares.
+                val cp = Character.codePointAt(text, k)
+                k += Character.charCount(cp)
+                if (Character.isWhitespace(cp)) continue
+                if (Character.isLetterOrDigit(cp)) return false
                 any = true
             }
             return any
@@ -292,7 +300,16 @@ internal class ChapterStructure(
             var b = k - 1
             while (b > min && text[b - 1].isLetter()) b--
             val w = text.substring(b, k)
-            return w.length >= 2 && w.lowercase() !in UNIT_WORDS
+            return w.length >= 2 && w.lowercase() !in UNIT_WORDS && w.lowercase() !in NUMBERED_NOUNS
+        }
+
+        /** true si la palabra justo antes de [k] (saltando espacios) cuenta cosas: "nivel [3]". */
+        private fun afterNumberedNoun(text: String, k: Int, min: Int): Boolean {
+            var e = k
+            while (e > min && text[e - 1] == ' ') e--
+            var b = e
+            while (b > min && text[b - 1].isLetter()) b--
+            return b < e && text.substring(b, e).lowercase() in NUMBERED_NOUNS
         }
 
         /** Llamadas de nota: enlaces/superindices (EPUB) y patrones del texto. */
@@ -315,7 +332,7 @@ internal class ChapterStructure(
                         var e = k + 1
                         while (e < p.end && isAsciiDigit(text[e]) && e - k <= 3) e++
                         if (e > k + 1 && e < p.end && text[e] == close) {
-                            val ok = if (c == '[') true else glued(text, k, p.start)
+                            val ok = if (c == '[') !afterNumberedNoun(text, k, p.start) else glued(text, k, p.start)
                             if (ok) out.add(NoteCall(k, e + 1, null))
                             k = e + 1
                             continue

@@ -100,4 +100,32 @@ class HistoryTest {
         history.finished(raw.get(1)!!, true)
         assertThat(history.entries.first().single().finishedAt).isEqualTo(first)
     }
+
+    /** Libro nuevo parecido a una lectura de un libro ya quitado: se pregunta y, si se acepta, se unen. */
+    @Test
+    fun otraEdicionPreguntaYUneSoloSiSeAcepta() = runTest(UnconfinedTestDispatcher()) {
+        var now = 1_000L
+        val history = InMemoryReadingHistory { now }
+        val raw = FakeLibraryRepository(listOf(book(1, "Carl el mazmorrero", "Matt Dinniman")))
+        val recorder = HistoryRecorder(this, history, raw, coversDir = null)
+        val library = ObservedLibrary(raw, listOf(recorder))
+        library.markOpened(1)
+        library.setFinished(1, true)
+        library.delete(1)
+        // Otra edicion (otro fichero): se pregunta.
+        now = 5_000L
+        raw.list.value = raw.list.value + book(2, "Carl el Mazmorrero (Edicion de bolsillo)", "Dinniman, Matt")
+        library.markOpened(2)
+        val s = recorder.suggestion.value!!
+        assertThat(s.candidates.map { it.title }).containsExactly("Carl el mazmorrero")
+        recorder.answer(s.candidates.first())
+        val merged = history.entries.first().single()
+        assertThat(merged.bookId).isEqualTo(2L)
+        assertThat(merged.startedAt).isEqualTo(1_000L)
+        assertThat(merged.finished).isTrue()
+        // "No, es otro libro": quedan dos lecturas.
+        raw.list.value = raw.list.value + book(3, "Carl el mazmorrero", "Matt Dinniman")
+        library.markOpened(3)
+        assertThat(recorder.suggestion.value).isNull() // la otra sigue en la biblioteca: no se propone
+    }
 }

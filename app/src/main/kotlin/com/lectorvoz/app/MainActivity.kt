@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
@@ -24,8 +25,11 @@ import com.lectorvoz.app.ui.theme.LectorVozTheme
 import com.lectorvoz.core.model.ReaderSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Actividad unica: biblioteca, lector y ajustes con navigation-compose. Atiende "Abrir con",
@@ -42,8 +46,10 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         val graph = (application as LectorVozApp).graph
+        val initial = initialReaderSettings(graph)
         setContent {
-            val reader by graph.settings.reader.collectAsStateWithLifecycle(ReaderSettings())
+            val reader by graph.settings.reader.collectAsStateWithLifecycle(initial)
+            SideEffect { lastReaderSettings = reader }
             LectorVozTheme(themeMode = reader.theme, highContrast = reader.highContrast) {
                 CompositionLocalProvider(LocalAppGraph provides graph) {
                     val nav = rememberNavController()
@@ -73,6 +79,7 @@ class MainActivity : ComponentActivity() {
         super.onStart()
         val graph = (application as LectorVozApp).graph
         graph.ocr.setAppVisible(true)
+        graph.appVisible = true
         graph.installer.foreground = true
         // Aviso de nueva version: al abrir la app (no al despertar por el widget o la voz), como
         // mucho una vez al dia; tambien vuelve a mirar si acabo el "Omitir por ahora".
@@ -83,6 +90,7 @@ class MainActivity : ComponentActivity() {
         super.onStop()
         val graph = (application as LectorVozApp).graph
         graph.ocr.setAppVisible(false)
+        graph.appVisible = false
         graph.installer.foreground = false
     }
 
@@ -113,6 +121,9 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         intent ?: return
+        // Relanzada desde Recientes: el intent es el original (widget, "Abrir con", "Compartir");
+        // repetirlo volveria a importar o a arrancar la voz sin que el usuario lo pida.
+        if (launchedFromHistory(intent)) return
         when (intent.action) {
             ACTION_OPEN_PLAYING -> {
                 val id = (application as LectorVozApp).graph.playback.state.value.bookId ?: return
@@ -155,7 +166,27 @@ class MainActivity : ComponentActivity() {
         (application as LectorVozApp).graph.imports.importExternal(uris)
     }
 
+    /**
+     * Ajustes de lectura con los que pintar el primer fotograma (sin parpadeo de tema): los
+     * ultimos vistos en este proceso (girar, cambiar el modo oscuro) o, en frio, una lectura
+     * corta y acotada del almacen; si tarda, los de por defecto.
+     */
+    private fun initialReaderSettings(graph: AppGraph): ReaderSettings =
+        lastReaderSettings ?: runCatching {
+            runBlocking { withTimeoutOrNull(INITIAL_SETTINGS_TIMEOUT_MS) { graph.settings.reader.first() } }
+        }.getOrNull()?.also { lastReaderSettings = it } ?: ReaderSettings()
+
     companion object {
+        /** Ultimos ajustes de lectura pintados en este proceso. */
+        @Volatile
+        private var lastReaderSettings: ReaderSettings? = null
+
+        private const val INITIAL_SETTINGS_TIMEOUT_MS = 300L
+
+        /** El sistema la relanzo desde Recientes con el intent original. */
+        fun launchedFromHistory(intent: Intent): Boolean =
+            intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0
+
         /** Accion del toque en la notificacion: abrir el libro que suena. */
         const val ACTION_OPEN_PLAYING = "com.lectorvoz.app.ABRIR_LO_QUE_SUENA"
 

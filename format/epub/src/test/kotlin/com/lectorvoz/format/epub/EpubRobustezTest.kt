@@ -89,8 +89,11 @@ class EpubRobustezTest {
             assertThat(b.toc.map { it.title }).containsExactly("A", "B").inOrder()
             assertThat(b.toc[1].target.chapter).isEqualTo(1)
             assertThat(b.chapter(0).plainText).isEqualTo("Bien.")
-            val e = runCatching { b.chapter(1) }.exceptionOrNull()
-            assertThat(e).isInstanceOf(EpubException.TooLarge::class.java)
+            // El capitulo ilegible se sustituye por un aviso con el titulo del indice.
+            val doc = b.chapter(1)
+            assertThat(doc.plainText).startsWith(EpubBook.UNAVAILABLE)
+            assertThat(doc.plainText).contains("demasiado grande")
+            assertThat(doc.title).isEqualTo("B")
         }
     }
 

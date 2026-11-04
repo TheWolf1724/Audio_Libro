@@ -372,6 +372,51 @@ class NeuralTtsEngineTest {
         assertThat(loaded).hasSize(2)
     }
 
+    /** Con el lector fuera de la pantalla, en pausa se libera a los pocos segundos. */
+    @Test
+    fun sinLectorEnPantallaLiberaEnSegundos() = runTest {
+        val d = StandardTestDispatcher(testScheduler)
+        var visible = true
+        val engine = NeuralTtsEngine(
+            loader = { _: VoiceRef, _: Int -> FakeSynth { 0 } },
+            sinkFactory = { FakeSink(testScheduler) },
+            synthDispatcher = d, audioDispatcher = d, tickDispatcher = d, tickMs = 5,
+            idleReleaseMs = 5 * 60_000L, keepWarm = { visible }, backgroundIdleReleaseMs = 5_000L,
+        )
+        engine.prepare(VoiceSettings(engine = TtsEngineType.NEURAL, speed = SIN_ESTIRAR))
+        advanceTimeBy(60_000L)
+        runCurrent()
+        assertThat(engine.isModelLoaded).isTrue()
+        // Se apaga la pantalla despues de pausar: el plazo pasa a ser el corto.
+        visible = false
+        advanceTimeBy(6_000L)
+        runCurrent()
+        assertThat(engine.isModelLoaded).isFalse()
+    }
+
+    /** El plazo cuenta el tiempo con el movil dormido (reloj aparte; `delay` no avanza dormido). */
+    @Test
+    fun elPlazoCuentaElTiempoDormido() = runTest {
+        val d = StandardTestDispatcher(testScheduler)
+        var slept = 0L
+        val engine = NeuralTtsEngine(
+            loader = { _: VoiceRef, _: Int -> FakeSynth { 0 } },
+            sinkFactory = { FakeSink(testScheduler) },
+            synthDispatcher = d, audioDispatcher = d, tickDispatcher = d, tickMs = 5,
+            idleReleaseMs = 5 * 60_000L,
+            sleepClock = { testScheduler.currentTime + slept },
+        )
+        engine.prepare(VoiceSettings(engine = TtsEngineType.NEURAL, speed = SIN_ESTIRAR))
+        advanceTimeBy(10_000L)
+        runCurrent()
+        assertThat(engine.isModelLoaded).isTrue()
+        // Una hora dormido; al despertar un momento, el siguiente paso ya libera.
+        slept = 60 * 60_000L
+        advanceTimeBy(NeuralTtsEngine.IDLE_CHECK_MS + 1)
+        runCurrent()
+        assertThat(engine.isModelLoaded).isFalse()
+    }
+
     @Test
     fun reutilizaLaFraseSintetizadaAlReanudar() = runTest {
         val d = StandardTestDispatcher(testScheduler)

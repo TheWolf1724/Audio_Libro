@@ -1,6 +1,7 @@
 package com.lectorvoz.tts.playback
 
 import android.os.Looper
+import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
@@ -16,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
@@ -57,7 +59,74 @@ class TtsPlayerTest {
     fun sinLibroEstaInactivo() {
         idle()
         assertThat(player.playbackState).isEqualTo(Player.STATE_IDLE)
-        assertThat(player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)).isFalse()
+        assertThat(player.currentMediaItem).isNull()
+        // "Play" y poner elementos: lo que Media3 necesita para llamar a onPlaybackResumption.
+        assertThat(player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)).isTrue()
+        assertThat(player.isCommandAvailable(Player.COMMAND_SET_MEDIA_ITEM)).isTrue()
+        assertThat(player.isCommandAvailable(Player.COMMAND_GET_CURRENT_MEDIA_ITEM)).isFalse()
+        // Sin libro, "play" no hace nada.
+        player.play()
+        idle()
+        assertThat(player.playWhenReady).isFalse()
+        assertThat(engine.spoken).isEmpty()
+    }
+
+    /**
+     * Reanudar tras morir el proceso, como lo hace Media3: el servicio abre el ultimo libro
+     * (PlaybackResumption), refresca el estado y Media3 pone el elemento y pide reproducir.
+     */
+    @Test
+    fun reanudarElUltimoLibroSinLibroAbierto() {
+        idle()
+        hub.settings.value = hub.settings.value.copy(speed = 1.3f)
+        val resumption = PlaybackResumption(controller, hub, {
+            BookRequest(BookInfo("id9", "Libro guardado"), book, Locator(0, 5))
+        })
+        var id: String? = null
+        scope.launch { id = resumption.resume() }
+        idle()
+        assertThat(id).isEqualTo("id9")
+        player.refresh()
+        // Lo que hace Media3 al completar onPlaybackResumption (sin esperar al Looper entre medias).
+        player.setMediaItem(MediaItem.Builder().setMediaId("id9").build())
+        player.play()
+        idle()
+        assertThat(controller.state.value.bookId).isEqualTo("id9")
+        assertThat(controller.currentSettings.speed).isEqualTo(1.3f)
+        assertThat(player.mediaMetadata.title.toString()).isEqualTo("Libro guardado")
+        assertThat(player.isPlaying).isTrue()
+        // Desde la posicion guardada ("Dos." empieza en el caracter 5).
+        assertThat(engine.spoken).containsExactly(2L)
+    }
+
+    @Test
+    fun reanudarSinLibroGuardadoNoAbreNada() {
+        val resumption = PlaybackResumption(controller, hub, { null })
+        var id: String? = "x"
+        scope.launch { id = resumption.resume() }
+        idle()
+        assertThat(id).isNull()
+        assertThat(controller.book).isNull()
+        val sinGancho = PlaybackResumption(controller, hub, null)
+        scope.launch { id = sinGancho.resume() }
+        idle()
+        assertThat(id).isNull()
+    }
+
+    @Test
+    fun reanudarNoCambiaElLibroYaAbierto() {
+        controller.open(BookInfo("id1", "Libro"), book, Locator.START)
+        var loads = 0
+        val resumption = PlaybackResumption(controller, hub, {
+            loads++
+            BookRequest(BookInfo("id9", "Otro"), book, Locator.START)
+        })
+        var id: String? = null
+        scope.launch { id = resumption.resume() }
+        idle()
+        assertThat(id).isEqualTo("id1")
+        assertThat(loads).isEqualTo(0)
+        assertThat(controller.book?.id).isEqualTo("id1")
     }
 
     @Test

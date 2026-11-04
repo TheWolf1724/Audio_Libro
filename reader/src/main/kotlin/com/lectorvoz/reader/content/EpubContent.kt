@@ -3,6 +3,8 @@ package com.lectorvoz.reader.content
 import android.content.ComponentCallbacks2
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import com.lectorvoz.core.model.Block
+import com.lectorvoz.core.model.BlockKind
 import com.lectorvoz.core.model.ChapterDocument
 import com.lectorvoz.core.model.DocumentSource
 import com.lectorvoz.core.model.Locator
@@ -111,10 +113,39 @@ class EpubContent(
 
     private suspend fun document(chapter: Int): ChapterDocument {
         synchronized(docs) { docs[chapter] }?.let { return it }
-        val doc = source.chapter(chapter)
-        synchronized(docs) { docs[chapter] = doc }
+        val (doc, ok) = loadDocument(chapter)
+        if (ok) synchronized(docs) { docs[chapter] = doc }
         noteChars(chapter, doc)
         return doc
+    }
+
+    /**
+     * Capitulo [chapter] de la fuente. Si no se puede leer devuelve un capitulo de aviso
+     * (y false, para no guardarlo): una pagina con el motivo en lugar de una pantalla en
+     * blanco, y se puede pasar al siguiente.
+     */
+    private suspend fun loadDocument(chapter: Int): Pair<ChapterDocument, Boolean> = try {
+        source.chapter(chapter) to true
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        unavailable(chapter, e.message) to false
+    } catch (e: OutOfMemoryError) {
+        imageCache.clear()
+        unavailable(chapter, "Memoria insuficiente para abrir el capitulo.") to false
+    }
+
+    private fun unavailable(chapter: Int, reason: String?): ChapterDocument {
+        val heading = UNAVAILABLE
+        val why = reason?.takeIf { it.isNotBlank() } ?: "El capitulo no se puede leer."
+        val text = "$heading\n$why"
+        return ChapterDocument(
+            chapter, null, source.metadata.language, text,
+            listOf(
+                Block.Text(0, heading.length, BlockKind.Heading(2)),
+                Block.Text(heading.length + 1, text.length, BlockKind.Paragraph),
+            ),
+        )
     }
 
     /** Maquetacion del capitulo [chapter] (cacheada). */
@@ -123,8 +154,11 @@ class EpubContent(
         synchronized(layouts) { layouts[chapter] }?.let { return it }
         return mutex.withLock {
             synchronized(layouts) { layouts[chapter] }?.let { return@withLock it }
+            // Primero la generacion y luego la configuracion: configure() escribe la
+            // configuracion antes de cambiar la generacion, asi que con una generacion vieja
+            // no se guarda nada y con una nueva la configuracion leida tambien lo es.
+            val gen = synchronized(layouts) { generation }
             val cfg = requireConfig()
-            val gen = generation
             val cl = paginator.paginate(document(chapter), cfg.layout, cfg.viewport)
             synchronized(layouts) {
                 if (gen == generation) {
@@ -151,10 +185,10 @@ class EpubContent(
     suspend fun computeAllPageCounts(dispatcher: CoroutineDispatcher = Dispatchers.Default) {
         for (ch in 0 until chapterCount) {
             if (knownPageCount(ch) != null) continue
+            val gen = synchronized(layouts) { generation } // antes que la configuracion (ver layout)
             val cfg = config ?: return
-            val gen = synchronized(layouts) { generation }
             val count = synchronized(layouts) { layouts[ch] }?.pageCount ?: run {
-                val doc = synchronized(docs) { docs[ch] } ?: source.chapter(ch).also { noteChars(ch, it) }
+                val doc = synchronized(docs) { docs[ch] } ?: loadDocument(ch).first.also { noteChars(ch, it) }
                 currentCoroutineContext().ensureActive()
                 paginator.paginate(doc, cfg.layout, cfg.viewport, dispatcher).pageCount
             }
@@ -222,6 +256,10 @@ class EpubContent(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            null
+        } catch (e: OutOfMemoryError) {
+            // Una imagen enorme no cierra la app: se libera la cache y se dibuja sin ella.
+            imageCache.clear()
             null
         } ?: return null
         imageCache.put(key, bmp)
@@ -329,6 +367,9 @@ class EpubContent(
     companion object {
         private const val CACHED_LAYOUTS = 3
         private const val CACHED_DOCS = 4
+
+        /** Titulo del capitulo que sustituye a uno ilegible. */
+        const val UNAVAILABLE = "Capitulo no disponible"
 
         /** Presupuesto de imagenes decodificadas: 1/16 del heap, como mucho 48 MB. */
         fun defaultImageCacheBytes(): Long = minOf(Runtime.getRuntime().maxMemory() / 16, 48L * 1024 * 1024)

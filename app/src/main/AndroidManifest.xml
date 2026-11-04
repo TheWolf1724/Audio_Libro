@@ -6,6 +6,10 @@
 
     <!-- Instalar la version nueva descargada de GitHub (Android pide permiso al usuario). -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Notificacion con el estado de la descarga e instalacion de la actualizacion. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- La descarga sigue si se sale de la app (servicio en primer plano mientras dura). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
 
     <application
         android:name=".LectorVozApp"
@@ -74,6 +78,13 @@
         <receiver
             android:name=".update.InstallResultReceiver"
             android:exported="false" />
+        <receiver
+            android:name=".update.UpdateActionReceiver"
+            android:exported="false" />
+        <service
+            android:name=".update.UpdateDownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Widget de escritorio "seguir escuchando". -->
         <receiver

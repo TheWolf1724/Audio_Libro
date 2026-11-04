@@ -35,6 +35,9 @@ import kotlinx.coroutines.launch
  *   medida, `PlaybackState.charsPerSecond`): la notificacion muestra una barra de progreso
  *   no desplazable; mientras suena, la posicion se extrapola desde el inicio de la frase.
  *   Sin datos (al empezar), duracion desconocida (TIME_UNSET) y sin barra.
+ * - Sin libro (proceso recien creado): inactivo pero con `COMMAND_PLAY_PAUSE` y
+ *   `COMMAND_SET_MEDIA_ITEM`, para que un "play" del auricular, la notificacion o el coche
+ *   llegue a `onPlaybackResumption` del servicio (que abre el ultimo libro).
  */
 @UnstableApi
 class TtsPlayer(
@@ -63,7 +66,7 @@ class TtsPlayer(
         val builder = State.Builder()
         if (book == null || s.bookId == null) {
             return builder
-                .setAvailableCommands(Player.Commands.Builder().add(Player.COMMAND_RELEASE).build())
+                .setAvailableCommands(IDLE_COMMANDS)
                 .setPlaybackState(Player.STATE_IDLE)
                 .build()
         }
@@ -164,6 +167,19 @@ class TtsPlayer(
 
     override fun handlePrepare(): ListenableFuture<*> = Futures.immediateVoidFuture()
 
+    /**
+     * Solo llega sin libro, tras `onPlaybackResumption`: el servicio ya abrio el libro en el
+     * controlador (la lista es ese libro), asi que no hay nada mas que hacer.
+     */
+    override fun handleSetMediaItems(
+        mediaItems: List<MediaItem>,
+        startIndex: Int,
+        startPositionMs: Long,
+    ): ListenableFuture<*> = Futures.immediateVoidFuture()
+
+    /** Rehace el estado en el acto (tras abrir un libro, antes de que Media3 pida reproducir). */
+    fun refresh() = invalidateState()
+
     override fun handleStop(): ListenableFuture<*> {
         controller.stop()
         return Futures.immediateVoidFuture()
@@ -195,6 +211,11 @@ class TtsPlayer(
 
     private companion object {
         const val MINUTE_MS = 60_000L
+
+        /** Sin libro: solo lo necesario para reanudar el ultimo libro (ver la clase). */
+        val IDLE_COMMANDS: Player.Commands = Player.Commands.Builder()
+            .addAll(Player.COMMAND_PLAY_PAUSE, Player.COMMAND_SET_MEDIA_ITEM, Player.COMMAND_RELEASE)
+            .build()
 
         val COMMANDS: Player.Commands = Player.Commands.Builder()
             .addAll(

@@ -117,6 +117,10 @@ fun LibraryRoute(
     val install by (installer?.state ?: remember { MutableStateFlow<InstallState>(InstallState.Idle) }).collectAsStateWithLifecycle()
     val uri = LocalUriHandler.current
     val context = androidx.compose.ui.platform.LocalContext.current
+    val notifPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
+        // Concedido con la descarga ya en marcha: la notificacion aparece con el estado actual.
+        if (ok) (context.applicationContext as? com.lectorvoz.app.LectorVozApp)?.graph?.updateNotifier?.refresh()
+    }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         vm.import(uris)
     }
@@ -148,7 +152,17 @@ fun LibraryRoute(
         onUpdateAction = { action ->
             val r = update ?: return@LibraryScreen
             when (action) {
-                UpdateAction.INSTALL -> installer?.install(r)
+                UpdateAction.INSTALL -> {
+                    // Para ver el progreso en la notificacion (Android 13+ pide permiso); la
+                    // descarga empieza igual aunque se rechace.
+                    if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                        androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) !=
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notifPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                    installer?.install(r)
+                }
                 UpdateAction.CANCEL -> installer?.cancel()
                 UpdateAction.CONFIRM -> (context as? android.app.Activity)?.let { installer?.confirm(it) }
                 UpdateAction.SNOOZE -> { installer?.cancel(); updates?.snooze() }
@@ -171,10 +185,15 @@ fun LibraryScreen(
 ) {
     val snackbar = remember { SnackbarHostState() }
     var searching by rememberSaveable { mutableStateOf(state.query.isNotEmpty()) }
-    var menuBook by remember { mutableStateOf<Book?>(null) }
-    var confirmDelete by remember { mutableStateOf<Book?>(null) }
-    var newCollectionFor by remember { mutableStateOf<Book?>(null) }
-    var newCollection by remember { mutableStateOf(false) }
+    // Dialogos y menus con rememberSaveable (guardando el id del libro): girar la pantalla o
+    // cambiar el modo oscuro no los cierra ni pierde lo escrito.
+    var menuBookId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var confirmDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var newCollectionForId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var newCollection by rememberSaveable { mutableStateOf(false) }
+    val bookById: (Long?) -> Book? = { id ->
+        id?.let { i -> state.books.firstOrNull { it.id == i } ?: state.continueReading?.takeIf { it.id == i } }
+    }
 
     LaunchedEffect(state.message) {
         val m = state.message ?: return@LaunchedEffect
@@ -254,7 +273,7 @@ fun LibraryScreen(
                 ) {
                     if (header != null) item(key = "seguir", span = { GridItemSpan(maxLineSpan) }) { header() }
                     items(state.books, key = { it.id }, contentType = { "libro" }) { b ->
-                        GridBook(b, covers, onClick = { actions.open(b) }, onLong = { menuBook = b })
+                        GridBook(b, covers, onClick = { actions.open(b) }, onLong = { menuBookId = b.id })
                     }
                 }
             } else {
@@ -264,36 +283,40 @@ fun LibraryScreen(
                 ) {
                     if (header != null) item(key = "seguir") { header() }
                     items(state.books, key = { it.id }, contentType = { "libro" }) { b ->
-                        ListBook(b, covers, onClick = { actions.open(b) }, onLong = { menuBook = b })
+                        ListBook(b, covers, onClick = { actions.open(b) }, onLong = { menuBookId = b.id })
                     }
                 }
             }
         }
     }
 
-    menuBook?.let { b ->
+    bookById(menuBookId)?.let { b ->
         BookMenuSheet(
             book = b,
             state = state,
             actions = actions,
-            onDismiss = { menuBook = null },
-            onDelete = { menuBook = null; confirmDelete = b },
-            onNewCollection = { menuBook = null; newCollectionFor = b; newCollection = true },
+            onDismiss = { menuBookId = null },
+            onDelete = { menuBookId = null; confirmDeleteId = b.id },
+            onNewCollection = { menuBookId = null; newCollectionForId = b.id; newCollection = true },
         )
     }
-    confirmDelete?.let { b ->
+    bookById(confirmDeleteId)?.let { b ->
         AlertDialog(
-            onDismissRequest = { confirmDelete = null },
+            onDismissRequest = { confirmDeleteId = null },
             title = { Text("Quitar de la biblioteca") },
             text = { Text("Se quitara \"${b.title}\" con su progreso y marcadores. El fichero original no se borra.") },
-            confirmButton = { TextButton(onClick = { actions.delete(b); confirmDelete = null }) { Text("Quitar") } },
-            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancelar") } },
+            confirmButton = { TextButton(onClick = { actions.delete(b); confirmDeleteId = null }) { Text("Quitar") } },
+            dismissButton = { TextButton(onClick = { confirmDeleteId = null }) { Text("Cancelar") } },
         )
     }
     if (newCollection) {
         NewCollectionDialog(
-            onDismiss = { newCollection = false; newCollectionFor = null },
-            onCreate = { name, series -> actions.createCollection(name, series, newCollectionFor); newCollection = false; newCollectionFor = null },
+            onDismiss = { newCollection = false; newCollectionForId = null },
+            onCreate = { name, series ->
+                actions.createCollection(name, series, bookById(newCollectionForId))
+                newCollection = false
+                newCollectionForId = null
+            },
         )
     }
 }
@@ -375,6 +398,7 @@ private fun FilterRow(state: LibraryUiState, actions: LibraryActions, onNewColle
             TextButton(onClick = onNewCollection, modifier = Modifier.heightIn(min = 48.dp)) { Text("Nueva coleccion") }
         }
     }
+    var askDeleteCollection by rememberSaveable { mutableStateOf(false) }
     state.currentCollection?.let { c ->
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -382,7 +406,18 @@ private fun FilterRow(state: LibraryUiState, actions: LibraryActions, onNewColle
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.weight(1f),
             )
-            TextButton(onClick = { actions.deleteCollection(c) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Eliminar coleccion") }
+            TextButton(onClick = { askDeleteCollection = true }, modifier = Modifier.heightIn(min = 48.dp).testTag("coleccion-eliminar")) { Text("Eliminar coleccion") }
+        }
+        if (askDeleteCollection) {
+            AlertDialog(
+                onDismissRequest = { askDeleteCollection = false },
+                title = { Text("Eliminar coleccion") },
+                text = { Text("Se eliminara \"${c.name}\". Los libros siguen en la biblioteca.") },
+                confirmButton = {
+                    TextButton(onClick = { actions.deleteCollection(c); askDeleteCollection = false }, modifier = Modifier.testTag("coleccion-eliminar-si")) { Text("Eliminar") }
+                },
+                dismissButton = { TextButton(onClick = { askDeleteCollection = false }) { Text("Cancelar") } },
+            )
         }
     }
 }
@@ -563,14 +598,14 @@ private fun SheetItem(text: String, onClick: () -> Unit) {
 
 @Composable
 private fun NewCollectionDialog(onDismiss: () -> Unit, onCreate: (String, Boolean) -> Unit) {
-    var name by remember { mutableStateOf("") }
-    var series by remember { mutableStateOf(false) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var series by rememberSaveable { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Nueva coleccion") },
         text = {
             Column {
-                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nombre") }, singleLine = true)
+                OutlinedTextField(value = name, onValueChange = { name = it }, label = { Text("Nombre") }, singleLine = true, modifier = Modifier.testTag("coleccion-nombre"))
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         .toggleable(value = series, role = Role.Checkbox, onValueChange = { series = it }),

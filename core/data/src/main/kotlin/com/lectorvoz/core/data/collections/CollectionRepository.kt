@@ -57,7 +57,10 @@ class RoomCollectionRepository(
     override suspend fun create(name: String, isSeries: Boolean): Long {
         val n = name.trim()
         require(n.isNotEmpty()) { "Nombre vacio" }
-        return dao.insert(CollectionEntity(name = n, createdAt = clock(), isSeries = isSeries))
+        val id = dao.insert(CollectionEntity(name = n, createdAt = clock(), isSeries = isSeries))
+        // Nombre repetido: el insert lo ignora (-1); antes se seguia con ese id y la app se cerraba.
+        require(id > 0) { "Ya existe una coleccion con ese nombre" }
+        return id
     }
 
     override suspend fun update(id: Long, name: String, isSeries: Boolean) = dao.update(id, name.trim(), isSeries)

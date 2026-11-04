@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import androidx.core.graphics.scale
 import com.lectorvoz.core.model.DocumentSource
+import com.lectorvoz.format.epub.EpubBook
+import com.lectorvoz.format.epub.EpubException
 import kotlin.math.roundToInt
 
 /** Tamano en pixeles. */
@@ -27,17 +29,39 @@ interface ImageLoader {
  * mostrado (no hasta 4x pixeles de mas). Las JPEG (sin alfa) se decodifican en RGB_565.
  */
 class DocumentImageLoader(private val source: DocumentSource) : ImageLoader {
-    override suspend fun size(href: String): ImageSize? {
-        val bytes = source.resource(href) ?: return null
-        return decodeBounds(bytes)
+    /**
+     * Solo lee los primeros [HEADER_BYTES] del recurso (en EPUB); si ahi no esta el tamano
+     * (cabeceras JPEG con metadatos largos) se lee la imagen entera. Una imagen demasiado
+     * grande o sin memoria para leerla se trata como danada (null).
+     */
+    override suspend fun size(href: String): ImageSize? = try {
+        val epub = source as? EpubBook
+        val head = epub?.resourcePrefix(href, HEADER_BYTES)
+        when {
+            epub == null -> source.resource(href)?.let { decodeBounds(it) }
+            head == null -> null
+            else -> decodeBounds(head) ?: if (head.size < HEADER_BYTES) null else epub.imageResource(href)?.let { decodeBounds(it) }
+        }
+    } catch (e: EpubException) {
+        null
+    } catch (e: OutOfMemoryError) {
+        null
     }
 
-    override suspend fun load(href: String, width: Int, height: Int): Bitmap? {
-        val bytes = source.resource(href) ?: return null
-        return decodeScaled(bytes, width, height)
+    /** Con limite de imagenes en EPUB ([EpubBook.imageResource]); null si no cabe en memoria. */
+    override suspend fun load(href: String, width: Int, height: Int): Bitmap? = try {
+        val bytes = if (source is EpubBook) source.imageResource(href) else source.resource(href)
+        bytes?.let { decodeScaled(it, width, height) }
+    } catch (e: EpubException) {
+        null
+    } catch (e: OutOfMemoryError) {
+        null
     }
 
     companion object {
+        /** Bytes del principio que se leen para conocer el tamano de una imagen. */
+        const val HEADER_BYTES = 64 * 1024
+
         /** Tamano de la imagen sin decodificar pixeles. */
         fun decodeBounds(bytes: ByteArray): ImageSize? {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

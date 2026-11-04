@@ -664,6 +664,7 @@ class SpanishNormalizer(
         )
 
         private val ROMAN_CONTEXT = hashSetOf(
+            "nivel", "niveles", "rango", "piso", "planta", "temporada", "grado",
             "siglo", "siglos", "capítulo", "capitulo", "capítulos", "tomo", "tomos", "volumen",
             "libro", "parte", "acto", "escena", "canto", "título", "titulo", "artículo",
             "articulo", "apartado", "sección", "seccion", "fase", "lección", "leccion", "tema",

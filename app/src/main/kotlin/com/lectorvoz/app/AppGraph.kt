@@ -24,6 +24,7 @@ import com.lectorvoz.tts.playback.TtsConfig
 import java.io.File
 import com.lectorvoz.app.update.UpdateChecker
 import com.lectorvoz.app.update.UpdateInstaller
+import com.lectorvoz.app.update.UpdateNotifier
 import com.lectorvoz.app.update.InstallState
 import com.lectorvoz.app.widget.ListenWidgetUpdater
 import com.lectorvoz.app.integration.PlaybackPort
@@ -141,6 +142,9 @@ class AppGraph(
     /** Descarga e instalacion de la version nueva. */
     val installer: UpdateInstaller by lazy { UpdateInstaller(context, appScope) }
 
+    /** Notificacion del estado de la actualizacion. */
+    val updateNotifier: UpdateNotifier by lazy { UpdateNotifier(context, installer.state) { installer.version } }
+
     /**
      * Solo la version publicada se instala a si misma (la de depuracion tiene otro
      * identificador y firma: su aviso abre la pagina).
@@ -193,6 +197,8 @@ class AppGraph(
         }
         ocr.start()
         historyRecorder.start()
+        // Sin nada en marcha quita la de una actualizacion anterior (ya instalada).
+        updateNotifier.start(appScope)
         // Aviso de nueva version: al abrir la app (y al activarlo), como mucho una vez al dia.
         appScope.launch {
             // La comprobacion la lanza la pantalla al abrirse ([checkUpdatesNow]); aqui solo se
@@ -228,6 +234,24 @@ class AppGraph(
         playback.start(BookForVoice(book.id, book.title, book.author, book.coverPath, opened.chapterTitles), provider, book.locator, autoPlay = true)
         voice.sleepTimerMinutes?.let { playback.setSleepTimer(TimerChoice.Minutes(it)) }
     }
+
+    /**
+     * Ultimo libro para reanudar la voz tras morir el proceso ("play" desde el auricular, la
+     * notificacion o el coche): el que se estaba leyendo, en su posicion y con sus ajustes.
+     */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    suspend fun resumeRequest(): com.lectorvoz.tts.playback.BookRequest? {
+        val book = library.continueReading.first() ?: return null
+        val voice = settings.voiceFor(book.id).first()
+        val (opened, provider) = speech.providerFor(book)
+        playback.updateSettings(voice)
+        return (playback as? PlaybackFacade)?.resumeRequest(
+            BookForVoice(book.id, book.title, book.author, book.coverPath, opened.chapterTitles), provider, book.locator,
+        )
+    }
+
+    /** La app esta en pantalla (MainActivity): el modelo de voz se conserva al pausar. */
+    @Volatile var appVisible = false
 
     private suspend fun addBookmarkFromNotification(loc: Locator) {
         val id = playback.state.value.bookId ?: return

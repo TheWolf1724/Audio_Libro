@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger
 class EpubBook private constructor(
     private val zip: ZipContainer,
     private val pkg: PackageInfo,
+    private val limits: EpubLimits,
     private val dispatcher: CoroutineDispatcher,
     private val cacheSize: Int,
 ) : DocumentSource, TextSource {
@@ -55,9 +56,14 @@ class EpubBook private constructor(
     internal val parseCount: Int get() = parses.get()
 
     /** Titulo del indice para cada capitulo (primera entrada que apunta a el). */
-    private val tocTitles = HashMap<Int, String>()
+    private val tocTitles = ConcurrentHashMap<Int, String>()
 
-    override val toc: List<TocEntry> = buildToc()
+    /**
+     * Indice. Se construye la primera vez que se pide (o antes de analizar el primer
+     * capitulo, que lleva el titulo del indice): abrir el libro solo para leer metadatos y
+     * portada (importar) no lo construye ni analiza capitulos.
+     */
+    override val toc: List<TocEntry> by lazy { buildToc() }
 
     /** Ruta en el contenedor del capitulo [index]. */
     fun chapterPath(index: Int): String = pkg.spine[index].path
@@ -73,10 +79,27 @@ class EpubBook private constructor(
     }
 
     override suspend fun resource(href: String): ByteArray? = withContext(dispatcher) {
-        val path = EpubPaths.normalize(EpubPaths.percentDecode(href.substringBefore('#')))
-            ?: throw EpubException.UnsafePath(href)
-        zip.readOrNull(path)
+        zip.readOrNull(resourcePath(href))
     }
+
+    /**
+     * Imagen [href] para decodificarla: como [resource] pero con el limite de imagenes
+     * ([EpubLimits.maxImageBytes]); lanza [EpubException.TooLarge] si lo supera.
+     */
+    suspend fun imageResource(href: String): ByteArray? = withContext(dispatcher) {
+        zip.readOrNull(resourcePath(href), minOf(limits.maxImageBytes, limits.maxResourceBytes))
+    }
+
+    /**
+     * Primeros [maxBytes] bytes del recurso [href] (o todo si es mas corto); null si no
+     * existe. Para leer la cabecera de una imagen sin cargarla entera.
+     */
+    suspend fun resourcePrefix(href: String, maxBytes: Int): ByteArray? = withContext(dispatcher) {
+        zip.readPrefixOrNull(resourcePath(href), maxBytes)
+    }
+
+    private fun resourcePath(href: String): String =
+        EpubPaths.normalize(EpubPaths.percentDecode(href.substringBefore('#'))) ?: throw EpubException.UnsafePath(href)
 
     /**
      * Convierte un enlace interno ya resuelto ("OEBPS/cap2.xhtml#nota3", como en
@@ -86,7 +109,10 @@ class EpubBook private constructor(
         if (EpubPaths.isExternal(href)) return@withContext null
         val path = EpubPaths.normalize(EpubPaths.percentDecode(href.substringBefore('#'))) ?: return@withContext null
         val frag = EpubPaths.percentDecode(href.substringAfter('#', "")).ifEmpty { null }
-        locatorFor(path, frag)
+        val idx = spineIndex[path] ?: return@withContext null
+        // Al navegar el capitulo de destino se va a mostrar: se analiza por la cache.
+        val off = if (frag == null) 0 else (anchorCache[idx] ?: loadChapter(idx).anchors)[frag] ?: 0
+        Locator(idx, off)
     }
 
     /**
@@ -138,38 +164,88 @@ class EpubBook private constructor(
 
     private fun loadChapter(index: Int): ChapterDocument = loadChapter(index, store = true)
 
-    /** Capitulo [index]; con [store] false no se guarda en la cache si no estaba. */
+    /**
+     * Capitulo [index]; con [store] false no se guarda en la cache si no estaba. Nunca
+     * lanza por un capitulo ilegible (demasiado grande, falta en el zip, roto, sin memoria):
+     * devuelve un capitulo de aviso para que el lector y la voz puedan pasar de el.
+     */
     private fun loadChapter(index: Int, store: Boolean): ChapterDocument {
         require(index in 0 until chapterCount) { "Capitulo fuera de rango: $index" }
         synchronized(cache) { cache[index] }?.let { return it }
+        toc // los titulos del indice se aplican a cada capitulo (no analiza nada en la cache)
         synchronized(chapterLocks[index]) {
             synchronized(cache) { cache[index] }?.let { return it }
-            val item = pkg.spine[index]
+            var keep = store
             val parsed = try {
-                when {
-                    item.mediaType.startsWith("image/") -> XhtmlConverter(item.path).imageOnly(index, item.path)
-                    item.mediaType.contains("html") || item.mediaType.contains("xml") || item.mediaType.isEmpty() -> {
-                        val bytes = zip.readDocument(item.path)
-                        XhtmlConverter(item.path).convert(Markup.parseXhtml(bytes), index, pkg.metadata.language)
-                    }
-                    else -> ChapterDocument(index, null, pkg.metadata.language, "", emptyList())
-                }
+                parseChapter(index)
             } catch (e: EpubException) {
-                throw e
-            } catch (e: Exception) {
-                throw EpubException.Invalid("Capitulo $index ilegible: ${e.message}", e)
-            } catch (e: StackOverflowError) {
-                throw EpubException.Invalid("Capitulo $index demasiado anidado", null)
+                // Sin memoria puede ser pasajero: el aviso no se guarda para reintentar.
+                if (e.cause is OutOfMemoryError) keep = false
+                unavailableChapter(index, e)
             }
-            parses.incrementAndGet()
             val doc = tocTitles[index]?.let { parsed.copy(title = it) } ?: parsed
             anchorCache.putIfAbsent(index, doc.anchors)
-            if (store) synchronized(cache) { cache[index] = doc }
+            if (keep) synchronized(cache) { cache[index] = doc }
             return doc
         }
     }
 
-    private fun anchorsOf(index: Int): Map<String, Int> = anchorCache[index] ?: loadChapter(index).anchors
+    /**
+     * Analiza el capitulo [index] sin cache ni titulo del indice. Lanza [EpubException] si
+     * no se puede leer (tambien por falta de memoria o anidamiento excesivo).
+     */
+    private fun parseChapter(index: Int): ChapterDocument {
+        val item = pkg.spine[index]
+        val parsed = try {
+            when {
+                item.mediaType.startsWith("image/") -> XhtmlConverter(item.path).imageOnly(index, item.path)
+                item.mediaType.contains("html") || item.mediaType.contains("xml") || item.mediaType.isEmpty() -> {
+                    val bytes = zip.readDocument(item.path)
+                    XhtmlConverter(item.path).convert(Markup.parseXhtml(bytes), index, pkg.metadata.language)
+                }
+                else -> ChapterDocument(index, null, pkg.metadata.language, "", emptyList())
+            }
+        } catch (e: EpubException) {
+            throw e
+        } catch (e: Exception) {
+            throw EpubException.Invalid("Capitulo $index ilegible: ${e.message}", e)
+        } catch (e: StackOverflowError) {
+            throw EpubException.Invalid("Capitulo $index demasiado anidado", null)
+        } catch (e: OutOfMemoryError) {
+            throw EpubException.Invalid("Capitulo $index: memoria insuficiente para analizarlo", e)
+        }
+        parses.incrementAndGet()
+        return parsed
+    }
+
+    /** Capitulo de aviso que sustituye a uno ilegible: titulo y motivo. */
+    private fun unavailableChapter(index: Int, e: EpubException): ChapterDocument {
+        val heading = UNAVAILABLE
+        val reason = when (e) {
+            is EpubException.TooLarge -> "El capitulo es demasiado grande para abrirlo."
+            is EpubException.ZipBomb -> "El capitulo parece danado (compresion sospechosa)."
+            else -> e.message?.takeIf { it.isNotBlank() } ?: "El capitulo no se puede leer."
+        }
+        val text = "$heading\n$reason"
+        val blocks = listOf(
+            Block.Text(0, heading.length, BlockKind.Heading(2)),
+            Block.Text(heading.length + 1, text.length, BlockKind.Paragraph),
+        )
+        return ChapterDocument(index, heading, pkg.metadata.language, text, blocks)
+    }
+
+    /** Anclas del capitulo [index] (vacias si no se puede leer), sin pasar por la cache. */
+    private fun anchorsOf(index: Int): Map<String, Int> {
+        anchorCache[index]?.let { return it }
+        synchronized(cache) { cache[index] }?.let { return it.anchors }
+        val anchors = try {
+            parseChapter(index).anchors
+        } catch (e: EpubException) {
+            emptyMap()
+        }
+        anchorCache.putIfAbsent(index, anchors)
+        return anchors
+    }
 
     /**
      * Posicion de [path]#[fragment]. Si el capitulo no se puede analizar (demasiado grande,
@@ -177,15 +253,7 @@ class EpubBook private constructor(
      */
     private fun locatorFor(path: String, fragment: String?): Locator? {
         val idx = spineIndex[path] ?: return null
-        val off = if (fragment == null) {
-            0
-        } else {
-            try {
-                anchorsOf(idx)[fragment] ?: 0
-            } catch (e: Exception) {
-                0
-            }
-        }
+        val off = if (fragment == null) 0 else anchorsOf(idx)[fragment] ?: 0
         return Locator(idx, off)
     }
 
@@ -246,6 +314,10 @@ class EpubBook private constructor(
             }
         } catch (e: Exception) {
             emptyList() // un indice roto (o demasiado grande) no impide leer el libro
+        } catch (e: StackOverflowError) {
+            emptyList()
+        } catch (e: OutOfMemoryError) {
+            emptyList()
         }
         val entries = convertToc(raw)
         fillTitles(entries)
@@ -282,11 +354,12 @@ class EpubBook private constructor(
             }
         }
         visit(entries)
-        // Los capitulos ya analizados al construir el indice se rehacen con su titulo.
-        synchronized(cache) { cache.clear() }
     }
 
     companion object {
+        /** Titulo y primera linea del capitulo que sustituye a uno ilegible. */
+        const val UNAVAILABLE = "Capitulo no disponible"
+
         /** true si el texto de un enlace parece una llamada de nota ("1", "[2]", "*", "iv"). */
         internal fun isNoteCall(label: String): Boolean = NoteCallLabel.matches(label)
 
@@ -301,12 +374,18 @@ class EpubBook private constructor(
             cacheSize: Int = 3,
         ): EpubBook {
             require(cacheSize >= 1) { "cacheSize debe ser >= 1" }
-            val zip = ZipContainer(file, limits)
+            val zip = try {
+                ZipContainer(file, limits)
+            } catch (e: EpubException) {
+                throw e
+            } catch (e: Exception) {
+                throw EpubException.Invalid("No es un zip valido: ${file.name}", e)
+            }
             try {
                 PackageParser.checkDrm(zip)
                 val opf = PackageParser.opfPath(zip)
                 val pkg = PackageParser.parsePackage(zip, opf)
-                return EpubBook(zip, pkg, dispatcher, cacheSize)
+                return EpubBook(zip, pkg, limits, dispatcher, cacheSize)
             } catch (e: EpubException) {
                 zip.close()
                 throw e
@@ -316,6 +395,9 @@ class EpubBook private constructor(
             } catch (e: StackOverflowError) {
                 zip.close()
                 throw EpubException.Invalid("EPUB no valido: estructura demasiado anidada", null)
+            } catch (e: OutOfMemoryError) {
+                zip.close()
+                throw EpubException.Invalid("EPUB no valido: memoria insuficiente para abrirlo", e)
             }
         }
     }

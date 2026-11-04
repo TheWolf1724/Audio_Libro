@@ -13,6 +13,10 @@ import com.lectorvoz.format.pdf.PdfBook
 import com.lectorvoz.reader.FontProvider
 import com.lectorvoz.app.ui.theme.ReadingFonts
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -54,18 +58,44 @@ class BookOpener(private val context: Context) {
     /** Un cerrojo por libro: dos aperturas a la vez no escriben la misma copia temporal. */
     private val copyLocks = ConcurrentHashMap<String, Mutex>()
 
-    /** Abre [book]; [skipPdfHeaders] activa el filtro de cabeceras y pies del PDF. */
-    suspend fun open(book: Book, skipPdfHeaders: Boolean = true): OpenedBook = withContext(Dispatchers.IO) {
-        when (book.format) {
-            BookFormat.EPUB -> {
-                val epub = EpubBook.open(fileFor(book))
-                OpenedBook(book, BookContent.Epub(epub), epub.toc)
+    /**
+     * Abre [book]; [skipPdfHeaders] activa el filtro de cabeceras y pies del PDF.
+     *
+     * La apertura en si no se cancela a medias: si la corrutina se cancela mientras tanto,
+     * el libro ya abierto se cierra aqui (si no, el `ZipFile` o el documento pdfium quedaria
+     * abierto sin nadie que lo cierre) y se relanza la cancelacion.
+     */
+    suspend fun open(book: Book, skipPdfHeaders: Boolean = true): OpenedBook {
+        val epubFile = if (book.format == BookFormat.EPUB) withContext(Dispatchers.IO) { fileFor(book) } else null
+        val opened = withContext(NonCancellable + Dispatchers.IO) {
+            when (book.format) {
+                BookFormat.EPUB -> openEpub(book, epubFile!!)
+                BookFormat.PDF -> {
+                    val pdf = book.localFile?.let { PdfBook.open(context, it) } ?: PdfBook.open(context, book.uri.toUri())
+                    try {
+                        pdf.textFallback = pdfTextFallback?.invoke(book)
+                        OpenedBook(book, BookContent.Pdf(pdf, PdfCleanerAdapter(pdf, skipPdfHeaders)), pdf.toc)
+                    } catch (t: Throwable) {
+                        pdf.close()
+                        throw t
+                    }
+                }
             }
-            BookFormat.PDF -> {
-                val pdf = book.localFile?.let { PdfBook.open(context, it) } ?: PdfBook.open(context, book.uri.toUri())
-                pdf.textFallback = pdfTextFallback?.invoke(book)
-                OpenedBook(book, BookContent.Pdf(pdf, PdfCleanerAdapter(pdf, skipPdfHeaders)), pdf.toc)
-            }
+        }
+        if (!currentCoroutineContext().isActive) {
+            opened.close()
+            currentCoroutineContext().ensureActive()
+        }
+        return opened
+    }
+
+    private fun openEpub(book: Book, file: File): OpenedBook {
+        val epub = EpubBook.open(file)
+        try {
+            return OpenedBook(book, BookContent.Epub(epub), epub.toc)
+        } catch (t: Throwable) {
+            epub.close()
+            throw t
         }
     }
 

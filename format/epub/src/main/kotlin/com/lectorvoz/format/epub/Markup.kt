@@ -8,7 +8,9 @@ import java.nio.charset.Charset
 
 /** Lectura de XML y XHTML con jsoup (tolerante y sin resolver entidades externas). */
 internal object Markup {
-    private val XML_ENCODING = Regex("""^<\?xml[^>]*encoding\s*=\s*["']([A-Za-z0-9._-]+)["']""")
+    private val XML_ENCODING = Regex("""^\s*<\?xml[^>]*encoding\s*=\s*["']([A-Za-z0-9._-]+)["']""")
+    /** Bytes del principio en los que se busca la codificacion declarada. */
+    private const val HEAD_BYTES = 4096
     private val META_CHARSET = Regex("""<meta[^>]+charset\s*=\s*["']?([A-Za-z0-9._-]+)""", RegexOption.IGNORE_CASE)
 
     // Etiquetas autocerradas de XHTML que el parser HTML trataria como abiertas.
@@ -29,7 +31,7 @@ internal object Markup {
         if (bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) {
             return String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE)
         }
-        val head = String(bytes, 0, minOf(bytes.size, 1024), Charsets.ISO_8859_1)
+        val head = String(bytes, 0, minOf(bytes.size, HEAD_BYTES), Charsets.ISO_8859_1)
         val name = XML_ENCODING.find(head)?.groupValues?.get(1) ?: META_CHARSET.find(head)?.groupValues?.get(1)
         val cs = name?.let { runCatching { Charset.forName(it) }.getOrNull() } ?: Charsets.UTF_8
         return String(bytes, cs)

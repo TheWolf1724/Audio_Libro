@@ -14,11 +14,14 @@ import com.lectorvoz.core.data.settings.AppPrefs
 import com.lectorvoz.core.data.settings.LibrarySort
 import com.lectorvoz.core.data.settings.SettingsRepository
 import com.lectorvoz.core.model.BookFormat
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -69,6 +72,8 @@ class LibraryViewModel(
     private val settings: SettingsRepository,
     /** Borrado completo (parar la voz si lee este libro, datos y ajustes); por defecto solo datos. */
     private val onDelete: (suspend (Book) -> Unit)? = null,
+    /** Hilo del filtrado y la ordenacion (con miles de libros no va en el hilo principal). */
+    private val compute: CoroutineDispatcher = Dispatchers.Default,
 ) : ViewModel() {
     private val local = MutableStateFlow(LocalState())
 
@@ -79,6 +84,7 @@ class LibraryViewModel(
         settings.app,
         local,
     ) { books, cont, cols, prefs, l -> build(books, cont, cols, prefs, l) }
+        .flowOn(compute)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
 
     private fun build(books: List<Book>, cont: Book?, cols: List<BookCollection>, prefs: AppPrefs, l: LocalState) =
@@ -144,7 +150,7 @@ class LibraryViewModel(
         val id = try {
             collections.create(name, series)
         } catch (e: Exception) {
-            local.update { it.copy(message = "No se pudo crear la coleccion (quiza ya existe).") }
+            local.update { it.copy(message = if (e is IllegalArgumentException) "Ya hay una coleccion llamada \"${name.trim()}\"." else "No se pudo crear la coleccion.") }
             return@launch
         }
         if (addBook != null) collections.addBook(id, addBook.id)
@@ -187,14 +193,18 @@ class LibraryViewModel(
             if (isEmpty()) append("Nada que importar")
         }
 
+        /** Marcas diacriticas (compilada una vez: fold() se llama miles de veces). */
+        private val MARKS = Regex("\\p{Mn}+")
+
         /** Quita tildes y pasa a minusculas para buscar. */
         fun fold(s: String): String =
-            Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "").lowercase()
+            Normalizer.normalize(s, Normalizer.Form.NFD).replace(MARKS, "").lowercase()
 
-        /** Filtra y ordena (funcion pura, probada aparte). */
+        /** Filtra y ordena (funcion pura, probada aparte). Cada clave se pliega una sola vez por libro. */
         fun filterBooks(books: List<Book>, query: String, filter: LibraryFilter, sort: LibrarySort, cols: List<BookCollection>): List<Book> {
             val q = fold(query.trim())
             val col = (filter as? LibraryFilter.Collection)?.let { f -> cols.firstOrNull { it.id == f.id } }
+            val inCol = col?.bookIds?.toHashSet()
             val filtered = books.filter { b ->
                 val passFilter = when (filter) {
                     LibraryFilter.All -> true
@@ -203,16 +213,21 @@ class LibraryViewModel(
                     LibraryFilter.Favorites -> b.favorite
                     LibraryFilter.Unfinished -> !b.finished
                     LibraryFilter.Finished -> b.finished
-                    is LibraryFilter.Collection -> col?.bookIds?.contains(b.id) == true
+                    is LibraryFilter.Collection -> inCol?.contains(b.id) == true
                 }
                 passFilter && (q.isEmpty() || fold(b.title).contains(q) || b.authors.any { fold(it).contains(q) })
             }
             // Dentro de una coleccion manda su orden (series).
-            if (col != null) return filtered.sortedBy { col.bookIds.indexOf(it.id) }
+            if (col != null) {
+                val pos = HashMap<Long, Int>(col.bookIds.size * 2).apply { col.bookIds.forEachIndexed { i, id -> putIfAbsent(id, i) } }
+                return filtered.sortedBy { pos[it.id] ?: Int.MAX_VALUE }
+            }
             return when (sort) {
                 LibrarySort.RECENT -> filtered.sortedWith(compareByDescending<Book> { it.lastOpenedAt ?: 0L }.thenByDescending { it.addedAt })
-                LibrarySort.TITLE -> filtered.sortedBy { fold(it.title) }
-                LibrarySort.AUTHOR -> filtered.sortedWith(compareBy<Book> { fold(it.author ?: "￿") }.thenBy { fold(it.title) })
+                LibrarySort.TITLE -> filtered.map { it to fold(it.title) }.sortedBy { it.second }.map { it.first }
+                LibrarySort.AUTHOR -> filtered.map { Triple(it, fold(it.author ?: "\uFFFF"), fold(it.title)) }
+                    .sortedWith(compareBy<Triple<Book, String, String>> { it.second }.thenBy { it.third })
+                    .map { it.first }
                 LibrarySort.ADDED -> filtered.sortedByDescending { it.addedAt }
                 LibrarySort.PROGRESS -> filtered.sortedByDescending { it.progress }
             }

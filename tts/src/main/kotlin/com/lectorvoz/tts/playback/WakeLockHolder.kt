@@ -12,7 +12,9 @@ import android.os.SystemClock
  * productor se retrasa, la pista se queda sin datos, AudioFlinger pasa a reposo y la CPU
  * podria dormirse a mitad de sintesis. El coste es nulo mientras ya suena audio. Con la voz
  * del sistema no hace falta: el audio lo reproduce el proceso del motor TTS.
- * Con tiempo limite como red de seguridad (se renueva en cada cambio de estado).
+ * Con tiempo limite como red de seguridad: se renueva en cada cambio de estado y, mientras
+ * siga haciendo falta, cada [RENEW_MS] ([renew], lo llama el servicio); asi una lectura
+ * neuronal continua de mas de [TIMEOUT_MS] no lo pierde a mitad.
  */
 class WakeLockHolder(context: Context) {
     private val lock: PowerManager.WakeLock =
@@ -35,8 +37,17 @@ class WakeLockHolder(context: Context) {
         }
     }
 
-    private companion object {
-        const val TIMEOUT_MS = 30 * 60_000L
+    /** Renueva el plazo si esta adquirido (sin esperar a que caduque pronto). */
+    fun renew() {
+        if (!lock.isHeld) return
+        lock.acquire(TIMEOUT_MS)
+        acquiredAt = SystemClock.elapsedRealtime()
+    }
+
+    companion object {
+        private const val TIMEOUT_MS = 30 * 60_000L
+
+        /** Cada cuanto se renueva mientras haga falta (bien antes de que caduque). */
         const val RENEW_MS = 10 * 60_000L
     }
 }

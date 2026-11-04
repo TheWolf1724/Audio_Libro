@@ -150,7 +150,24 @@ class RoomLibraryRepository(
             val fmt = format ?: FormatSniffer.detect(head.copyOf(headLen), name)
                 ?: return@withContext ImportResult.Failed(name, ImportError.UNSUPPORTED_FORMAT)
             val hash = hasher.digest()
-            dao.findByHash(hash)?.let { return@withContext ImportResult.Duplicate(it.toBook()) }
+            dao.findByHash(hash)?.let { existing ->
+                if (readable(existing)) return@withContext ImportResult.Duplicate(existing.toBook())
+                // Ya estaba pero su fichero falta (copia de seguridad restaurada, otro movil,
+                // enlace caducado): se repara con este, conservando progreso y marcadores.
+                val ext = if (existing.format == BookFormat.EPUB) "epub" else "pdf"
+                val fixed = File(booksDir, "$hash.$ext")
+                if (!tmp.renameTo(fixed)) {
+                    tmp.copyTo(fixed, overwrite = true)
+                    tmp.delete()
+                }
+                val cover = File(coversDir, "$hash.jpg")
+                val coverPath = existing.coverPath?.takeIf { File(it).exists() }
+                    ?: runCatching { extractor.extract(fixed, existing.format, cover) }.getOrNull()
+                        ?.takeIf { it.coverWritten && cover.exists() }?.let { cover.absolutePath }
+                dao.relink(existing.id, uri.toString(), fixed.absolutePath, coverPath)
+                ownedByRow = true
+                return@withContext ImportResult.Duplicate(existing.copy(uri = uri.toString(), localPath = fixed.absolutePath, coverPath = coverPath).toBook())
+            }
 
             val ext = if (fmt == BookFormat.EPUB) "epub" else "pdf"
             val finalFile = File(booksDir, "$hash.$ext")
@@ -215,6 +232,16 @@ class RoomLibraryRepository(
                 createdFile?.delete()
                 createdCover?.delete()
             }
+        }
+    }
+
+    /** true si el libro guardado aun se puede abrir (su copia privada o su enlace). */
+    private fun readable(b: BookEntity): Boolean {
+        b.localPath?.let { return File(it).isFile }
+        return try {
+            resolver.openInputStream(Uri.parse(b.uri))?.use { true } ?: false
+        } catch (e: Exception) {
+            false
         }
     }
 

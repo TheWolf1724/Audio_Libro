@@ -5,6 +5,7 @@ import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Update
 import kotlinx.coroutines.flow.Flow
 
@@ -56,6 +57,10 @@ interface BookDao {
 
     @Query("SELECT COUNT(*) FROM books WHERE finished = 1 AND finished_at >= :since")
     suspend fun finishedSince(since: Long): Int
+
+    /** Vuelve a enlazar un libro cuyo fichero faltaba (reimportado). */
+    @Query("UPDATE books SET uri = :uri, local_path = :localPath, cover_path = :coverPath WHERE id = :id")
+    suspend fun relink(id: Long, uri: String, localPath: String, coverPath: String?)
 
     @Query("UPDATE books SET last_opened_at = :openedAt WHERE id = :id")
     suspend fun markOpened(id: Long, openedAt: Long)
@@ -195,8 +200,21 @@ interface ReadingHistoryDao {
     @Query("SELECT * FROM reading_history ORDER BY updated_at DESC")
     fun observeAll(): Flow<List<ReadingHistoryEntity>>
 
-    @Query("SELECT * FROM reading_history WHERE quick_hash = :hash")
+    @Query("SELECT * FROM reading_history WHERE quick_hash = :hash OR alt_hashes LIKE '%|' || :hash || '|%' LIMIT 1")
     suspend fun byHash(hash: String): ReadingHistoryEntity?
+
+    @Query("SELECT * FROM reading_history WHERE id = :id")
+    suspend fun byId(id: Long): ReadingHistoryEntity?
+
+    /** Quita [remove] y guarda [entry], todo o nada (unir dos lecturas). */
+    @Transaction
+    suspend fun replace(remove: List<Long>, entry: ReadingHistoryEntity) {
+        remove.forEach { delete(it) }
+        insert(entry)
+    }
+
+    @Query("SELECT * FROM reading_history")
+    suspend fun all(): List<ReadingHistoryEntity>
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insert(entry: ReadingHistoryEntity): Long

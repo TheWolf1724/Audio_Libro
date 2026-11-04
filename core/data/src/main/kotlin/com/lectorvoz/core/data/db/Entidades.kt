@@ -161,4 +161,9 @@ data class ReadingHistoryEntity(
     /** Progreso 0..1 en el ultimo cambio registrado (al abrir, terminar o quitar el libro). */
     val progress: Float,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    /**
+     * Version 4: huellas de otras ediciones unidas a esta lectura, como "|h1|h2|" (reimportar
+     * cualquiera de ellas vuelve a esta fila).
+     */
+    @ColumnInfo(name = "alt_hashes", defaultValue = "") val altHashes: String = "",
 )

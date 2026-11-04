@@ -91,6 +91,9 @@ class ReadAloudController(
     @Volatile private var pendingChapter = -1
     private var chapterFadeJob: Job? = null
 
+    /** Reintentos de pedir el foco tras una denegacion (ver [waitForFocus]). */
+    private var focusRetryJob: Job? = null
+
     // Rebobinado inteligente: instante de la ultima pausa con audio sonando.
     private var pausedAtMs: Long? = null
 
@@ -119,6 +122,7 @@ class ReadAloudController(
             hub.mutableState.update { it.copy(sleepTimer = null, sleepTimerRemainingMs = null) }
         },
         onWindow = ::setShakeListening,
+        clock = clock,
     )
 
     /** Ajustes vigentes. */
@@ -157,12 +161,17 @@ class ReadAloudController(
     fun play() {
         if (provider == null) return
         if (speakJob?.isActive == true) return
-        // Foco perdido temporalmente (llamada): ya se reanudara sola al recuperarlo.
+        // Foco perdido temporalmente (llamada) o esperando a que se conceda: ya se reanudara sola.
         if (state.value.focusSuppressed) return
         if (!focus.request(::onFocusChange)) {
-            fail("No se pudo obtener el foco de audio", null)
+            waitForFocus()
             return
         }
+        begin()
+    }
+
+    /** Empieza a sonar con el foco ya concedido (al final del libro, desde el principio). */
+    private fun begin() {
         if (state.value.ended) {
             current = null
             startLocator = Locator.START
@@ -323,15 +332,17 @@ class ReadAloudController(
     fun onFocusChange(change: FocusChange) {
         when (change) {
             FocusChange.LOSS -> pause()
-            FocusChange.LOSS_TRANSIENT -> {
-                val s = state.value
-                if (s.playWhenReady && !s.focusSuppressed) {
-                    stopSpeaking(suppress = true)
-                }
-            }
+            FocusChange.LOSS_TRANSIENT -> suppressForTransientLoss()
             FocusChange.DUCK -> {
-                duck = DUCK_VOLUME
-                applyVolume()
+                // La voz del sistema solo aplica el volumen a lo que se encola despues: bajarlo
+                // llegaria 2-3 frases tarde (el aviso del navegador ya habria pasado). Se calla
+                // como en una llamada y se sigue al recuperar el foco (repite la frase cortada).
+                if ((activeEngine?.type ?: settings.engine) == TtsEngineType.SYSTEM) {
+                    suppressForTransientLoss()
+                } else {
+                    duck = DUCK_VOLUME
+                    applyVolume()
+                }
             }
             FocusChange.GAIN -> {
                 duck = 1f
@@ -341,6 +352,42 @@ class ReadAloudController(
                     startSpeaking()
                 }
             }
+        }
+    }
+
+    private fun suppressForTransientLoss() {
+        val s = state.value
+        if (s.playWhenReady && !s.focusSuppressed) {
+            stopSpeaking(suppress = true)
+        }
+    }
+
+    /**
+     * Foco denegado. En Android 17 la peticion solo se concede con la app visible o el
+     * servicio en primer plano: tras mas de 10 min en pausa, el boton del auricular puede
+     * llegar con el servicio ya fuera de primer plano. Se publica "quiere sonar" suprimido
+     * (como en una llamada): Media3 pasa el servicio a primer plano y se vuelve a pedir el
+     * foco poco despues, unas pocas veces; si sigue denegado, error y pausa.
+     */
+    private fun waitForFocus() {
+        focusRetryJob?.cancel()
+        hub.mutableState.update {
+            it.copy(playWhenReady = true, isPlaying = false, isPreparing = false, focusSuppressed = true, error = null)
+        }
+        focusRetryJob = scope.launch {
+            for (wait in FOCUS_RETRY_MS) {
+                delay(wait)
+                val s = state.value
+                if (!s.playWhenReady || !s.focusSuppressed) return@launch
+                if (focus.request(::onFocusChange)) {
+                    focusRetryJob = null
+                    begin()
+                    return@launch
+                }
+            }
+            focusRetryJob = null
+            hub.mutableState.update { it.copy(focusSuppressed = false) }
+            fail("No se pudo obtener el foco de audio", null)
         }
     }
 
@@ -488,6 +535,8 @@ class ReadAloudController(
     private fun stopSpeaking(suppress: Boolean = false) {
         val s = state.value
         if (s.playWhenReady && !s.focusSuppressed) pausedAtMs = clock()
+        focusRetryJob?.cancel()
+        focusRetryJob = null
         synchronized(sessionLock) { session++ }
         speakJob?.cancel()
         lastStarted = null
@@ -753,6 +802,9 @@ class ReadAloudController(
 
         /** Volumen al ceder el foco con atenuacion. */
         const val DUCK_VOLUME = 0.2f
+
+        /** Esperas entre reintentos de pedir el foco tras una denegacion (~4 s en total). */
+        val FOCUS_RETRY_MS = longArrayOf(500L, 1_000L, 2_500L)
 
         const val REWIND_ONE_MS = 2 * 60_000L
         const val REWIND_TWO_MS = 30 * 60_000L

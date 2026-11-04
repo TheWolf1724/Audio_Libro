@@ -134,6 +134,20 @@ class NeuralTtsEngine(
     private val fastTick: () -> Boolean = { true },
     /** Cache de audio en disco (preparar mientras carga); nula = sin cache. */
     private val diskCache: AudioDiskCache? = null,
+    /**
+     * Si conviene mantener el modelo cargado el plazo largo [idleReleaseMs] (lector en
+     * pantalla: reanudar al momento). Si no (pantalla apagada o app en segundo plano), se
+     * libera a los [backgroundIdleReleaseMs]: en pausa con la pantalla apagada nadie va a
+     * notar la recarga y son ~150-300 MB. Se consulta durante la espera.
+     */
+    private val keepWarm: () -> Boolean = { true },
+    private val backgroundIdleReleaseMs: Long = 5_000L,
+    /**
+     * Reloj en ms que sigue contando con el movil dormido (`SystemClock.elapsedRealtime`).
+     * `delay` no avanza en reposo profundo: sin este reloj, una pausa larga con la pantalla
+     * apagada no llegaba a liberar el modelo. Nulo = solo `delay` (pruebas con tiempo virtual).
+     */
+    private val sleepClock: (() -> Long)? = null,
 ) : SpeechEngine, UtteranceRenderer, Pregenerator {
 
     override val type: TtsEngineType = TtsEngineType.NEURAL
@@ -817,9 +831,30 @@ class NeuralTtsEngine(
     private fun scheduleIdleRelease() = synchronized(idleLock) {
         idleJob?.cancel()
         idleJob = ownerScope.launch {
-            delay(idleReleaseMs)
+            waitIdle()
             // Se vuelve a comprobar en el hilo de sintesis: un uso pudo empezar entre medias.
             withContext(synthDispatcher) { if (users.get() == 0) unload() }
+        }
+    }
+
+    /**
+     * Espera el plazo de inactividad: [idleReleaseMs] con [keepWarm] o [backgroundIdleReleaseMs]
+     * sin el. Con [sleepClock] se mira en pasos cortos (el tiempo dormido tambien cuenta en
+     * cuanto el movil despierta un momento) y el plazo se vuelve a decidir en cada paso (la
+     * pantalla pudo apagarse despues de pausar).
+     */
+    private suspend fun waitIdle() {
+        val clock = sleepClock
+        val start = clock?.invoke() ?: 0L
+        var waited = 0L
+        while (true) {
+            val limit = if (keepWarm()) idleReleaseMs else minOf(idleReleaseMs, backgroundIdleReleaseMs)
+            val elapsed = if (clock != null) clock() - start else waited
+            val left = limit - elapsed
+            if (left <= 0) return
+            val step = minOf(left, IDLE_CHECK_MS)
+            delay(step)
+            waited += step
         }
     }
 
@@ -883,6 +918,9 @@ class NeuralTtsEngine(
          * hilo de audio; la pausa no depende de esto (se libera la salida con flush).
          */
         const val BLOCK = 8192
+        /** Paso con el que se vigila el plazo de inactividad (ver `waitIdle`). */
+        const val IDLE_CHECK_MS = 2_000L
+
         /** Reloj de reproduccion sin resaltado en pantalla (ver `fastTick`). */
         const val SLOW_TICK_MS = 200L
 

@@ -12,6 +12,7 @@ import com.lectorvoz.tts.BookInfo
 import com.lectorvoz.tts.PlaybackState
 import com.lectorvoz.tts.SleepTimerMode
 import com.lectorvoz.tts.UtteranceProvider
+import com.lectorvoz.tts.playback.BookRequest
 import com.lectorvoz.tts.playback.PlaybackConnection
 import com.lectorvoz.tts.playback.PlaybackHub
 import kotlinx.coroutines.CancellationException
@@ -106,18 +107,27 @@ class PlaybackFacade(
     override suspend fun start(book: BookForVoice, source: SpeechSource, start: Locator, autoPlay: Boolean) {
         val provider = source as? UtteranceProvider ?: error("Fuente de voz no compatible")
         currentSource = source
+        live().openBook(info(book), provider, start, autoPlay)
+    }
+
+    /**
+     * Peticion para reanudar [book] en el servicio recien creado tras morir el proceso
+     * ([com.lectorvoz.tts.playback.TtsConfig.resumeBook]): el servicio la abre y Media3 suena.
+     */
+    fun resumeRequest(book: BookForVoice, source: SpeechSource, start: Locator): BookRequest? {
+        val provider = source as? UtteranceProvider ?: return null
+        currentSource = source
+        return BookRequest(info(book), provider, start)
+    }
+
+    private fun info(book: BookForVoice): BookInfo {
         val cover = book.coverPath?.let(::File)?.takeIf { it.exists() }
-        live().openBook(
-            BookInfo(
-                id = book.id.toString(),
-                title = book.title,
-                author = book.author,
-                coverUri = cover?.let { Uri.fromFile(it).toString() },
-                chapterTitles = book.chapterTitles,
-            ),
-            provider,
-            start,
-            autoPlay,
+        return BookInfo(
+            id = book.id.toString(),
+            title = book.title,
+            author = book.author,
+            coverUri = cover?.let { Uri.fromFile(it).toString() },
+            chapterTitles = book.chapterTitles,
         )
     }
 

@@ -31,5 +31,15 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- Botones multimedia (auricular, Bluetooth, coche) con el proceso muerto: arranca el
+             servicio y Media3 llama a onPlaybackResumption, que reabre el ultimo libro. -->
+        <receiver
+            android:name="androidx.media3.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

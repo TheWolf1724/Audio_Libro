@@ -3,6 +3,7 @@ package com.lectorvoz.app.navigation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
@@ -17,6 +18,7 @@ import com.lectorvoz.tts.playback.DevicePreload
 import com.lectorvoz.app.AppGraph
 import com.lectorvoz.app.ui.history.HistoryScreen
 import com.lectorvoz.app.ui.history.HistoryViewModel
+import com.lectorvoz.app.ui.history.EditionSuggestionDialog
 import com.lectorvoz.app.ui.library.LibraryRoute
 import com.lectorvoz.app.ui.library.LibraryViewModel
 import com.lectorvoz.app.ui.reader.ReaderScreen
@@ -60,13 +62,25 @@ fun NavController.openReader(id: Long) {
     navigate(Routes.reader(id)) { popUpTo(Routes.LIBRARY) }
 }
 
+/**
+ * Vuelve atras solo si hay una entrada anterior y la actual esta en primer plano (RESUMED).
+ * Dos pulsaciones rapidas de Volver hacian dos pops: la segunda sacaba tambien la
+ * biblioteca y dejaba la pantalla en blanco. Devuelve si se hizo el pop.
+ */
+fun NavController.safePopBackStack(): Boolean {
+    val cur = currentBackStackEntry ?: return false
+    if (previousBackStackEntry == null) return false
+    if (cur.lifecycle.currentState != Lifecycle.State.RESUMED) return false
+    return popBackStack()
+}
+
 /** Clave del ViewModel del lector: una instancia por libro aunque se reutilice la entrada. */
 fun readerVmKey(id: Long) = "lector-$id"
 
 /** Navegacion de la app (una sola actividad). */
 @Composable
 fun AppNavHost(graph: AppGraph, nav: NavHostController) {
-    val back: () -> Unit = { nav.popBackStack() }
+    val back: () -> Unit = { nav.safePopBackStack() }
     NavHost(navController = nav, startDestination = Routes.LIBRARY) {
         composable(Routes.LIBRARY) {
             val vm: LibraryViewModel = viewModel(factory = viewModelFactory { initializer { LibraryViewModel(graph.library, graph.collections, graph.settings, onDelete = graph::deleteBook) } })
@@ -133,10 +147,12 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
         }
         composable(SettingsRoutes.ABOUT) { AboutScreen(back) }
         composable(SettingsRoutes.HISTORY) {
-            val vm: HistoryViewModel = viewModel(factory = viewModelFactory { initializer { HistoryViewModel(graph.history, graph.library, graph.settings) } })
+            val vm: HistoryViewModel = viewModel(factory = viewModelFactory { initializer { HistoryViewModel(graph.history, graph.library, graph.settings, graph.historyRecorder) } })
             HistoryScreen(vm, graph.covers, back, onOpen = { id -> nav.openReader(id) })
         }
     }
+    // "Es otra edicion de...?" al abrir un libro nuevo que se parece a una lectura anterior.
+    EditionSuggestionDialog(graph.historyRecorder, graph.covers)
 }
 
 @Composable

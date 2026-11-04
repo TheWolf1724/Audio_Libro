@@ -160,14 +160,40 @@ class ReadAloudControllerTest {
 
     @Test
     fun atenuacionBajaYRestauraElVolumen() = runTest {
-        val e = env()
+        // Voz neuronal: el volumen se aplica al momento en la salida de audio.
+        val e = env(VoiceSettings(engine = TtsEngineType.NEURAL))
         e.controller.play()
         runCurrent()
         e.focus.emit(FocusChange.DUCK)
-        assertThat(e.system.lastVolume).isEqualTo(ReadAloudController.DUCK_VOLUME)
+        assertThat(e.neural.lastVolume).isEqualTo(ReadAloudController.DUCK_VOLUME)
         e.focus.emit(FocusChange.GAIN)
-        assertThat(e.system.lastVolume).isEqualTo(1f)
+        assertThat(e.neural.lastVolume).isEqualTo(1f)
         assertThat(e.state.playWhenReady).isTrue()
+    }
+
+    /** Voz del sistema: atenuar llegaria frases tarde; se calla como en una llamada y sigue. */
+    @Test
+    fun atenuacionConLaVozDelSistemaCallaYReanuda() = runTest {
+        val e = env()
+        e.controller.play()
+        advanceTimeBy(150)
+        runCurrent()
+        assertThat(e.state.utteranceId).isEqualTo(2L)
+        e.focus.emit(FocusChange.DUCK)
+        runCurrent()
+        assertThat(e.state.playWhenReady).isTrue()
+        assertThat(e.state.focusSuppressed).isTrue()
+        assertThat(e.state.isPlaying).isFalse()
+        val spoken = e.system.spoken.size
+        advanceTimeBy(5_000)
+        runCurrent()
+        assertThat(e.system.spoken).hasSize(spoken)
+        e.focus.emit(FocusChange.GAIN)
+        runCurrent()
+        assertThat(e.state.focusSuppressed).isFalse()
+        assertThat(e.state.isPlaying).isTrue()
+        // Repite la frase cortada.
+        assertThat(e.system.spoken.last()).isEqualTo(2L)
     }
 
     @Test
@@ -176,9 +202,51 @@ class ReadAloudControllerTest {
         e.focus.grant = false
         e.controller.play()
         runCurrent()
+        // Primero espera suprimido (Media3 mantiene el primer plano) y lo reintenta unas veces.
+        assertThat(e.state.playWhenReady).isTrue()
+        assertThat(e.state.focusSuppressed).isTrue()
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertThat(e.focus.requests).isEqualTo(1 + ReadAloudController.FOCUS_RETRY_MS.size)
         assertThat(e.state.playWhenReady).isFalse()
+        assertThat(e.state.focusSuppressed).isFalse()
         assertThat(e.state.error).isNotNull()
         assertThat(e.events.last()).isInstanceOf(PlaybackEvent.Error::class.java)
+        assertThat(e.system.spoken).isEmpty()
+    }
+
+    /** Android 17: foco denegado desde segundo plano; el reintento (ya en primer plano) lo consigue. */
+    @Test
+    fun focoDenegadoSeReintentaYSuena() = runTest {
+        val e = env()
+        e.focus.grant = false
+        e.controller.play()
+        runCurrent()
+        assertThat(e.system.spoken).isEmpty()
+        e.focus.grant = true
+        advanceTimeBy(ReadAloudController.FOCUS_RETRY_MS.first() + 10)
+        runCurrent()
+        assertThat(e.state.playWhenReady).isTrue()
+        assertThat(e.state.focusSuppressed).isFalse()
+        assertThat(e.state.isPlaying).isTrue()
+        assertThat(e.system.spoken).containsExactly(1L)
+        assertThat(e.state.error).isNull()
+    }
+
+    @Test
+    fun pausarMientrasEsperaElFocoNoReintenta() = runTest {
+        val e = env()
+        e.focus.grant = false
+        e.controller.play()
+        runCurrent()
+        e.controller.pause()
+        e.focus.grant = true
+        advanceTimeBy(10_000)
+        runCurrent()
+        assertThat(e.focus.requests).isEqualTo(1)
+        assertThat(e.state.playWhenReady).isFalse()
+        assertThat(e.state.error).isNull()
+        assertThat(e.system.spoken).isEmpty()
     }
 
     @Test

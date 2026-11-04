@@ -250,8 +250,9 @@ class EpubBookTest {
         val bomb = ByteArray(3 * 1024 * 1024) { ' '.code.toByte() }
         val xhtml = text("<html><body><p>a</p>") + bomb + text("</body></html>")
         EpubBook.open(EpubFixtures.single(tmp.root, "bomba.epub", xhtml)).use { book ->
-            val e = runCatching { book.chapter(0) }.exceptionOrNull()
-            assertThat(e).isInstanceOf(EpubException.ZipBomb::class.java)
+            val doc = book.chapter(0)
+            assertThat(doc.plainText).startsWith(EpubBook.UNAVAILABLE)
+            assertThat(doc.plainText).contains("compresion sospechosa")
         }
     }
 
@@ -260,8 +261,7 @@ class EpubBookTest {
         val big = text(EpubFixtures.chapter("<p>" + "texto variado 123 ".repeat(2000) + "</p>"))
         val limits = EpubLimits(maxResourceBytes = 10_000)
         EpubBook.open(EpubFixtures.single(tmp.root, "grande.epub", big), limits).use { book ->
-            val e = runCatching { book.chapter(0) }.exceptionOrNull()
-            assertThat(e).isInstanceOf(EpubException.TooLarge::class.java)
+            assertThat(book.chapter(0).plainText).contains("demasiado grande")
         }
     }
 

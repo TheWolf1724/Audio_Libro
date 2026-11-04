@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -31,7 +33,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.lectorvoz.app.BuildConfig
@@ -63,7 +67,8 @@ fun DictionaryScreen(vm: DictionaryViewModel, onBack: () -> Unit) {
     val sample by vm.sample.collectAsStateWithLifecycle()
     val preview by vm.preview.collectAsStateWithLifecycle()
     val invalid by vm.invalid.collectAsStateWithLifecycle()
-    var editing by remember { mutableStateOf<PronunciationEntry?>(null) }
+    // Saveable: girar o cambiar el modo oscuro no cierra el dialogo ni pierde la regla escrita.
+    var editing by rememberSaveable(stateSaver = entrySaver<PronunciationEntry?>()) { mutableStateOf(null) }
     SettingsScaffold(if (vm.bookId == null) "Diccionario de pronunciacion" else "Pronunciacion de este libro", onBack) {
         SectionHeader("Probar")
         OutlinedTextField(
@@ -99,7 +104,7 @@ fun DictionaryScreen(vm: DictionaryViewModel, onBack: () -> Unit) {
                     )
                     if (flags.isNotEmpty()) Text(flags.joinToString(", "), style = MaterialTheme.typography.bodySmall)
                 }
-                Switch(checked = e.enabled, onCheckedChange = { vm.toggle(e) }, modifier = Modifier.semantics { contentDescription = "Regla activa" })
+                Switch(checked = e.enabled, onCheckedChange = { vm.toggle(e) }, modifier = Modifier.semantics { contentDescription = "Regla ${e.pattern} activa" })
                 AppIconButton(R.drawable.ic_delete, "Borrar regla ${e.pattern}", { vm.delete(e) })
             }
             HorizontalDivider()
@@ -112,7 +117,7 @@ fun DictionaryScreen(vm: DictionaryViewModel, onBack: () -> Unit) {
 
 @Composable
 private fun RuleDialog(initial: PronunciationEntry, onDismiss: () -> Unit, onSave: (PronunciationEntry) -> Unit) {
-    var e by remember { mutableStateOf(initial) }
+    var e by rememberSaveable(stateSaver = entrySaver<PronunciationEntry>()) { mutableStateOf(initial) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (initial.id == 0L) "Nueva regla" else "Editar regla") },
@@ -131,6 +136,22 @@ private fun RuleDialog(initial: PronunciationEntry, onDismiss: () -> Unit, onSav
     )
 }
 
+/** Guarda una regla (o ninguna) en el estado de la actividad. */
+@Suppress("UNCHECKED_CAST")
+internal fun <T : PronunciationEntry?> entrySaver(): Saver<T, Any> = Saver(
+    save = { e ->
+        e?.let { arrayListOf<Any?>(it.id, it.pattern, it.replacement, it.isRegex, it.caseSensitive, it.wholeWord, it.enabled, it.language, it.position, it.bookId) }
+    },
+    restore = { v ->
+        val l = v as List<*>
+        PronunciationEntry(
+            id = l[0] as Long, pattern = l[1] as String, replacement = l[2] as String, isRegex = l[3] as Boolean,
+            caseSensitive = l[4] as Boolean, wholeWord = l[5] as Boolean, enabled = l[6] as Boolean,
+            language = l[7] as String?, position = l[8] as Int, bookId = l[9] as Long?,
+        ) as T
+    },
+)
+
 @Composable
 private fun Check(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
     Row(Modifier.fillMaxWidth().clickable { onChange(!value) }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -143,7 +164,7 @@ private fun Check(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
     val s by vm.summary.collectAsStateWithLifecycle()
-    var confirm by remember { mutableStateOf(false) }
+    var confirm by rememberSaveable { mutableStateOf(false) }
     SettingsScaffold("Estadisticas", onBack) {
         SectionHeader("Total")
         StatLine("Tiempo leyendo", formatDuration(s.readMs))
@@ -176,11 +197,12 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
                     .semantics(mergeDescendants = true) { contentDescription = "${fmt.format(Date(d.dayStart))}: leyendo ${formatDuration(d.readMs)}, escuchando ${formatDuration(d.listenMs)}" },
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(fmt.format(Date(d.dayStart)), modifier = Modifier.width(64.dp))
-                Box(Modifier.weight(1f).height(16.dp)) {
+                // Con letra grande los textos crecen (anchos minimos, no fijos) y la barra cede sitio.
+                Text(fmt.format(Date(d.dayStart)), modifier = Modifier.widthIn(min = 64.dp).padding(end = 8.dp))
+                Box(Modifier.weight(1f).widthIn(min = 24.dp).height(16.dp)) {
                     Box(Modifier.fillMaxWidth(total.toFloat() / max).fillMaxHeight().background(MaterialTheme.colorScheme.primary))
                 }
-                Text(formatDuration(total), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp).width(96.dp))
+                Text(formatDuration(total), style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 8.dp).widthIn(min = 96.dp))
             }
         }
         OutlinedButton(onClick = { confirm = true }, modifier = Modifier.padding(16.dp).heightIn(min = 48.dp)) { Text("Borrar estadisticas") }
@@ -199,8 +221,9 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
 @Composable
 private fun StatLine(label: String, value: String) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).semantics(mergeDescendants = true) {}) {
-        Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        Text(value, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary)
+        // Pesos: con letra grande el valor parte linea en vez de empujar la etiqueta fuera.
+        Text(label, modifier = Modifier.weight(1f).padding(end = 8.dp), style = MaterialTheme.typography.bodyLarge)
+        Text(value, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.primary, textAlign = TextAlign.End)
     }
 }
 
@@ -219,23 +242,29 @@ fun ExportScreen(vm: ExportViewModel, onBack: () -> Unit, onPickBook: (Book) -> 
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         if (uri != null) vm.exportBook(uri)
     }
+    val book = s.book
+    if (book == null) {
+        // Eleccion de libro: lista perezosa (con miles de libros no se componen todos).
+        SettingsScaffold("Exportar audio", onBack, scrollable = false) {
+            s.job?.let { ExportJobCard(it, onCancel = vm::cancel, onClear = vm::clearResult) }
+            Text("Elige un libro:", modifier = Modifier.padding(16.dp))
+            if (books.isEmpty()) Text("La biblioteca esta vacia.", modifier = Modifier.padding(16.dp))
+            LazyColumn(Modifier.fillMaxWidth().weight(1f).testTag("exportar-libros")) {
+                items(books, key = { it.id }) { b ->
+                    Text(
+                        b.title,
+                        modifier = Modifier.fillMaxWidth().clickable { onPickBook(b) }.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    HorizontalDivider()
+                }
+            }
+        }
+        return
+    }
     SettingsScaffold("Exportar audio", onBack) {
         val job = s.job
         if (job != null) ExportJobCard(job, onCancel = vm::cancel, onClear = vm::clearResult)
-        val book = s.book
-        if (book == null) {
-            Text("Elige un libro:", modifier = Modifier.padding(16.dp))
-            if (books.isEmpty()) Text("La biblioteca esta vacia.", modifier = Modifier.padding(16.dp))
-            books.forEach { b ->
-                Text(
-                    b.title,
-                    modifier = Modifier.fillMaxWidth().clickable { onPickBook(b) }.heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 12.dp),
-                    style = MaterialTheme.typography.bodyLarge,
-                )
-                HorizontalDivider()
-            }
-            return@SettingsScaffold
-        }
         Text(book.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
         if (s.parts.isNotEmpty()) {
             ChoiceRow("Parte", s.parts.indices.toList(), s.part, { s.parts.getOrNull(it) ?: "${it + 1}" }, vm::setPart, tag = "exportar-capitulo")
@@ -307,7 +336,7 @@ private val LICENSES = listOf(
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    var shown by remember { mutableStateOf<String?>(null) }
+    var shown by rememberSaveable { mutableStateOf<String?>(null) }
     SettingsScaffold("Acerca de", onBack) {
         Text("LectorVoz ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
         Text(

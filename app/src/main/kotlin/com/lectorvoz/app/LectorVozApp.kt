@@ -43,6 +43,11 @@ class LectorVozApp : Application() {
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         TtsConfig.audioCacheMaxBytes = 300L * 1024 * 1024
+        // "Play" con el proceso recien creado (auricular, notificacion, coche): ultimo libro.
+        TtsConfig.resumeBook = { _ -> graph.resumeRequest() }
+        // Con la app en pantalla (biblioteca con el minirreproductor) el modelo no se suelta al
+        // pausar: reanudar no debe esperar a recargarlo.
+        TtsConfig.keepModelWarm = { created?.appVisible == true }
     }
 
     override fun onTrimMemory(level: Int) {

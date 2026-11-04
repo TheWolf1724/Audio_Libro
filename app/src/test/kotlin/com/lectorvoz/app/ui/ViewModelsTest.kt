@@ -54,6 +54,19 @@ class ViewModelsTest {
         assertThat(f.filterBooks(libros, "", LibraryFilter.Unfinished, LibrarySort.ADDED, emptyList()).map { it.id }).containsExactly(3L, 1L).inOrder()
         assertThat(f.filterBooks(libros, "", LibraryFilter.Favorites, LibrarySort.TITLE, emptyList()).map { it.id }).containsExactly(3L)
         assertThat(f.filterBooks(libros, "", LibraryFilter.All, LibrarySort.PROGRESS, emptyList()).first().id).isEqualTo(1L)
+        assertThat(f.filterBooks(libros, "", LibraryFilter.All, LibrarySort.AUTHOR, emptyList()).map { it.id }).containsExactly(3L, 2L, 1L).inOrder()
+    }
+
+    @Test
+    fun filtrarMilesDeLibrosEsRapido() {
+        val muchos = (1L..2000L).map { book(it, "Título número $it", "Autor ${it % 37}", added = it) }
+        val t0 = System.nanoTime()
+        val r = LibraryViewModel.filterBooks(muchos, "numero 19", LibraryFilter.All, LibrarySort.AUTHOR, emptyList())
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        assertThat(r).isNotEmpty()
+        assertThat(r.all { LibraryViewModel.fold(it.title).contains("numero 19") }).isTrue()
+        // Margen amplio (maquinas lentas); antes compilaba un Regex por comparacion.
+        assertThat(ms).isLessThan(2_000L)
     }
 
     @Test
@@ -63,7 +76,7 @@ class ViewModelsTest {
         repo.results[bad.toString()] = FakeLibraryRepository.failed("roto.txt")
         val settings = FakeSettingsRepository()
         settings.appState.value = settings.appState.value.copy(copyOnImport = false)
-        val vm = LibraryViewModel(repo, FakeCollectionRepository(), settings)
+        val vm = LibraryViewModel(repo, FakeCollectionRepository(), settings, compute = Dispatchers.Main)
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         vm.import(listOf(Uri.parse("content://x/nuevo.epub"), bad))
         val s = vm.state.value
@@ -82,7 +95,7 @@ class ViewModelsTest {
         val cols = FakeCollectionRepository()
         val settings = FakeSettingsRepository()
         settings.overridesState.value = mapOf(1L to BookOverrides(fontSizeSp = 30f))
-        val vm = LibraryViewModel(repo, cols, settings)
+        val vm = LibraryViewModel(repo, cols, settings, compute = Dispatchers.Main)
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         assertThat(vm.state.value.continueReading?.id).isEqualTo(1L)
 
@@ -103,7 +116,7 @@ class ViewModelsTest {
     @Test
     fun preferenciasDeVista() = runTest {
         val settings = FakeSettingsRepository()
-        val vm = LibraryViewModel(FakeLibraryRepository(), FakeCollectionRepository(), settings)
+        val vm = LibraryViewModel(FakeLibraryRepository(), FakeCollectionRepository(), settings, compute = Dispatchers.Main)
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.state.collect {} }
         assertThat(vm.state.value.totalCount).isEqualTo(0)
         vm.setGrid(false)

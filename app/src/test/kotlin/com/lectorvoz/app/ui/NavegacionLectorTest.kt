@@ -17,6 +17,7 @@ import com.google.common.truth.Truth.assertThat
 import com.lectorvoz.app.navigation.Routes
 import com.lectorvoz.app.navigation.openReader
 import com.lectorvoz.app.navigation.readerVmKey
+import com.lectorvoz.app.navigation.safePopBackStack
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -56,6 +57,29 @@ class NavegacionLectorTest {
             // Atras vuelve a la biblioteca, no al libro anterior.
             nav.popBackStack()
         }
+        rule.onNodeWithText("biblioteca").assertIsDisplayed()
+    }
+
+    @Test
+    fun volverDosVecesRapidoNoDejaLaPantallaEnBlanco() {
+        lateinit var nav: NavHostController
+        rule.setContent {
+            nav = rememberNavController()
+            NavHost(nav, startDestination = Routes.LIBRARY) {
+                composable(Routes.LIBRARY) { Text("biblioteca") }
+                composable(Routes.READER, arguments = listOf(navArgument("libro") { type = NavType.LongType })) { Text("lector") }
+            }
+        }
+        rule.runOnIdle { nav.openReader(1) }
+        rule.onNodeWithText("lector").assertIsDisplayed()
+        rule.runOnIdle {
+            // Dos toques seguidos en Volver antes de que termine la transicion.
+            assertThat(nav.safePopBackStack()).isTrue()
+            assertThat(nav.safePopBackStack()).isFalse()
+        }
+        rule.onNodeWithText("biblioteca").assertIsDisplayed()
+        // En la biblioteca (sin entrada anterior) Volver no la saca.
+        rule.runOnIdle { assertThat(nav.safePopBackStack()).isFalse() }
         rule.onNodeWithText("biblioteca").assertIsDisplayed()
     }
 }

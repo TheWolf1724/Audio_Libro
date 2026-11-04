@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.lectorvoz.app.LectorVozApp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -64,6 +65,10 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
 
     private var job: Job? = null
 
+    /** Version que se descarga o instala (para la notificacion). */
+    @Volatile var version: String? = null
+        private set
+
     /** La app esta en pantalla (MainActivity): solo entonces se puede abrir la confirmacion. */
     @Volatile var foreground = false
     private val dir = File(context.cacheDir, "actualizacion")
@@ -85,7 +90,11 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
             return
         }
         val previous = job
+        version = release.version
         mutable.value = InstallState.Downloading(0f)
+        // Si el usuario sale de la app, la descarga sigue con su notificacion.
+        runCatching { ContextCompat.startForegroundService(context, Intent(context, UpdateDownloadService::class.java)) }
+            .onFailure { Log.w(TAG, "No se pudo iniciar el servicio de descarga", it) }
         job = scope.launch {
             val me = coroutineContext.job
             // Un intento anterior cancelado puede seguir bloqueado leyendo de la red: se espera a

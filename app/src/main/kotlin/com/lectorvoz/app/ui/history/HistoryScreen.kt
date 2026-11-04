@@ -1,7 +1,14 @@
 package com.lectorvoz.app.ui.history
 
 import androidx.compose.foundation.ExperimentalFoundationApi
+import com.lectorvoz.app.history.HistoryRecorder
+import androidx.compose.ui.semantics.Role
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -79,6 +86,7 @@ class HistoryViewModel(
     private val history: ReadingHistoryRepository,
     library: LibraryRepository,
     settings: SettingsRepository,
+    private val recorder: HistoryRecorder? = null,
 ) : ViewModel() {
     val state: StateFlow<HistoryUiState> = combine(history.entries, library.books, settings.app) { entries, books, prefs ->
         val live = books.associateBy { it.id }
@@ -93,6 +101,11 @@ class HistoryViewModel(
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), HistoryUiState())
 
     fun delete(e: HistoryEntry) = viewModelScope.launch { history.delete(e.id) }
+
+    /** Lecturas con las que se puede unir [e] (otra edicion del mismo libro). */
+    suspend fun mergeOptions(e: HistoryEntry): List<HistoryEntry> = recorder?.mergeOptions(e).orEmpty()
+
+    fun merge(e: HistoryEntry, into: HistoryEntry) { recorder?.merge(e, into) }
 }
 
 private val dateFormat = SimpleDateFormat("d MMM yyyy", Locale.forLanguageTag("es-ES"))
@@ -112,19 +125,34 @@ internal fun historyDetails(e: HistoryEntry, p: AppPrefs): List<String> = buildL
 @Composable
 fun HistoryScreen(vm: HistoryViewModel, covers: CoverLoader, onBack: () -> Unit, onOpen: (Long) -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
-    HistoryContent(s, covers, onBack, onOpen, vm::delete)
+    HistoryContent(s, covers, onBack, onOpen, vm::delete, mergeOptions = vm::mergeOptions, onMerge = vm::merge)
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
-fun HistoryContent(s: HistoryUiState, covers: CoverLoader, onBack: () -> Unit, onOpen: (Long) -> Unit, onDelete: (HistoryEntry) -> Unit) {
+fun HistoryContent(
+    s: HistoryUiState,
+    covers: CoverLoader,
+    onBack: () -> Unit,
+    onOpen: (Long) -> Unit,
+    onDelete: (HistoryEntry) -> Unit,
+    mergeOptions: suspend (HistoryEntry) -> List<HistoryEntry> = { emptyList() },
+    onMerge: (HistoryEntry, HistoryEntry) -> Unit = { _, _ -> },
+) {
     var filter by rememberSaveable { mutableStateOf(HistoryFilter.ALL) }
+    var menu by remember { mutableStateOf<HistoryEntry?>(null) }
     var confirm by remember { mutableStateOf<HistoryEntry?>(null) }
+    var merging by remember { mutableStateOf<Pair<HistoryEntry, List<HistoryEntry>>?>(null) }
+    val scope = rememberCoroutineScope()
     Scaffold(
         topBar = { TopAppBar(title = { Text("Historial de lecturas") }, navigationIcon = { AppIconButton(R.drawable.ic_arrow_back, "Volver", onBack) }) },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
-            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // Desplazable: con letra grande los chips no caben en una fila.
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
                 HistoryFilter.entries.forEach { f ->
                     FilterChip(selected = filter == f, onClick = { filter = f }, label = { Text(f.label) }, modifier = Modifier.testTag("historial-filtro-${f.name}"))
                 }
@@ -156,7 +184,13 @@ fun HistoryContent(s: HistoryUiState, covers: CoverLoader, onBack: () -> Unit, o
                     val details = historyDetails(e, s.prefs)
                     Row(
                         Modifier.fillMaxWidth()
-                            .combinedClickable(onClick = { e.bookId?.let(onOpen) }, onLongClick = { confirm = e })
+                            // Libro ya quitado: el toque abre las opciones (antes no hacia nada y TalkBack lo ofrecia).
+                            .combinedClickable(
+                                onClickLabel = if (e.bookId != null) "Abrir" else "Opciones",
+                                onLongClickLabel = "Opciones",
+                                onClick = { val id = e.bookId; if (id != null) onOpen(id) else menu = e },
+                                onLongClick = { menu = e },
+                            )
                             .heightIn(min = 56.dp)
                             .padding(horizontal = 16.dp, vertical = 10.dp)
                             .testTag("historial-${e.id}")
@@ -182,6 +216,35 @@ fun HistoryContent(s: HistoryUiState, covers: CoverLoader, onBack: () -> Unit, o
             }
         }
     }
+    menu?.let { e ->
+        AlertDialog(
+            onDismissRequest = { menu = null },
+            title = { Text(e.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+            text = {
+                Column {
+                    TextButton(
+                        onClick = { menu = null; scope.launch { merging = e to mergeOptions(e) } },
+                        modifier = Modifier.fillMaxWidth().testTag("historial-unir"),
+                    ) { Text("Es otra edicion de otra lectura: unir") }
+                    TextButton(onClick = { menu = null; confirm = e }, modifier = Modifier.fillMaxWidth().testTag("historial-quitar")) { Text("Quitar del historial") }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { menu = null }) { Text("Cancelar") } },
+        )
+    }
+    merging?.let { (e, options) ->
+        EditionChooser(
+            title = "Unir con otra lectura",
+            message = if (options.isEmpty()) "No hay otra lectura con la que unirla (solo se unen lecturas de libros que ya no estan en la biblioteca)."
+            else "Elige la lectura de la que \"${e.title}\" es otra edicion. Quedara una sola, con la fecha de inicio mas antigua.",
+            options = options,
+            covers = covers,
+            confirmLabel = "Unir",
+            dismissLabel = "Cancelar",
+            onChoose = { into -> merging = null; if (into != null) onMerge(e, into) },
+        )
+    }
     confirm?.let { e ->
         AlertDialog(
             onDismissRequest = { confirm = null },
@@ -191,4 +254,71 @@ fun HistoryContent(s: HistoryUiState, covers: CoverLoader, onBack: () -> Unit, o
             dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancelar") } },
         )
     }
+}
+
+/**
+ * Propuesta al abrir un libro nuevo: "es otra edicion de...?". Nada se une sin que el usuario
+ * lo elija; "No, es otro libro" lo deja como lectura aparte.
+ */
+@Composable
+fun EditionSuggestionDialog(recorder: HistoryRecorder, covers: CoverLoader) {
+    val s by recorder.suggestion.collectAsStateWithLifecycle()
+    val sug = s ?: return
+    EditionChooser(
+        title = "Otra edicion?",
+        message = "\"${sug.entry.title}\" se parece a una lectura de tu historial. Si es el mismo libro en otra edicion, eligela para unirlas.",
+        options = sug.candidates,
+        covers = covers,
+        confirmLabel = "Unir",
+        dismissLabel = "No, es otro libro",
+        onChoose = recorder::answer,
+    )
+}
+
+/** Dialogo para elegir una lectura de [options] (o ninguna). */
+@Composable
+private fun EditionChooser(
+    title: String,
+    message: String,
+    options: List<HistoryEntry>,
+    covers: CoverLoader,
+    confirmLabel: String,
+    dismissLabel: String,
+    onChoose: (HistoryEntry?) -> Unit,
+) {
+    var chosen by remember(options) { mutableStateOf(options.firstOrNull()) }
+    AlertDialog(
+        onDismissRequest = { onChoose(null) },
+        title = { Text(title) },
+        text = {
+            Column {
+                Text(message, style = MaterialTheme.typography.bodyMedium)
+                LazyColumn(Modifier.heightIn(max = 320.dp).padding(top = 8.dp)) {
+                    items(options, key = { it.id }) { o ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .selectable(selected = chosen == o, onClick = { chosen = o }, role = Role.RadioButton)
+                                .padding(vertical = 6.dp)
+                                .testTag("edicion-${o.id}"),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = chosen == o, onClick = null)
+                            BookCover(o.coverPath, o.title, covers, 32.dp, Modifier.padding(start = 8.dp).width(32.dp).aspectRatio(2f / 3f))
+                            Column(Modifier.padding(start = 12.dp)) {
+                                Text(o.title, style = MaterialTheme.typography.bodyLarge, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                val sub = listOfNotNull(o.author, "Empezado: ${date(o.startedAt)}", o.finishedAt?.let { "Terminado: ${date(it)}" })
+                                Text(sub.joinToString(" - "), style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            if (options.isNotEmpty()) {
+                TextButton(onClick = { onChoose(chosen) }, enabled = chosen != null, modifier = Modifier.testTag("edicion-unir")) { Text(confirmLabel) }
+            }
+        },
+        dismissButton = { TextButton(onClick = { onChoose(null) }, modifier = Modifier.testTag("edicion-no")) { Text(dismissLabel) } },
+    )
 }

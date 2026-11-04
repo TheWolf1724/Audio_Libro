@@ -38,11 +38,14 @@ class CoverExtractorImpl(
             val m = book.metadata
             val written = m.coverHref?.let { href ->
                 try {
-                    book.resource(href)?.let { writeScaled(it, coverOut) } ?: false
+                    // Con el limite de imagenes: una portada enorme no se carga entera.
+                    book.imageResource(href)?.let { writeScaled(it, coverOut) } ?: false
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Exception) {
                     false
+                } catch (e: OutOfMemoryError) {
+                    false // portada enorme: se importa sin ella
                 }
             } ?: false
             return ExtractedInfo(m.title, m.authors, m.language, written)
@@ -59,6 +62,8 @@ class CoverExtractorImpl(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                false
+            } catch (e: OutOfMemoryError) {
                 false
             }
             val m = book.metadata

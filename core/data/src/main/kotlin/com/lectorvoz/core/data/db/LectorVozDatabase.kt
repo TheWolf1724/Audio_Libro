@@ -18,7 +18,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ReadingSessionEntity::class,
         ReadingHistoryEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = true,
 )
 abstract class LectorVozDatabase : RoomDatabase() {
@@ -88,8 +88,15 @@ abstract class LectorVozDatabase : RoomDatabase() {
             }
         }
 
+        /** 3 -> 4: ediciones unidas en el historial (huellas de las otras ediciones). */
+        val MIGRATION_3_4: Migration = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `reading_history` ADD COLUMN `alt_hashes` TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         /** Migraciones entre versiones. */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
 
         /** Construye la base de datos en disco. */
         fun build(context: Context): LectorVozDatabase =

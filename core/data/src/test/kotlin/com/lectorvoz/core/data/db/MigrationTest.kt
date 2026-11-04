@@ -78,7 +78,7 @@ class MigrationTest {
             // La tabla nueva funciona.
             db.readingSessionDao().insert(ReadingSessionEntity(bookId = 1, kind = "READ", startedAt = 1, durationMs = 10_000, chars = 5))
             assertThat(db.readingSessionDao().observeCount().first()).isEqualTo(1)
-            assertThat(db.openHelper.readableDatabase.version).isEqualTo(3)
+            assertThat(db.openHelper.readableDatabase.version).isEqualTo(4)
             // 2 -> 3: el libro abierto entra en el historial (sin sesiones: inicio = ultima apertura).
             val h = db.readingHistoryDao().observeAll().first()
             assertThat(h.map { it.quickHash }).containsExactly("h1")

@@ -27,6 +27,8 @@ sealed class EpubException(message: String, cause: Throwable? = null) : IOExcept
  * @param maxResourceBytes tamano maximo descomprimido de un recurso (imagenes, fuentes...).
  * @param maxXhtmlBytes tamano maximo descomprimido de un documento de texto (XHTML, OPF,
  *   NCX): se decodifica a String y jsoup crea el DOM, que ocupa varias veces mas en memoria.
+ * @param maxImageBytes tamano maximo descomprimido de una imagen que se va a decodificar
+ *   (las paginas y la portada): se lee entera en memoria antes de decodificarla.
  * @param maxCompressionRatio ratio descomprimido/comprimido maximo...
  * @param ratioCheckMinBytes ...que solo se comprueba a partir de este tamano descomprimido.
  * @param maxEntries numero maximo de entradas del zip.
@@ -34,6 +36,7 @@ sealed class EpubException(message: String, cause: Throwable? = null) : IOExcept
 data class EpubLimits(
     val maxResourceBytes: Long = 64L * 1024 * 1024,
     val maxXhtmlBytes: Long = 8L * 1024 * 1024,
+    val maxImageBytes: Long = 16L * 1024 * 1024,
     val maxCompressionRatio: Long = 100,
     val ratioCheckMinBytes: Long = 1L * 1024 * 1024,
     val maxEntries: Int = 20_000,

@@ -21,12 +21,16 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
@@ -62,12 +66,23 @@ import kotlin.math.roundToInt
 /** Andamio comun de las pantallas de ajustes (columna desplazable). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScaffold(title: String, onBack: () -> Unit, modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+fun SettingsScaffold(
+    title: String,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    /** false: el contenido gestiona su desplazamiento (por ejemplo con una lista perezosa con weight). */
+    scrollable: Boolean = true,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Scaffold(
         modifier = modifier,
         topBar = { TopAppBar(title = { Text(title) }, navigationIcon = { AppIconButton(R.drawable.ic_arrow_back, "Volver", onBack) }) },
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 32.dp), content = content)
+        if (scrollable) {
+            Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 32.dp), content = content)
+        } else {
+            Column(Modifier.fillMaxSize().padding(padding), content = content)
+        }
     }
 }
 
@@ -179,7 +194,7 @@ fun ReadingSettingsContent(
     SwitchRow("Mostrar fecha de inicio", app.historyShowStarted, { v -> onApp { it.copy(historyShowStarted = v) } }, tag = "app-historyShowStarted")
     SwitchRow("Mostrar fecha de fin", app.historyShowFinished, { v -> onApp { it.copy(historyShowFinished = v) } }, tag = "app-historyShowFinished")
     SwitchRow("Mostrar progreso", app.historyShowProgress, { v -> onApp { it.copy(historyShowProgress = v) } }, tag = "app-historyShowProgress")
-    var confirmHistory by remember { mutableStateOf(false) }
+    var confirmHistory by rememberSaveable { mutableStateOf(false) }
     TextButton(onClick = { confirmHistory = true }, modifier = Modifier.padding(horizontal = 8.dp).testTag("app-historial-borrar")) { Text("Borrar el historial") }
     if (confirmHistory) {
         AlertDialog(
@@ -332,13 +347,24 @@ private fun PreloadInfo(p: PreloadStatus) {
 private fun PauseSlider(label: String, value: Int, tag: String, onChange: (Int) -> Unit) =
     SliderRow(label, value.toFloat(), 0f..3000f, 10f, { "${it.roundToInt()} ms" }, { onChange(it.roundToInt()) }, tag = tag)
 
+/** Interpreta los preajustes escritos y los guarda si cambian. */
+private fun commitPresets(text: String, presets: List<Float>, onChange: (List<Float>) -> Unit) {
+    val parsed = text.split(';', ' ').mapNotNull { it.trim().replace(',', '.').toFloatOrNull() }
+    if (parsed.isNotEmpty() && parsed != presets) onChange(parsed)
+}
+
 @Composable
 private fun PresetsField(presets: List<Float>, onChange: (List<Float>) -> Unit) {
-    var text by remember(presets) { mutableStateOf(presets.joinToString("; ") { "%.2f".format(it) }) }
-    fun commit() {
-        val parsed = text.split(';', ' ').mapNotNull { it.trim().replace(',', '.').toFloatOrNull() }
-        if (parsed.isNotEmpty()) onChange(parsed)
-    }
+    var text by rememberSaveable(presets) { mutableStateOf(presets.joinToString("; ") { "%.2f".format(it) }) }
+    var focused by remember { mutableStateOf(false) }
+    fun commit() = commitPresets(text, presets, onChange)
+    // Se guarda con Hecho, al perder el foco y al salir de la pantalla (antes solo con Hecho).
+    // Valores sueltos con rememberUpdatedState: una referencia a commit() quedaria con los de la
+    // primera composicion.
+    val latestText by rememberUpdatedState(text)
+    val latestPresets by rememberUpdatedState(presets)
+    val latestOnChange by rememberUpdatedState(onChange)
+    DisposableEffect(Unit) { onDispose { commitPresets(latestText, latestPresets, latestOnChange) } }
     OutlinedTextField(
         value = text,
         onValueChange = { text = it },
@@ -346,7 +372,11 @@ private fun PresetsField(presets: List<Float>, onChange: (List<Float>) -> Unit) 
         singleLine = true,
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Done),
         keyboardActions = KeyboardActions(onDone = { commit() }),
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("voz-speedPresets"),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).testTag("voz-speedPresets")
+            .onFocusChanged { f ->
+                if (focused && !f.isFocused) commit()
+                focused = f.isFocused
+            },
     )
 }
 

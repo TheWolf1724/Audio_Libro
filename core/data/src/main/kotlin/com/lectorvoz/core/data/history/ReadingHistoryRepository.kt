@@ -37,8 +37,11 @@ data class HistoryEntry(
 interface ReadingHistoryRepository {
     val entries: Flow<List<HistoryEntry>>
 
-    /** Libro abierto: crea su entrada (inicio = ahora) o la enlaza y actualiza. */
-    suspend fun opened(book: Book)
+    /**
+     * Libro abierto: crea su entrada (inicio = ahora) o la enlaza y actualiza. Devuelve el id
+     * de la entrada si es nueva (para proponer si es otra edicion de una lectura anterior).
+     */
+    suspend fun opened(book: Book): Long?
 
     /** Libro terminado (o desmarcado si [finished] es false). */
     suspend fun finished(book: Book, finished: Boolean)
@@ -54,6 +57,16 @@ interface ReadingHistoryRepository {
     suspend fun delete(id: Long)
 
     suspend fun clear()
+
+    /** Todas las entradas (sin observar). */
+    suspend fun all(): List<HistoryEntry>
+
+    /**
+     * Une dos lecturas del mismo libro (otra edicion): queda una sola entrada con la fecha de
+     * inicio mas antigua, la primera de fin, los datos del libro que siga en la biblioteca y las
+     * huellas de ambas (reimportar cualquiera de las dos vuelve a ella).
+     */
+    suspend fun merge(fromId: Long, intoId: Long)
 
     /**
      * Mantenimiento al arrancar: suelta las entradas cuyo libro ya no existe (borrado a medias)
@@ -76,11 +89,11 @@ class RoomReadingHistoryRepository(
      */
     private val lock = Mutex()
 
-    override suspend fun opened(book: Book): Unit = lock.withLock {
+    override suspend fun opened(book: Book): Long? = lock.withLock {
         val now = clock()
         val cur = dao.byHash(book.quickHash)
         if (cur == null) {
-            dao.insert(
+            return@withLock dao.insert(
                 ReadingHistoryEntity(
                     bookId = book.id,
                     quickHash = book.quickHash,
@@ -94,7 +107,7 @@ class RoomReadingHistoryRepository(
                     progress = book.progress,
                     updatedAt = now,
                 ),
-            )
+            ).takeIf { it > 0 }
         } else {
             dao.update(
                 cur.copy(
@@ -102,16 +115,44 @@ class RoomReadingHistoryRepository(
                     title = book.title,
                     authors = book.authors.joinToString("\n"),
                     progress = book.progress,
-                    // Terminado o desmarcado con el historial desactivado: se pone al dia.
+                    // Terminado o desmarcado con el historial desactivado: se pone al dia. Una
+                    // lectura con ediciones unidas conserva su fecha de fin (releer otra edicion).
                     finishedAt = when {
-                        !book.finished -> null
+                        !book.finished -> if (cur.altHashes.isNotEmpty()) cur.finishedAt else null
                         cur.finishedAt != null -> cur.finishedAt
                         else -> book.finishedAt ?: now
                     },
                     updatedAt = now,
                 ),
             )
+            null
         }
+    }
+
+    override suspend fun all(): List<HistoryEntry> = dao.all().map { it.toEntry() }
+
+    override suspend fun merge(fromId: Long, intoId: Long): Unit = lock.withLock {
+        if (fromId == intoId) return@withLock
+        val from = dao.byId(fromId) ?: return@withLock
+        val into = dao.byId(intoId) ?: return@withLock
+        // Los datos (titulo, enlace, portada, progreso) del que siga en la biblioteca.
+        val live = if (from.bookId != null || into.bookId == null) from else into
+        val other = if (live === from) into else from
+        val cover = live.coverPath ?: other.coverPath
+        listOf(live.coverPath, other.coverPath).filter { it != null && it != cover }.forEach { ownCover(it!!)?.delete() }
+        val alt = (into.altHashes.split('|') + from.altHashes.split('|') + other.quickHash)
+            .filter { it.isNotEmpty() && it != live.quickHash }.distinct()
+        dao.replace(
+            listOf(other.id, live.id),
+            live.copy(
+                id = into.id,
+                coverPath = cover,
+                startedAt = minOf(from.startedAt, into.startedAt),
+                finishedAt = listOfNotNull(from.finishedAt, into.finishedAt).minOrNull(),
+                updatedAt = maxOf(from.updatedAt, into.updatedAt),
+                altHashes = if (alt.isEmpty()) "" else alt.joinToString("|", "|", "|"),
+            ),
+        )
     }
 
     override suspend fun finished(book: Book, finished: Boolean): Unit = lock.withLock {
@@ -195,23 +236,28 @@ class InMemoryReadingHistory(private val clock: () -> Long = System::currentTime
 
     override val entries: Flow<List<HistoryEntry>> = state.map { l -> l.sortedByDescending { it.updatedAt } }
 
-    private fun byHash(hash: String) = state.value.firstOrNull { hashes[it.id] == hash }
+    /** Huella -> entrada para las ediciones unidas. */
+    private val alias = HashMap<String, Long>()
+
+    private fun byHash(hash: String) = state.value.firstOrNull { hashes[it.id] == hash || alias[hash] == it.id }
 
     private fun put(e: HistoryEntry) {
         state.value = state.value.filterNot { it.id == e.id } + e
     }
 
-    override suspend fun opened(book: Book) {
+    override suspend fun opened(book: Book): Long? {
         val now = clock()
         val cur = byHash(book.quickHash)
         if (cur == null) {
             val id = next++
             hashes[id] = book.quickHash
             put(HistoryEntry(id, book.id, book.title, book.authors, book.format, null, minOf(now, book.finishedAt ?: now), book.finishedAt, book.progress, now))
-        } else {
-            val fin = if (!book.finished) null else cur.finishedAt ?: book.finishedAt ?: now
-            put(cur.copy(bookId = book.id, title = book.title, authors = book.authors, progress = book.progress, finishedAt = fin, updatedAt = now))
+            return id
         }
+        val merged = alias.containsValue(cur.id)
+        val fin = if (!book.finished) cur.finishedAt.takeIf { merged } else cur.finishedAt ?: book.finishedAt ?: now
+        put(cur.copy(bookId = book.id, title = book.title, authors = book.authors, progress = book.progress, finishedAt = fin, updatedAt = now))
+        return null
     }
 
     override suspend fun finished(book: Book, finished: Boolean) {
@@ -229,6 +275,26 @@ class InMemoryReadingHistory(private val clock: () -> Long = System::currentTime
 
     override suspend fun detached(book: Book) {
         state.value.filter { it.bookId == book.id }.forEach { put(it.copy(bookId = null, progress = book.progress, updatedAt = clock())) }
+    }
+
+    override suspend fun all(): List<HistoryEntry> = state.value
+
+    override suspend fun merge(fromId: Long, intoId: Long) {
+        if (fromId == intoId) return
+        val from = state.value.firstOrNull { it.id == fromId } ?: return
+        val into = state.value.firstOrNull { it.id == intoId } ?: return
+        val live = if (from.bookId != null || into.bookId == null) from else into
+        val other = if (live === from) into else from
+        val merged = live.copy(
+            id = into.id,
+            coverPath = live.coverPath ?: other.coverPath,
+            startedAt = minOf(from.startedAt, into.startedAt),
+            finishedAt = listOfNotNull(from.finishedAt, into.finishedAt).minOrNull(),
+            updatedAt = maxOf(from.updatedAt, into.updatedAt),
+        )
+        val hashes = listOfNotNull(hashes[from.id], hashes[into.id])
+        state.value = state.value.filterNot { it.id == from.id || it.id == into.id } + merged
+        hashes.forEach { alias[it] = into.id }
     }
 
     override suspend fun withoutCover(): List<HistoryEntry> = state.value.filter { it.coverPath == null && it.bookId != null }

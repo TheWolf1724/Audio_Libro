@@ -331,7 +331,13 @@ class SentenceSegmenter(
 
         /** true si hay alguna letra o digito en [s, e). */
         internal fun hasReadable(text: CharSequence, s: Int, e: Int): Boolean {
-            for (i in s until e) if (text[i].isLetterOrDigit()) return true
+            var i = s
+            while (i < e) {
+                // Por punto de codigo: las letras "estilizadas" (cursiva matematica) van en pares.
+                val cp = Character.codePointAt(text, i)
+                if (Character.isLetterOrDigit(cp)) return true
+                i += Character.charCount(cp)
+            }
             return false
         }
 
