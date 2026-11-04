@@ -11,6 +11,7 @@
 = SENTENCE|NARRATOR|SENTENCE|es|Era de noche.
 = SENTENCE|NARRATOR|SECTION|es|Llovía...
 = SENTENCE|NARRATOR|PARAGRAPH|es|Al día siguiente salió.
+= SENTENCE|NARRATOR|PARAGRAPH|es|doce.
 = SENTENCE|NARRATOR|CHAPTER|es|Fin.
 
 > CAPÍTULO PRIMERO\nTexto del capítulo.\n- 14 -\nMás texto.\nxii\n~~~\nFinal.
