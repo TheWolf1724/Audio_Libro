@@ -84,6 +84,12 @@ data class AppPrefs(
     val ocrEnabled: Boolean = true,
     /** Pausar el OCR de fondo con ahorro de bateria o bateria baja (por debajo del 20 %, sin cargar). */
     val ocrSaveBattery: Boolean = true,
+    /**
+     * Recuperar con OCR las palabras que el PDF no expone como texto (versalitas, titulos en
+     * fuentes decorativas), manteniendo el texto nativo correcto. Automatico por pagina; depende
+     * de [ocrEnabled]. Es el modo de lectura MIXTA texto+OCR.
+     */
+    val recoverMissingText: Boolean = true,
     /** Guardar el historial de lecturas (aunque los libros se quiten de la biblioteca). */
     val historyEnabled: Boolean = true,
     /** Datos que muestra el historial. */
@@ -387,6 +393,7 @@ class DataStoreSettingsRepository(
         val checkUpdates = booleanPreferencesKey("app.avisar_versiones")
         val ocr = booleanPreferencesKey("app.ocr")
         val ocrSaveBattery = booleanPreferencesKey("app.ocr.ahorro")
+        val recoverMissingText = booleanPreferencesKey("app.ocr.recuperar")
         val history = booleanPreferencesKey("app.historial")
         val historyCover = booleanPreferencesKey("app.historial.portada")
         val historyAuthor = booleanPreferencesKey("app.historial.autor")
@@ -407,6 +414,7 @@ class DataStoreSettingsRepository(
             checkUpdates = p[A.checkUpdates] ?: d.checkUpdates,
             ocrEnabled = p[A.ocr] ?: d.ocrEnabled,
             ocrSaveBattery = p[A.ocrSaveBattery] ?: d.ocrSaveBattery,
+            recoverMissingText = p[A.recoverMissingText] ?: d.recoverMissingText,
             historyEnabled = p[A.history] ?: d.historyEnabled,
             historyShowCover = p[A.historyCover] ?: d.historyShowCover,
             historyShowAuthor = p[A.historyAuthor] ?: d.historyShowAuthor,
@@ -426,6 +434,7 @@ class DataStoreSettingsRepository(
         p[A.checkUpdates] = s.checkUpdates
         p[A.ocr] = s.ocrEnabled
         p[A.ocrSaveBattery] = s.ocrSaveBattery
+        p[A.recoverMissingText] = s.recoverMissingText
         p[A.history] = s.historyEnabled
         p[A.historyCover] = s.historyShowCover
         p[A.historyAuthor] = s.historyShowAuthor
