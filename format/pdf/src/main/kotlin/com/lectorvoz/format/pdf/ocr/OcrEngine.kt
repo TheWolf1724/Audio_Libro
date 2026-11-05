@@ -19,6 +19,20 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
+ * Texto recuperado por OCR de UNA region de la pagina (modo mixto). [region] es la zona pedida
+ * [left,top,right,bottom] en puntos; [text] y [charBoxes] (4 floats por caracter, puntos) van en
+ * par (charBoxes.size == text.length*4); [meanConfidence] 0..100 es la media de las palabras y
+ * [wordCount] cuantas se reconocieron. Quien llama decide, con la confianza, si lo inserta.
+ */
+data class OcrRegionResult(
+    val region: FloatArray,
+    val text: String,
+    val charBoxes: FloatArray,
+    val meanConfidence: Float,
+    val wordCount: Int,
+)
+
+/**
  * Reconocimiento de texto (OCR) de paginas PDF sin capa de texto, en el propio movil y sin
  * conexion (Tesseract). Un unico hilo de prioridad baja para todo el proceso: nunca compite
  * con la voz ni con el lector, y Tesseract no es seguro entre hilos.
@@ -39,8 +53,18 @@ class OcrEngine private constructor(private val context: Context) {
         val book: PdfBook?,
         val index: Int,
         val language: String,
-        val result: CompletableDeferred<RawPageText?>,
+        /** Reconocimiento de PAGINA entera (OCR clasico / escaneados). */
+        val pageResult: CompletableDeferred<RawPageText?>? = null,
+        /**
+         * Modo MIXTO: dado el render gris de la pagina (pixeles, ancho, alto, pxPerPoint),
+         * devuelve las regiones (cada una [left,top,right,bottom] en PUNTOS) a reconocer; el
+         * motor OCR-ea solo esas. Lo aporta :app (ejecuta el detector de :core:text).
+         */
+        val recover: ((ByteArray, Int, Int, Float) -> List<FloatArray>)? = null,
+        val recoverResult: CompletableDeferred<List<OcrRegionResult>>? = null,
     ) : Comparable<Job> {
+        val cancelled: Boolean get() = pageResult?.isCancelled == true || recoverResult?.isCancelled == true
+
         // Urgentes: la mas reciente primero (si se pasan paginas deprisa, la que se esta viendo
         // u oyendo ahora). De fondo: en orden.
         override fun compareTo(other: Job): Int = when {
@@ -73,7 +97,32 @@ class OcrEngine private constructor(private val context: Context) {
      */
     suspend fun recognize(book: PdfBook, index: Int, language: String, urgent: Boolean): RawPageText? {
         val d = CompletableDeferred<RawPageText?>()
-        val job = Job(if (urgent) URGENT else BACKGROUND, seq.incrementAndGet(), book, index, language, d)
+        val job = Job(if (urgent) URGENT else BACKGROUND, seq.incrementAndGet(), book, index, language, pageResult = d)
+        queue.put(job)
+        try {
+            return d.await()
+        } catch (e: CancellationException) {
+            queue.remove(job)
+            throw e
+        }
+    }
+
+    /**
+     * Modo MIXTO: renderiza la pagina [index] UNA vez, pasa el gris a [detect] (que localiza las
+     * zonas de texto que pdfium no extrae) y OCR-ea SOLO esas zonas, devolviendo texto + cajas +
+     * confianza por region. Vacio si no hay modelos, no hay regiones o falla. Cancelable.
+     * [detect] se ejecuta en el hilo del OCR (barato); devuelve cada region como
+     * [left,top,right,bottom] en PUNTOS.
+     */
+    suspend fun recoverMissingText(
+        book: PdfBook,
+        index: Int,
+        language: String,
+        urgent: Boolean,
+        detect: (gray: ByteArray, width: Int, height: Int, pxPerPoint: Float) -> List<FloatArray>,
+    ): List<OcrRegionResult> {
+        val d = CompletableDeferred<List<OcrRegionResult>>()
+        val job = Job(if (urgent) URGENT else BACKGROUND, seq.incrementAndGet(), book, index, language, recover = detect, recoverResult = d)
         queue.put(job)
         try {
             return d.await()
@@ -93,28 +142,40 @@ class OcrEngine private constructor(private val context: Context) {
                 releaseModel()
                 continue
             }
-            if (job.result.isCancelled) continue
+            if (job.cancelled) continue
             if (job.book == null) {
                 // OCR desactivado: fuera el modelo de la memoria y sus ficheros del disco.
                 releaseModel()
                 modelsDir().deleteRecursively()
-                job.result.complete(null)
+                job.pageResult?.complete(null)
                 continue
             }
             val started = System.nanoTime()
-            val out = try {
-                run(job)
-            } catch (e: Throwable) {
-                Log.w(TAG, "OCR fallido en la pagina ${job.index}", e)
-                if (e is OutOfMemoryError) releaseModel()
-                null
+            if (job.recover != null) {
+                val out = try {
+                    runRecover(job)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "OCR mixto fallido en la pagina ${job.index}", e)
+                    if (e is OutOfMemoryError) releaseModel()
+                    emptyList()
+                }
+                lastPageMs = (System.nanoTime() - started) / 1_000_000
+                job.recoverResult?.complete(out)
+            } else {
+                val out = try {
+                    runPage(job)
+                } catch (e: Throwable) {
+                    Log.w(TAG, "OCR fallido en la pagina ${job.index}", e)
+                    if (e is OutOfMemoryError) releaseModel()
+                    null
+                }
+                lastPageMs = (System.nanoTime() - started) / 1_000_000
+                job.pageResult?.complete(out)
             }
-            lastPageMs = (System.nanoTime() - started) / 1_000_000
-            job.result.complete(out)
         }
     }
 
-    private fun run(job: Job): RawPageText? {
+    private fun runPage(job: Job): RawPageText? {
         val book = job.book ?: return null
         val tess = model(job.language) ?: return null
         val size: PageSize = kotlinx.coroutines.runBlocking { book.pageSize(job.index) }
@@ -122,12 +183,91 @@ class OcrEngine private constructor(private val context: Context) {
         val w = (size.width * scale).roundToInt().coerceAtLeast(1)
         val h = (size.height * scale).roundToInt().coerceAtLeast(1)
         val gray = renderGray(book, job.index, scale, w, h)
+        tess.pageSegMode = TessBaseAPI.PageSegMode.PSM_AUTO
         tess.setImage(gray, w, h, 1, w)
         return try {
             words(tess, scale)
         } finally {
             tess.clear()
         }
+    }
+
+    /**
+     * Modo MIXTO: render gris de la pagina (una vez), [detect] localiza las regiones y se OCR-ea
+     * cada una como una linea (PSM de linea). Devuelve solo las regiones con texto reconocido.
+     */
+    private fun runRecover(job: Job): List<OcrRegionResult> {
+        val book = job.book ?: return emptyList()
+        val detect = job.recover ?: return emptyList()
+        val tess = model(job.language) ?: return emptyList()
+        val size: PageSize = kotlinx.coroutines.runBlocking { book.pageSize(job.index) }
+        val scale = scaleFor(size)
+        val w = (size.width * scale).roundToInt().coerceAtLeast(1)
+        val h = (size.height * scale).roundToInt().coerceAtLeast(1)
+        val gray = renderGray(book, job.index, scale, w, h)
+        val regions = detect(gray, w, h, scale)
+        if (regions.isEmpty()) return emptyList()
+        tess.pageSegMode = TessBaseAPI.PageSegMode.PSM_SINGLE_LINE
+        val out = ArrayList<OcrRegionResult>(regions.size)
+        for (region in regions) {
+            recognizeCrop(tess, gray, w, h, scale, region)?.let { out += it }
+        }
+        return out
+    }
+
+    /** OCR de UN recorte [region] (puntos) sobre el gris de la pagina; null si no hay texto. */
+    private fun recognizeCrop(tess: TessBaseAPI, gray: ByteArray, w: Int, h: Int, scale: Float, region: FloatArray): OcrRegionResult? {
+        val margin = (2f * scale).roundToInt()
+        val x0 = ((region[0] * scale).roundToInt() - margin).coerceIn(0, w - 1)
+        val y0 = ((region[1] * scale).roundToInt() - margin).coerceIn(0, h - 1)
+        val x1 = ((region[2] * scale).roundToInt() + margin).coerceIn(x0 + 1, w)
+        val y1 = ((region[3] * scale).roundToInt() + margin).coerceIn(y0 + 1, h)
+        val cw = x1 - x0
+        val ch = y1 - y0
+        if (cw < 2 || ch < 2) return null
+        val crop = ByteArray(cw * ch)
+        for (y in 0 until ch) System.arraycopy(gray, (y0 + y) * w + x0, crop, y * cw, cw)
+        tess.setImage(crop, cw, ch, 1, cw)
+        return try {
+            cropWords(tess, scale, x0.toFloat(), y0.toFloat(), region)
+        } finally {
+            tess.clear()
+        }
+    }
+
+    /** Palabras del recorte -> OcrRegionResult (cajas en puntos de PAGINA, con el origen del recorte). */
+    private fun cropWords(tess: TessBaseAPI, scale: Float, originXpx: Float, originYpx: Float, region: FloatArray): OcrRegionResult? {
+        tess.getUTF8Text()
+        val it = tess.resultIterator ?: return null
+        val sb = StringBuilder()
+        val boxes = FloatArrayBuilder()
+        var confSum = 0f
+        var words = 0
+        try {
+            it.begin()
+            do {
+                val word = it.getUTF8Text(TessBaseAPI.PageIteratorLevel.RIL_WORD)?.trim().orEmpty()
+                val conf = it.confidence(TessBaseAPI.PageIteratorLevel.RIL_WORD)
+                if (word.isEmpty() || conf < MIN_CONFIDENCE) continue
+                val r = it.getBoundingRect(TessBaseAPI.PageIteratorLevel.RIL_WORD)
+                if (words > 0) { sb.append(' '); boxes.addEmpty() }
+                val l = (originXpx + r.left) / scale
+                val t = (originYpx + r.top) / scale
+                val rr = (originXpx + r.right) / scale
+                val b = (originYpx + r.bottom) / scale
+                val step = (rr - l) / word.length
+                for ((k, c) in word.withIndex()) {
+                    sb.append(c)
+                    boxes.add(l + step * k, t, l + step * (k + 1), b)
+                }
+                confSum += conf
+                words++
+            } while (it.next(TessBaseAPI.PageIteratorLevel.RIL_WORD))
+        } finally {
+            it.delete()
+        }
+        if (words == 0) return null
+        return OcrRegionResult(region, sb.toString(), boxes.toArray(), confSum / words, words)
     }
 
     /** Palabras reconocidas -> texto con un caracter por caja (como pdfium), en puntos. */
