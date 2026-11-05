@@ -173,27 +173,28 @@ class OcrManager(
             return@MixedTextProvider null
         }
         val key = (book.id shl 24) or index.toLong()
-        val nativeBoxes = native.copyBoxes()
+        val fullBoxes = native.copyBoxes()
+        // Para DETECTAR y para enmascarar los recortes solo cuentan las cajas de caracteres
+        // REALES (con glifo): pdfium del movil mete los glifos que no sabe decodificar (versalitas)
+        // como ESPACIOS con caja, y esas cajas taparian la tinta de la versalita (el hueco saldria
+        // 0). Excluyendo los espacios/no imprimibles, esa tinta queda como hueco y se detecta; y al
+        // enmascarar el recorte no se blanquea la versalita. La FUSION si usa las cajas completas.
+        val coverable = coverableBoxes(native.rawText, fullBoxes)
         // Reusa el resultado ya calculado (vacio = nada que recuperar). Lo comparten el lector y la
         // voz -> misma fusion (resaltado consistente) y no se OCR-ea dos veces la misma pagina.
         synchronized(recovered) { recovered[key] }?.let {
             if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index cache lineas=${it.size}")
-            return@MixedTextProvider mergeOrNull(native.rawText, nativeBoxes, it)
+            return@MixedTextProvider mergeOrNull(native.rawText, fullBoxes, it)
         }
         var detectRan = false
         var regionCount = 0
-        val results = OcrEngine.get(context).recoverMissingText(pdf, index, OcrEngine.languageFor(book.language), wait, nativeBoxes) { gray, w, h, scale ->
+        val results = OcrEngine.get(context).recoverMissingText(pdf, index, OcrEngine.languageFor(book.language), wait, coverable) { gray, w, h, scale ->
             detectRan = true
             val page = MissingTextDetector.GrayPage(gray, w, h, scale)
             val d: ((String) -> Unit)? = if (TtsConfig.diagnostics) { s -> TtsConfig.diag("MIXTO pag=$index $s") } else null
-            val regions = MissingTextDetector.detect(page, nativeBoxes, diag = d)
+            val regions = MissingTextDetector.detect(page, coverable, diag = d)
             regionCount = regions.size
-            if (TtsConfig.diagnostics) {
-                // Prueba a umbrales mas altos: si con 200/230 aparecen regiones, el texto es claro.
-                val r200 = MissingTextDetector.detect(page, nativeBoxes, inkThreshold = 200).size
-                val r230 = MissingTextDetector.detect(page, nativeBoxes, inkThreshold = 230).size
-                TtsConfig.diag("MIXTO pag=$index detector: thr160=${regions.size} thr200=$r200 thr230=$r230 (render ${w}x${h} px, cajas nativas=${nativeBoxes.size / 4})")
-            }
+            if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index detector: ${regions.size} regiones (cajas totales=${fullBoxes.size / 4} coverables=${coverable.size / 4}, render ${w}x${h})")
             regions.map { floatArrayOf(it.left, it.top, it.right, it.bottom) }
         }
         // Filtro de CONFIANZA: solo se inserta lo que el OCR reconocio como texto fiable; las
@@ -210,13 +211,31 @@ class OcrManager(
         // Memoiza el resultado (vacio o no) SOLO si el detector corrio (modelo listo); si no estaba
         // listo se reintenta luego. Evita re-renderizar en cada resaltado paginas sin nada fiable.
         if (detectRan) synchronized(recovered) { recovered[key] = lines }
-        mergeOrNull(native.rawText, nativeBoxes, lines)
+        mergeOrNull(native.rawText, fullBoxes, lines)
     }
 
     private fun mergeOrNull(nativeText: String, nativeBoxes: FloatArray, lines: List<PageTextMerger.OcrLine>): RawPageText? {
         if (lines.isEmpty()) return null
         val merged = PageTextMerger.merge(nativeText, nativeBoxes, lines)
         return RawPageText(merged.text, merged.boxes)
+    }
+
+    /**
+     * Cajas (4 floats/caracter) SOLO de los caracteres con glifo real (ni espacios ni no
+     * imprimibles). pdfium del movil mete los glifos que no decodifica (versalitas) como espacios
+     * con caja; excluir esas cajas deja su tinta como "hueco" para que el detector la vea y para
+     * no blanquearla al OCR-ear el recorte.
+     */
+    private fun coverableBoxes(text: String, boxes: FloatArray): FloatArray {
+        val n = minOf(text.length, boxes.size / 4)
+        val out = ArrayList<Float>(boxes.size)
+        for (c in 0 until n) {
+            val ch = text[c]
+            if (ch.isWhitespace() || ch.isISOControl() || ch == '�' || ch == '\u0000') continue
+            val b = c * 4
+            out.add(boxes[b]); out.add(boxes[b + 1]); out.add(boxes[b + 2]); out.add(boxes[b + 3])
+        }
+        return out.toFloatArray()
     }
 
     /** Pausar con ahorro de bateria o bateria baja (Ajustes, activado por defecto). */
