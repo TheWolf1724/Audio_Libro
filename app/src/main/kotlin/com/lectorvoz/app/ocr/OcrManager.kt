@@ -174,27 +174,36 @@ class OcrManager(
         }
         val key = (book.id shl 24) or index.toLong()
         val fullBoxes = native.copyBoxes()
-        // Para DETECTAR y para enmascarar los recortes solo cuentan las cajas de caracteres
-        // REALES (con glifo): pdfium del movil mete los glifos que no sabe decodificar (versalitas)
-        // como ESPACIOS con caja, y esas cajas taparian la tinta de la versalita (el hueco saldria
-        // 0). Excluyendo los espacios/no imprimibles, esa tinta queda como hueco y se detecta; y al
-        // enmascarar el recorte no se blanquea la versalita. La FUSION si usa las cajas completas.
+        // Para DETECTAR y para enmascarar los recortes solo cuentan las cajas de caracteres cuyo
+        // glifo es TEXTO REAL (letra, cifra, puntuacion o simbolo habitual). pdfium del movil emite
+        // los glifos que no sabe decodificar (versalitas, fuentes decorativas) como ESPACIOS o como
+        // SIMBOLOS raros / uso privado, cada uno con su caja; si esas cajas contaran, taparian su
+        // propia tinta (el hueco saldria 0, confirmado en el movil). Excluyendolas, esa tinta queda
+        // como hueco y se detecta, y al enmascarar el recorte no se blanquea. La FUSION usa las
+        // cajas completas (asi el texto nativo real se resalta bien).
         val coverable = coverableBoxes(native.rawText, fullBoxes)
         if (TtsConfig.diagnostics) {
             val t = native.rawText
             // Clases de caracter del texto nativo. Revela como codifica pdfium los glifos que no
-            // decodifica (p. ej. versalitas): si salen como espacios, control o U+FFFD, no aportan
-            // tinta propia y el detector debe recuperarlos. Independiente del libro (sin offset fijo).
-            var letras = 0; var cifras = 0; var espacios = 0; var control = 0; var fffd = 0; var otros = 0
+            // decodifica: si salen como espacios, control, U+FFFD o SIMBOLOS raros (uso privado),
+            // no deben contar como cobertura. "simbolos-raros" son justo los sospechosos (versalita).
+            var letras = 0; var cifras = 0; var espacios = 0; var control = 0; var fffd = 0; var punt = 0; var raros = 0
+            val sospechosos = LinkedHashMap<Int, Int>()
             for (c in t) when {
                 c == '�' -> fffd++
                 c.isLetter() -> letras++
                 c.isDigit() -> cifras++
                 c.isWhitespace() -> espacios++
                 c.isISOControl() || c == '\u0000' -> control++
-                else -> otros++
+                coversInk(c) -> punt++
+                else -> { raros++; sospechosos.merge(c.code, 1, Int::plus) }
             }
-            TtsConfig.diag("MIXTO pag=$index chars=${t.length} coverables=${coverable.size / 4} (letras=$letras cifras=$cifras espacios=$espacios control=$control fffd=$fffd otros=$otros)")
+            TtsConfig.diag("MIXTO pag=$index chars=${t.length} coverables=${coverable.size / 4} (letras=$letras cifras=$cifras punt=$punt espacios=$espacios control=$control fffd=$fffd simbolos-raros=$raros)")
+            if (sospechosos.isNotEmpty()) {
+                val muestra = sospechosos.entries.sortedByDescending { it.value }.take(16)
+                    .joinToString(" ") { "U+%04X(t${Character.getType(it.key)})x${it.value}".format(it.key) }
+                TtsConfig.diag("MIXTO pag=$index glifos-no-decodificados: $muestra")
+            }
         }
         // Reusa el resultado ya calculado (vacio = nada que recuperar). Lo comparten el lector y la
         // voz -> misma fusion. Con el diagnostico ON se SALTA la cache para ver el detector cada vez
@@ -238,21 +247,43 @@ class OcrManager(
     }
 
     /**
-     * Cajas (4 floats/caracter) SOLO de los caracteres con glifo real (ni espacios ni no
-     * imprimibles). pdfium del movil mete los glifos que no decodifica (versalitas) como espacios
-     * con caja; excluir esas cajas deja su tinta como "hueco" para que el detector la vea y para
-     * no blanquearla al OCR-ear el recorte.
+     * Cajas (4 floats/caracter) SOLO de los caracteres cuyo glifo es texto real ([coversInk]).
+     * pdfium del movil emite los glifos que no decodifica (versalitas, fuentes decorativas) como
+     * espacios o como simbolos raros / uso privado, cada uno con su caja; excluir esas cajas deja
+     * su tinta como "hueco" para que el detector la vea y para no blanquearla al OCR-ear el recorte.
      */
     private fun coverableBoxes(text: String, boxes: FloatArray): FloatArray {
         val n = minOf(text.length, boxes.size / 4)
         val out = ArrayList<Float>(boxes.size)
         for (c in 0 until n) {
-            val ch = text[c]
-            if (ch.isWhitespace() || ch.isISOControl() || ch == '�' || ch == '\u0000') continue
+            if (!coversInk(text[c])) continue
             val b = c * 4
             out.add(boxes[b]); out.add(boxes[b + 1]); out.add(boxes[b + 2]); out.add(boxes[b + 3])
         }
         return out.toFloatArray()
+    }
+
+    /**
+     * true si [ch] es un caracter cuyo glifo tapa tinta de texto DE VERDAD: letra, cifra, puntuacion
+     * o simbolo matematico/moneda habituales. Los glifos que pdfium no decodifica salen como
+     * espacios o como simbolos raros (uso privado, simbolos sueltos); esos NO deben contar como
+     * cobertura (taparian su propia tinta y el detector no veria el hueco). Tampoco los no imprimibles.
+     */
+    private fun coversInk(ch: Char): Boolean {
+        if (ch.isLetterOrDigit()) return true
+        return when (Character.getType(ch)) {
+            Character.CONNECTOR_PUNCTUATION.toInt(),
+            Character.DASH_PUNCTUATION.toInt(),
+            Character.START_PUNCTUATION.toInt(),
+            Character.END_PUNCTUATION.toInt(),
+            Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
+            Character.FINAL_QUOTE_PUNCTUATION.toInt(),
+            Character.OTHER_PUNCTUATION.toInt(),
+            Character.MATH_SYMBOL.toInt(),
+            Character.CURRENCY_SYMBOL.toInt(),
+            -> true
+            else -> false
+        }
     }
 
     /** Pausar con ahorro de bateria o bateria baja (Ajustes, activado por defecto). */
