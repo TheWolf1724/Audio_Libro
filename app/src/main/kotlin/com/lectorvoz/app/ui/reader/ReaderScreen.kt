@@ -348,7 +348,13 @@ private fun MiniPlayer(state: ReaderUiState, vm: ReaderViewModel) {
             AppIconButton(R.drawable.ic_skip_previous, "Capitulo anterior", vm::previousChapter)
             AppIconButton(R.drawable.ic_keyboard_arrow_up, "Frase anterior", vm::previousSentence)
             FilledIconButton(onClick = vm::togglePlay, modifier = Modifier.heightIn(min = 56.dp).width(56.dp).testTag("boton-reproducir")) {
-                if (p.isPreparing && p.playWhenReady) CircularProgressIndicator(Modifier.semantics { contentDescription = "Preparando la voz" })
+                if (p.isPreparing && p.playWhenReady) {
+                    CircularProgressIndicator(
+                        Modifier.size(24.dp).semantics { contentDescription = "Preparando la voz" },
+                        color = MaterialTheme.colorScheme.onPrimary,
+                        strokeWidth = 2.5.dp,
+                    )
+                }
                 else AppIcon(if (state.isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow, if (state.isPlaying) "Pausa" else "Reproducir")
             }
             AppIconButton(R.drawable.ic_keyboard_arrow_down, "Frase siguiente", vm::nextSentence)

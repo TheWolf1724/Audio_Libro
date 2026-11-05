@@ -107,7 +107,7 @@ class SettingsViewModel(
         val d = ReaderSettings()
         settings.updateReader {
             if (on) it.copy(fontFamily = "opendyslexic", letterSpacingEm = 0.05f, wordSpacingEm = 0.1f, textAlign = TextAlign.START, lineSpacing = maxOf(it.lineSpacing, 1.6f))
-            else it.copy(fontFamily = d.fontFamily, letterSpacingEm = d.letterSpacingEm, wordSpacingEm = d.wordSpacingEm)
+            else it.copy(fontFamily = d.fontFamily, letterSpacingEm = d.letterSpacingEm, wordSpacingEm = d.wordSpacingEm, textAlign = d.textAlign, lineSpacing = d.lineSpacing)
         }
     }
 
