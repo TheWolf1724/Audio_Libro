@@ -166,6 +166,28 @@ class PageTextMergerTest {
     }
 
     @Test
+    fun glifoBasuraDesordenado_noArrastraLaInsercionAlPrincipio() {
+        // pdfium emite los glifos que no decodifica (versalitas -> uso privado U+F7xx) al PRINCIPIO
+        // del flujo de texto, aunque su caja este geometricamente en otra parte. El cuerpo real va en
+        // orden de lectura. La linea OCR (banda media) debe caer ENTRE las lineas del cuerpo, no
+        // arrastrada al principio por el glifo basura. (Regresion del mixto en el movil, pag Carl 262.)
+        val (text, boxes) = concat(
+            nativeLine("", top = 90f, bottom = 100f), // basura uso privado, fuera de orden, caja abajo
+            nativeLine("ALTO", top = 10f, bottom = 20f),
+            nativeLine("BAJO", top = 50f, bottom = 60f),
+        )
+        val merged = PageTextMerger.merge(text, boxes, listOf(ocrLine("medio", top = 30f, bottom = 40f)))
+
+        val iAlto = merged.text.indexOf("ALTO")
+        val iMedio = merged.text.indexOf("medio")
+        val iBajo = merged.text.indexOf("BAJO")
+        assertThat(iAlto).isGreaterThan(-1)
+        assertThat(iMedio).isGreaterThan(iAlto)
+        assertThat(iMedio).isLessThan(iBajo)
+        assertThat(merged.boxes.size).isEqualTo(merged.text.length * 4)
+    }
+
+    @Test
     fun idempotenciaConceptual_mismasEntradasMismaSalida() {
         val (text, boxes) = concat(
             nativeLine("ARRIBA", top = 10f, bottom = 20f),

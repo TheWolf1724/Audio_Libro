@@ -11,6 +11,7 @@ import com.lectorvoz.app.books.LibraryListener
 import com.lectorvoz.core.data.library.Book
 import com.lectorvoz.core.data.library.LibraryRepository
 import com.lectorvoz.core.model.BookFormat
+import com.lectorvoz.core.text.GlyphClass
 import com.lectorvoz.core.text.MissingTextDetector
 import com.lectorvoz.core.text.PageTextMerger
 import com.lectorvoz.format.pdf.MixedTextProvider
@@ -228,7 +229,7 @@ class OcrManager(
         // se descartan (asi los falsos positivos del detector son inofensivos).
         if (TtsConfig.diagnostics) {
             if (!detectRan) TtsConfig.diag("MIXTO pag=$index detector NO corrio (modelo OCR no listo)")
-            for (r in results) TtsConfig.diag("MIXTO pag=$index ocr conf=${r.meanConfidence.roundToInt()} words=${r.wordCount} fiable=${confident(r)} '${TtsConfig.text40(r.text)}'")
+            for (r in results) TtsConfig.diag("MIXTO pag=$index ocr conf=${r.meanConfidence.roundToInt()} words=${r.wordCount} fiable=${confident(r)} region[L${r.region[0].roundToInt()} T${r.region[1].roundToInt()} R${r.region[2].roundToInt()} B${r.region[3].roundToInt()}] '${TtsConfig.text40(r.text)}'")
         }
         val lines = results.filter { confident(it) }.map { r ->
             PageTextMerger.OcrLine(r.text, r.charBoxes, MissingTextDetector.Region(r.region[0], r.region[1], r.region[2], r.region[3]))
@@ -264,27 +265,12 @@ class OcrManager(
     }
 
     /**
-     * true si [ch] es un caracter cuyo glifo tapa tinta de texto DE VERDAD: letra, cifra, puntuacion
-     * o simbolo matematico/moneda habituales. Los glifos que pdfium no decodifica salen como
-     * espacios o como simbolos raros (uso privado, simbolos sueltos); esos NO deben contar como
-     * cobertura (taparian su propia tinta y el detector no veria el hueco). Tampoco los no imprimibles.
+     * true si el glifo de [ch] tapa tinta de texto DE VERDAD (letra, cifra, puntuacion o simbolo
+     * habitual). Los glifos que pdfium no decodifica (versalitas -> uso privado / simbolos raros)
+     * NO cuentan como cobertura: taparian su propia tinta y el detector no veria el hueco. La misma
+     * clasificacion ([GlyphClass]) la usa el merge para no anclar la lectura en esos glifos basura.
      */
-    private fun coversInk(ch: Char): Boolean {
-        if (ch.isLetterOrDigit()) return true
-        return when (Character.getType(ch)) {
-            Character.CONNECTOR_PUNCTUATION.toInt(),
-            Character.DASH_PUNCTUATION.toInt(),
-            Character.START_PUNCTUATION.toInt(),
-            Character.END_PUNCTUATION.toInt(),
-            Character.INITIAL_QUOTE_PUNCTUATION.toInt(),
-            Character.FINAL_QUOTE_PUNCTUATION.toInt(),
-            Character.OTHER_PUNCTUATION.toInt(),
-            Character.MATH_SYMBOL.toInt(),
-            Character.CURRENCY_SYMBOL.toInt(),
-            -> true
-            else -> false
-        }
-    }
+    private fun coversInk(ch: Char): Boolean = GlyphClass.decodesToText(ch)
 
     /** Pausar con ahorro de bateria o bateria baja (Ajustes, activado por defecto). */
     fun setSaveBattery(on: Boolean) { saveBattery = on }

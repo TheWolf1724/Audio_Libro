@@ -71,6 +71,14 @@ object PageTextMerger {
             return r > l && b > t
         }
 
+        // Ancla de ORDEN DE LECTURA: solo el texto real sirve para situar una linea OCR. pdfium emite
+        // los glifos que no decodifica (versalitas -> uso privado) con caja pero FUERA del orden de
+        // lectura (a menudo al principio del flujo); si se usaran como ancla, arrastrarian la
+        // insercion a un sitio equivocado. El cuerpo con texto decodificado si va en orden, asi que
+        // sobre el se decide la posicion. Los glifos basura se quedan donde esten (el limpiador los
+        // descarta: no se oyen) pero no mandan en el orden.
+        fun anchorable(i: Int): Boolean = hasBox(i) && GlyphClass.decodesToText(nativeText[i])
+
         fun sameBand(t1: Float, b1: Float, t2: Float, b2: Float): Boolean {
             val overlap = minOf(b1, b2) - maxOf(t1, t2)
             val minH = minOf(b1 - t1, b2 - t2)
@@ -92,7 +100,7 @@ object PageTextMerger {
         // MAYOR que la de la linea OCR; si no hay ninguno, al final del texto.
         fun insertionIndex(region: MissingTextDetector.Region): Int {
             for (i in 0 until n) {
-                if (hasBox(i) && nativeAfterOcr(i, region) > 0) return i
+                if (anchorable(i) && nativeAfterOcr(i, region) > 0) return i
             }
             return n
         }
@@ -102,8 +110,8 @@ object PageTextMerger {
         fun separatorFor(insIdx: Int, region: MissingTextDetector.Region): Char {
             if (insIdx >= n) return '\n' // al final de la pagina
             var j = insIdx - 1
-            while (j >= 0 && !hasBox(j)) j--
-            if (j < 0) return '\n' // al principio (nada nativo con caja por delante)
+            while (j >= 0 && !anchorable(j)) j--
+            if (j < 0) return '\n' // al principio (nada nativo decodificado por delante)
             val prevT = nativeBoxes[j * 4 + 1]; val prevB = nativeBoxes[j * 4 + 3]
             return if (sameBand(prevT, prevB, region.top, region.bottom)) ' ' else '\n'
         }
