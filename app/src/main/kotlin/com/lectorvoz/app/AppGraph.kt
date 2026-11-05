@@ -126,6 +126,7 @@ class AppGraph(
     val books = SharedBooks(opener).also {
         opener.pdfTextFallback = { b -> ocr.fallbackFor(b) }
         opener.pdfForceOcr = { b -> settings.forceOcr(b.id).first() }
+        opener.pdfMixedProvider = { b -> ocr.mixedFor(b) }
     }
 
     /** Libro abierto para la voz (independiente del lector: sigue sonando al salir). */
@@ -198,6 +199,9 @@ class AppGraph(
                 ocr.setSaveBattery(saveBattery)
                 historyRecorder.enabled = historyOn
             }
+        }
+        appScope.launch {
+            settings.app.map { it.recoverMissingText }.distinctUntilChanged().collect { ocr.setRecoverMissingText(it) }
         }
         appScope.launch {
             playback.state.map { it.bookId to it.playWhenReady }.distinctUntilChanged().collect { (id, play) -> ocr.setVoice(id, play) }

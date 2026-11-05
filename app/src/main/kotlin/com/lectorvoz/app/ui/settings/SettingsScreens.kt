@@ -162,14 +162,20 @@ fun ReadingSettingsContent(
     SwitchRow("PDF con los colores del tema", s.pdfRecolor, { v -> onChange { it.copy(pdfRecolor = v) } }, summary = "Recolorea fondo y texto de los PDF", tag = "lectura-pdfRecolor")
     SectionHeader("Biblioteca")
     SwitchRow("Copiar los libros al importar", app.copyOnImport, { v -> onApp { it.copy(copyOnImport = v) } }, summary = "Si se desactiva, solo se guarda un enlace al fichero original")
-    SectionHeader("PDF escaneados")
+    SectionHeader("Reconocimiento de texto (OCR)")
     SwitchRow(
         "Reconocer el texto (OCR)", app.ocrEnabled, { v -> onApp { it.copy(ocrEnabled = v) } },
-        summary = "Dejalo activado. Solo actua en los PDF que son fotos de paginas escaneadas (los que no " +
-            "tienen texto que leer); no ralentiza los PDF normales. Se hace en el movil, sin conexion, " +
-            "leyendo por delante de donde vas, y al terminar el libro se borra. Si un PDF normal se salta " +
-            "algunas palabras, eso no es esto: usa \"Leer este PDF con OCR\" en el menu del lector, solo para ese libro.",
+        summary = "Dejalo activado. Reconoce los PDF que son fotos de paginas escaneadas (sin texto) y permite " +
+            "recuperar palabras sueltas que otros PDF no exponen (ver abajo). Se hace en el movil, sin conexion, " +
+            "por delante de donde vas, y al terminar el libro se borra.",
         tag = "app-ocrEnabled",
+    )
+    SwitchRow(
+        "Recuperar palabras que faltan", app.recoverMissingText, { v -> onApp { it.copy(recoverMissingText = v) } },
+        summary = "Para PDF normales: recupera automaticamente las palabras que el PDF no expone como texto " +
+            "(versalitas, titulos en fuentes decorativas) y que la voz se saltaria. Usa el texto normal y reconoce " +
+            "solo lo que falta, sin ralentizar ni cambiar lo que ya se lee bien. Necesita el OCR activado.",
+        tag = "app-recoverMissingText",
     )
     SwitchRow(
         "Pausar con bateria baja", app.ocrSaveBattery, { v -> onApp { it.copy(ocrSaveBattery = v) } },
