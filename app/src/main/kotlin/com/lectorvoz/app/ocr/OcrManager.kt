@@ -182,22 +182,27 @@ class OcrManager(
         val coverable = coverableBoxes(native.rawText, fullBoxes)
         if (TtsConfig.diagnostics) {
             val t = native.rawText
-            val excl = t.count { it.isWhitespace() || it.isISOControl() || it == '�' || it == '\u0000' }
-            TtsConfig.diag("MIXTO pag=$index chars=${t.length} excluidos=$excl coverables=${coverable.size / 4}")
-            // Volcado del texto nativo alrededor de la versalita (off ~900-1150) con codigos de char.
-            val from = 900.coerceIn(0, t.length); val to = (from + 260).coerceAtMost(t.length)
-            val sb = StringBuilder()
-            for (i in from until to) {
-                val c = t[i]
-                sb.append(if (c.isLetterOrDigit() || c == ' ' || c in ".,;:()«»—-¿?¡!") c else "[${c.code}]")
+            // Clases de caracter del texto nativo. Revela como codifica pdfium los glifos que no
+            // decodifica (p. ej. versalitas): si salen como espacios, control o U+FFFD, no aportan
+            // tinta propia y el detector debe recuperarlos. Independiente del libro (sin offset fijo).
+            var letras = 0; var cifras = 0; var espacios = 0; var control = 0; var fffd = 0; var otros = 0
+            for (c in t) when {
+                c == '�' -> fffd++
+                c.isLetter() -> letras++
+                c.isDigit() -> cifras++
+                c.isWhitespace() -> espacios++
+                c.isISOControl() || c == '\u0000' -> control++
+                else -> otros++
             }
-            TtsConfig.diag("MIXTO pag=$index raw[$from..$to]=$sb")
+            TtsConfig.diag("MIXTO pag=$index chars=${t.length} coverables=${coverable.size / 4} (letras=$letras cifras=$cifras espacios=$espacios control=$control fffd=$fffd otros=$otros)")
         }
         // Reusa el resultado ya calculado (vacio = nada que recuperar). Lo comparten el lector y la
-        // voz -> misma fusion. Con el diagnostico ON se SALTA la cache para ver el detector cada vez.
+        // voz -> misma fusion. Con el diagnostico ON se SALTA la cache para ver el detector cada vez
+        // (recomputa en cada visita: mas lento, pero el log refleja el detector real de la pagina).
         if (!TtsConfig.diagnostics) synchronized(recovered) { recovered[key] }?.let {
             return@MixedTextProvider mergeOrNull(native.rawText, fullBoxes, it)
         }
+        if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index (diagnostico: recomputa, sin cache)")
         var detectRan = false
         var regionCount = 0
         val results = OcrEngine.get(context).recoverMissingText(pdf, index, OcrEngine.languageFor(book.language), wait, coverable) { gray, w, h, scale ->
@@ -286,7 +291,10 @@ class OcrManager(
      * a segundo plano) la pagina se termina y se guarda igual, sin tirar el trabajo hecho.
      */
     private suspend fun page(book: Book, pdf: PdfBook, index: Int, urgent: Boolean, force: Boolean = false): RawPageText? {
-        withContext(Dispatchers.IO) { store.read(book.id, index) }?.let { return it }
+        withContext(Dispatchers.IO) { store.read(book.id, index) }?.let {
+            if (TtsConfig.diagnostics && urgent) TtsConfig.diag("OCR pag=$index origen=disco chars=${it.text.length} forzado=$force")
+            return it
+        }
         val key = (book.id shl 24) or index.toLong()
         // Forzado por libro: marcar la clave para que apagar el OCR global no lo cancele (S2-1).
         if (force) forcedKeys.add(key)
@@ -298,6 +306,7 @@ class OcrManager(
                     if (!enabled.value && !force) return@async null
                     mutableRecognizing.update { it + key }
                     val r = recognizer.recognize(pdf, index, OcrEngine.languageFor(book.language), urgent)
+                    if (TtsConfig.diagnostics && urgent) TtsConfig.diag("OCR pag=$index origen=reconocido chars=${r?.text?.length ?: -1} forzado=$force")
                     if (r != null) {
                         store.write(book.id, index, r)
                         pdf.invalidateText(index)

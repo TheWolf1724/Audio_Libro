@@ -165,7 +165,14 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
                     diagOn = on
                     if (on) {
                         val v = s.voice
-                        graph.readingDiagnostics.enable("${v.engine} voz=${v.voiceId ?: "(sistema)"}")
+                        graph.readingDiagnostics.enable(
+                            "${v.engine} voz=${v.voiceId ?: "(sistema)"} vel=${v.speed} tono=${v.pitch}",
+                            listOf(
+                                "ocr=${if (s.app.ocrEnabled) "on" else "off"}" +
+                                    " mixto=${if (s.app.recoverMissingText) "on" else "off"}" +
+                                    " ahorro=${if (s.app.ocrSaveBattery) "on" else "off"}",
+                            ),
+                        )
                     } else {
                         graph.readingDiagnostics.disable()
                     }

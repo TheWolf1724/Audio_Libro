@@ -32,14 +32,18 @@ class ReadingDiagnostics(private val context: Context) {
 
     private fun file(): File = File(File(context.getExternalFilesDir(null), "diagnostico"), "lectura.txt")
 
-    /** Activa el registro: borra el fichero anterior, escribe la cabecera y conecta el sumidero. */
-    fun enable(engineLabel: String) {
+    /**
+     * Activa el registro: borra el fichero anterior, escribe la cabecera y conecta el sumidero.
+     * [config] son lineas extra de estado (OCR, mixto, voz...) que ayudan al soporte a leer de un
+     * vistazo con que ajustes se grabo.
+     */
+    fun enable(engineLabel: String, config: List<String> = emptyList()) {
         val f = file()
         out = f
         writer.execute {
             try {
                 f.parentFile?.mkdirs()
-                f.writeText(header(engineLabel))
+                f.writeText(header(engineLabel, config))
             } catch (_: Exception) {
             }
         }
@@ -75,12 +79,18 @@ class ReadingDiagnostics(private val context: Context) {
         }
     }
 
-    private fun header(engineLabel: String): String = buildString {
+    private fun header(engineLabel: String, config: List<String>): String = buildString {
         append("LectorVoz - diagnostico de lectura\n")
         append("version=${BuildConfig.VERSION_NAME}\n")
-        append("dispositivo=${Build.MODEL} (SDK ${Build.VERSION.SDK_INT})\n")
+        append("dispositivo=${Build.MANUFACTURER} ${Build.MODEL} (SDK ${Build.VERSION.SDK_INT})\n")
         append("motor=$engineLabel\n")
-        append("Comparar las frases de la pagina (PAGINA / [i]) con las que suenan (START / DONE).\n")
+        for (line in config) append("$line\n")
+        append("Guia de trazas:\n")
+        append("  PAGINA/[i]  frases extraidas de la pagina (comparar con lo que suena)\n")
+        append("  START/DONE  frase que empieza/termina de sonar; ERROR  fallo de voz\n")
+        append("  MOTOR       motor y voz elegidos (y cambios por bateria)\n")
+        append("  OCR         reconocimiento de PDF escaneado a demanda\n")
+        append("  MIXTO       recuperar palabras que faltan (texto nativo + OCR por regiones)\n")
         append("----\n")
     }
 
