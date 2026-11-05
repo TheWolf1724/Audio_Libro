@@ -62,6 +62,8 @@ class OcrEngine private constructor(private val context: Context) {
          */
         val recover: ((ByteArray, Int, Int, Float) -> List<FloatArray>)? = null,
         val recoverResult: CompletableDeferred<List<OcrRegionResult>>? = null,
+        /** Cajas nativas (puntos) a blanquear en los recortes del modo mixto. */
+        val maskBoxes: FloatArray? = null,
     ) : Comparable<Job> {
         val cancelled: Boolean get() = pageResult?.isCancelled == true || recoverResult?.isCancelled == true
 
@@ -119,10 +121,14 @@ class OcrEngine private constructor(private val context: Context) {
         index: Int,
         language: String,
         urgent: Boolean,
+        /** Cajas del texto NATIVO (puntos): sus pixeles se blanquean en cada recorte antes de
+         *  OCR-earlo, para que el OCR solo "vea" el texto que pdfium NO leyo y no duplique lo que
+         *  ya estaba bien (lineas con parte nativa + parte sin decodificar). */
+        nativeBoxes: FloatArray,
         detect: (gray: ByteArray, width: Int, height: Int, pxPerPoint: Float) -> List<FloatArray>,
     ): List<OcrRegionResult> {
         val d = CompletableDeferred<List<OcrRegionResult>>()
-        val job = Job(if (urgent) URGENT else BACKGROUND, seq.incrementAndGet(), book, index, language, recover = detect, recoverResult = d)
+        val job = Job(if (urgent) URGENT else BACKGROUND, seq.incrementAndGet(), book, index, language, recover = detect, recoverResult = d, maskBoxes = nativeBoxes)
         queue.put(job)
         try {
             return d.await()
@@ -207,16 +213,47 @@ class OcrEngine private constructor(private val context: Context) {
         val gray = renderGray(book, job.index, scale, w, h)
         val regions = detect(gray, w, h, scale)
         if (regions.isEmpty()) return emptyList()
+        // Cobertura del texto NATIVO: sus pixeles se blanquean en los recortes para no duplicarlo.
+        val cov = coverageMask(job.maskBoxes, w, h, scale)
         tess.pageSegMode = TessBaseAPI.PageSegMode.PSM_SINGLE_LINE
         val out = ArrayList<OcrRegionResult>(regions.size)
         for (region in regions) {
-            recognizeCrop(tess, gray, w, h, scale, region)?.let { out += it }
+            recognizeCrop(tess, gray, cov, w, h, scale, region)?.let { out += it }
         }
         return out
     }
 
+    /** Mascara (true = cubierto por una caja nativa) para blanquear la tinta nativa en los recortes. */
+    private fun coverageMask(boxes: FloatArray?, w: Int, h: Int, scale: Float): BooleanArray? {
+        if (boxes == null || boxes.isEmpty()) return null
+        val cov = BooleanArray(w * h)
+        val pad = 1
+        var i = 0
+        val n = boxes.size - boxes.size % 4
+        while (i < n) {
+            val l = boxes[i]; val t = boxes[i + 1]; val r = boxes[i + 2]; val b = boxes[i + 3]
+            i += 4
+            if (r <= l || b <= t) continue
+            val xa = (l * scale).toInt().coerceIn(0, w) - pad
+            val xb = kotlin.math.ceil(r * scale).toInt().coerceIn(0, w) + pad
+            val ya = (t * scale).toInt().coerceIn(0, h) - pad
+            val yb = kotlin.math.ceil(b * scale).toInt().coerceIn(0, h) + pad
+            var yy = ya.coerceAtLeast(0)
+            val yEnd = yb.coerceAtMost(h)
+            val xStart = xa.coerceAtLeast(0)
+            val xEnd = xb.coerceAtMost(w)
+            while (yy < yEnd) {
+                val base = yy * w
+                var xx = xStart
+                while (xx < xEnd) { cov[base + xx] = true; xx++ }
+                yy++
+            }
+        }
+        return cov
+    }
+
     /** OCR de UN recorte [region] (puntos) sobre el gris de la pagina; null si no hay texto. */
-    private fun recognizeCrop(tess: TessBaseAPI, gray: ByteArray, w: Int, h: Int, scale: Float, region: FloatArray): OcrRegionResult? {
+    private fun recognizeCrop(tess: TessBaseAPI, gray: ByteArray, cov: BooleanArray?, w: Int, h: Int, scale: Float, region: FloatArray): OcrRegionResult? {
         val margin = (2f * scale).roundToInt()
         val x0 = ((region[0] * scale).roundToInt() - margin).coerceIn(0, w - 1)
         val y0 = ((region[1] * scale).roundToInt() - margin).coerceIn(0, h - 1)
@@ -226,7 +263,14 @@ class OcrEngine private constructor(private val context: Context) {
         val ch = y1 - y0
         if (cw < 2 || ch < 2) return null
         val crop = ByteArray(cw * ch)
-        for (y in 0 until ch) System.arraycopy(gray, (y0 + y) * w + x0, crop, y * cw, cw)
+        for (y in 0 until ch) {
+            val srcBase = (y0 + y) * w + x0
+            val dstBase = y * cw
+            System.arraycopy(gray, srcBase, crop, dstBase, cw)
+            if (cov != null) {
+                for (x in 0 until cw) if (cov[srcBase + x]) crop[dstBase + x] = 255.toByte() // blanco
+            }
+        }
         tess.setImage(crop, cw, ch, 1, cw)
         return try {
             cropWords(tess, scale, x0.toFloat(), y0.toFloat(), region)

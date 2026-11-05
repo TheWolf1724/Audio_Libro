@@ -78,8 +78,8 @@ class MissingTextDetectorTest {
 
         val regions = MissingTextDetector.detect(c.page(2f), boxes = FloatArray(0))
 
-        // Ninguna region debe cubrir el centro del bloque (en puntos: 70,70).
-        assertThat(regions.any { it.contains(70f, 70f) }).isFalse()
+        // El bloque (una sola componente, demasiado alto) se descarta por completo.
+        assertThat(regions).isEmpty()
     }
 
     @Test
