@@ -165,7 +165,10 @@ fun ReadingSettingsContent(
     SectionHeader("PDF escaneados")
     SwitchRow(
         "Reconocer el texto (OCR)", app.ocrEnabled, { v -> onApp { it.copy(ocrEnabled = v) } },
-        summary = "Para leer y escuchar PDF que son fotos de paginas. Se hace en el movil, sin conexion, por delante de donde lees; al terminar el libro se borra",
+        summary = "Dejalo activado. Solo actua en los PDF que son fotos de paginas escaneadas (los que no " +
+            "tienen texto que leer); no ralentiza los PDF normales. Se hace en el movil, sin conexion, " +
+            "leyendo por delante de donde vas, y al terminar el libro se borra. Si un PDF normal se salta " +
+            "algunas palabras, eso no es esto: usa \"Leer este PDF con OCR\" en el menu del lector, solo para ese libro.",
         tag = "app-ocrEnabled",
     )
     SwitchRow(
