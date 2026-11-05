@@ -20,6 +20,8 @@ import com.lectorvoz.format.pdf.RawPageText
 import com.lectorvoz.format.pdf.ocr.OcrEngine
 import com.lectorvoz.format.pdf.ocr.OcrRegionResult
 import com.lectorvoz.format.pdf.ocr.OcrStore
+import com.lectorvoz.tts.playback.TtsConfig
+import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -166,24 +168,38 @@ class OcrManager(
      * CONFIANZA de cada region reconocida.
      */
     fun mixedFor(book: Book): MixedTextProvider = MixedTextProvider { pdf, index, native, wait ->
-        if (!recoverEnabled.value || !enabled.value) return@MixedTextProvider null
+        if (!recoverEnabled.value || !enabled.value) {
+            if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index OFF (recoverEnabled=${recoverEnabled.value} ocrEnabled=${enabled.value})")
+            return@MixedTextProvider null
+        }
         val key = (book.id shl 24) or index.toLong()
         val nativeBoxes = native.copyBoxes()
         // Reusa el resultado ya calculado (vacio = nada que recuperar). Lo comparten el lector y la
         // voz -> misma fusion (resaltado consistente) y no se OCR-ea dos veces la misma pagina.
-        synchronized(recovered) { recovered[key] }?.let { return@MixedTextProvider mergeOrNull(native.rawText, nativeBoxes, it) }
+        synchronized(recovered) { recovered[key] }?.let {
+            if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index cache lineas=${it.size}")
+            return@MixedTextProvider mergeOrNull(native.rawText, nativeBoxes, it)
+        }
         var detectRan = false
+        var regionCount = 0
         val results = OcrEngine.get(context).recoverMissingText(pdf, index, OcrEngine.languageFor(book.language), wait, nativeBoxes) { gray, w, h, scale ->
             detectRan = true
-            MissingTextDetector.detect(MissingTextDetector.GrayPage(gray, w, h, scale), nativeBoxes)
-                .map { floatArrayOf(it.left, it.top, it.right, it.bottom) }
+            val regions = MissingTextDetector.detect(MissingTextDetector.GrayPage(gray, w, h, scale), nativeBoxes)
+            regionCount = regions.size
+            if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index detector: ${regions.size} regiones (render ${w}x${h} px, cajas nativas=${nativeBoxes.size / 4})")
+            regions.map { floatArrayOf(it.left, it.top, it.right, it.bottom) }
         }
         // Filtro de CONFIANZA: solo se inserta lo que el OCR reconocio como texto fiable; las
         // zonas que no son texto (figuras, casillas, lineas) vuelven vacias/con baja confianza y
         // se descartan (asi los falsos positivos del detector son inofensivos).
+        if (TtsConfig.diagnostics) {
+            if (!detectRan) TtsConfig.diag("MIXTO pag=$index detector NO corrio (modelo OCR no listo)")
+            for (r in results) TtsConfig.diag("MIXTO pag=$index ocr conf=${r.meanConfidence.roundToInt()} words=${r.wordCount} fiable=${confident(r)} '${TtsConfig.text40(r.text)}'")
+        }
         val lines = results.filter { confident(it) }.map { r ->
             PageTextMerger.OcrLine(r.text, r.charBoxes, MissingTextDetector.Region(r.region[0], r.region[1], r.region[2], r.region[3]))
         }
+        if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index -> insertadas=${lines.size} (de $regionCount regiones)")
         // Memoiza el resultado (vacio o no) SOLO si el detector corrio (modelo listo); si no estaba
         // listo se reintenta luego. Evita re-renderizar en cada resaltado paginas sin nada fiable.
         if (detectRan) synchronized(recovered) { recovered[key] = lines }
