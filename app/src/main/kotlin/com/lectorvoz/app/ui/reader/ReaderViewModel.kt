@@ -516,6 +516,9 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         if (first) return
         // El texto de las paginas ha cambiado: repaginar lo visible y re-leer la voz.
         (readerContent as? BookContent.Pdf)?.cleaner?.prefetch(controller.currentLocator.value.chapter)
+        // La voz trocea en su propio proveedor (cache LRU por pagina): hay que vaciarla o
+        // seguiria leyendo el texto anterior de las paginas ya cacheadas.
+        graph.speech.invalidateText(bookId)
         if (voiceHere()) {
             // Reanclar al INICIO de la pagina actual: el offset de la posicion es un indice de
             // caracter del texto pdfium anterior y no corresponde al texto OCR nuevo (de otra

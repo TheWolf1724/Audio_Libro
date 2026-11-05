@@ -372,6 +372,15 @@ class SpeechBooks(private val graph: AppGraph) {
         p.update(voice, dict)
     }
 
+    /**
+     * Vuelve a trocear el libro [bookId] si es el que suena: su texto de origen cambio (p. ej. al
+     * activar/quitar el OCR de ese libro) y la cache de frases del proveedor quedo obsoleta.
+     */
+    suspend fun invalidateText(bookId: Long) {
+        val p = mutex.withLock { if (providerBook == bookId) provider else null }
+        p?.invalidateText()
+    }
+
     /** Fraccion estimada del libro [bookId] en [loc] (nula si la voz no lo tiene abierto). */
     fun progressOf(bookId: Long, loc: Locator): Float? =
         if (providerBook == bookId) provider?.progressAt(loc) else null

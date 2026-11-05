@@ -87,6 +87,9 @@ class OcrManager(
     private val voicePlaying = MutableStateFlow(false)
     private val pending = MutableStateFlow<List<Long>>(emptyList())
     private val inFlight = ConcurrentHashMap<Long, Deferred<RawPageText?>>()
+
+    /** Claves de los reconocimientos FORZADOS por libro en vuelo (no se cancelan al apagar el OCR global). */
+    private val forcedKeys = ConcurrentHashMap.newKeySet<Long>()
     private val pageCounts = ConcurrentHashMap<Long, Int>()
     private val mutableStatus = MutableStateFlow(OcrStatus())
 
@@ -123,10 +126,13 @@ class OcrManager(
         enabled.value = on
         mutableStatus.value = mutableStatus.value.copy(enabled = on)
         if (was && !on) {
-            // Cancela los reconocimientos en vuelo antes de soltar el modelo: si no, uno a medio
-            // hacer volveria a instalar (~40 MB) y a cargar los modelos recien borrados (M4).
-            inFlight.values.forEach { it.cancel() }
-            discardModels()
+            // Cancela los reconocimientos AUTOMATICOS en vuelo antes de soltar el modelo (si no,
+            // uno a medio hacer volveria a instalar ~40 MB y a cargar los modelos recien
+            // borrados, M4). Los FORZADOS por libro (decision explicita del usuario, S2-1) NO se
+            // cancelan: deben funcionar aunque el OCR global este apagado, y la voz podria
+            // estarlos esperando. Si queda alguno en vuelo no se descarta el modelo (lo usa).
+            inFlight.forEach { (key, job) -> if (key !in forcedKeys) job.cancel() }
+            if (forcedKeys.isEmpty()) discardModels()
         }
     }
 
@@ -147,7 +153,12 @@ class OcrManager(
             // El forzado por libro ([PdfBook.forceFallback]) es una decision explicita del usuario:
             // su lectura a demanda (wait) reconoce aunque el OCR global este apagado (S2-1).
             val forced = pdf.forceFallback
-            if (!wait || (!enabled.value && !forced)) return@run null
+            // Pasando paginas (sin esperar): texto provisional, no se reconoce ni se cachea.
+            if (!wait) return@run null
+            // La voz/busqueda espera texto de una pagina escaneada pero el OCR global esta apagado
+            // y el libro no lo fuerza: fallo VISIBLE (la voz avisa) en vez de una pagina vacia que
+            // se saltaria en silencio y daria el libro por terminado (borrando lo guardado).
+            if (!enabled.value && !forced) throw java.io.IOException("Activa \"Reconocer el texto (OCR)\" en Ajustes para leer este PDF escaneado")
             val r = page(book, pdf, index, urgent = true, force = forced) ?: throw java.io.IOException("No se pudo reconocer el texto de la pagina ${index + 1}")
             // La voz va pagina a pagina: la siguiente se adelanta de fondo.
             if (index + 1 < pdf.pageCount) scope.launch { runCatching { page(book, pdf, index + 1, urgent = false, force = forced) } }
@@ -163,6 +174,8 @@ class OcrManager(
     private suspend fun page(book: Book, pdf: PdfBook, index: Int, urgent: Boolean, force: Boolean = false): RawPageText? {
         withContext(Dispatchers.IO) { store.read(book.id, index) }?.let { return it }
         val key = (book.id shl 24) or index.toLong()
+        // Forzado por libro: marcar la clave para que apagar el OCR global no lo cancele (S2-1).
+        if (force) forcedKeys.add(key)
         val job = inFlight.computeIfAbsent(key) {
             scope.async(Dispatchers.IO, start = CoroutineStart.LAZY) {
                 try {
@@ -180,6 +193,7 @@ class OcrManager(
                     r
                 } finally {
                     inFlight.remove(key)
+                    forcedKeys.remove(key)
                     mutableRecognizing.update { it - key }
                 }
             }

@@ -129,6 +129,17 @@ class UtteranceProviderImpl(
         true
     }
 
+    /**
+     * Vuelve a trocear todos los capitulos: el TEXTO de origen cambio sin tocar ajustes ni
+     * diccionario (p. ej. al activar/quitar el OCR de este libro, o cuando el OCR reconoce una
+     * pagina que antes estaba vacia). Sin esto, la LRU devolveria las frases del texto anterior.
+     */
+    suspend fun invalidateText() = mutex.withLock {
+        generation++
+        cache.clear()
+        synchronized(lengths) { lengths.clear() }
+    }
+
     private suspend fun chapter(index: Int): List<Utterance> {
         if (index !in 0 until chapterCount) return emptyList()
         val gen: Long
