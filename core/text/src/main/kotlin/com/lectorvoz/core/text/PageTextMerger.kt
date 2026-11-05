@@ -13,6 +13,14 @@ package com.lectorvoz.core.text
 object PageTextMerger {
 
     /**
+     * Separador DURO que envuelve cada linea recuperada por OCR. U+2028 (LINE SEPARATOR) lo
+     * respetan tanto el limpiador [PdfPageFlow] (no lo colapsa como a '\n') como el segmentador
+     * [SentenceSegmenter] (corta en el), de modo que la linea recuperada queda SIEMPRE como frase
+     * propia en su sitio, aunque no lleve signo de puntuacion final.
+     */
+    private const val HARD_SEP = ' '
+
+    /**
      * Una linea de texto recuperada por OCR, lista para insertar.
      * @param text texto reconocido de la linea (sin salto final).
      * @param wordBoxes cajas por CARACTER de [text], 4 floats por caracter (left, top, right,
@@ -43,8 +51,9 @@ object PageTextMerger {
      *  - punto de insercion de una OcrLine = primer indice nativo cuyo caracter tenga clave de
      *    lectura > la de la linea OCR (esta debajo, o misma banda mas a la derecha); si no hay,
      *    al final.
-     *  - insertar un separador ('\n' si no comparte banda con el vecino; ' ' si misma banda) con
-     *    caja vacia, y luego los caracteres de la linea con sus cajas.
+     *  - envolver la linea con un corte DURO (U+2028) ANTES y DESPUES, con caja vacia, para que
+     *    quede como frase propia (sobrevive al limpiador y el segmentador corta en el), y en medio
+     *    los caracteres de la linea con sus cajas.
      *  - aplicar las inserciones de mayor a menor indice (o con desplazamientos) para no invalidar
      *    los puntos de insercion.
      * Debe ser determinista e idempotente para una pagina dada. Sin ocrLines, Merged == entrada.
@@ -105,17 +114,6 @@ object PageTextMerger {
             return n
         }
 
-        // Separador antes del bloque OCR: '\n' si la linea no comparte banda con el caracter nativo
-        // inmediatamente anterior (o esta al principio/fin de la pagina); ' ' si lo comparte.
-        fun separatorFor(insIdx: Int, region: MissingTextDetector.Region): Char {
-            if (insIdx >= n) return '\n' // al final de la pagina
-            var j = insIdx - 1
-            while (j >= 0 && !anchorable(j)) j--
-            if (j < 0) return '\n' // al principio (nada nativo decodificado por delante)
-            val prevT = nativeBoxes[j * 4 + 1]; val prevB = nativeBoxes[j * 4 + 3]
-            return if (sameBand(prevT, prevB, region.top, region.bottom)) ' ' else '\n'
-        }
-
         // Precalcula el punto de insercion de cada linea contra el texto nativo ORIGINAL y ordena:
         // por indice de insercion y, a igualdad, por posicion de lectura (centro Y, centro X) y
         // finalmente por el orden de entrada, para ser deterministas e idempotentes.
@@ -141,13 +139,20 @@ object PageTextMerger {
             boxes.add(nativeBoxes[i * 4 + 2]); boxes.add(nativeBoxes[i * 4 + 3])
         }
 
+        fun emitSep() { out.append(HARD_SEP); boxes.add(0f); boxes.add(0f); boxes.add(0f); boxes.add(0f) }
+
         fun emitOcr(p: Planned) {
-            // separador con caja vacia
-            out.append(separatorFor(p.insIdx, p.line.region))
-            boxes.add(0f); boxes.add(0f); boxes.add(0f); boxes.add(0f)
-            // caracteres de la linea con sus cajas
+            // Una linea recuperada por OCR es texto impreso FUERA del flujo nativo (versalita, titulo
+            // decorativo): hay que AISLARLA de ambos vecinos con un corte DURO para que la voz la lea
+            // como frase propia aunque no lleve punto final. Se usa U+2028 (LINE SEPARATOR), no '\n':
+            //  - el limpiador (PdfPageFlow) solo colapsa '\n'/'\r' al unir parrafos; U+2028 sobrevive.
+            //  - el segmentador (SentenceSegmenter.isHardBreak) corta en U+2028.
+            // Antes solo se ponia separador DELANTE y podia colapsarse a espacio: la versalita se
+            // pegaba a la frase vecina y, sin terminador, no se emitia (se la saltaba la voz).
+            emitSep() // corte duro antes
             out.append(p.line.text)
             for (f in p.line.wordBoxes) boxes.add(f)
+            emitSep() // corte duro despues (antes no habia: se pegaba a la frase nativa siguiente)
         }
 
         var k = 0

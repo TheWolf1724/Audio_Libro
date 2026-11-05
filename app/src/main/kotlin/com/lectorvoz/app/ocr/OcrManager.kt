@@ -174,6 +174,7 @@ class OcrManager(
             return@MixedTextProvider null
         }
         val key = (book.id shl 24) or index.toLong()
+        if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index inst=${pdf.diagInstanceId} entra (recoverEnabled=${recoverEnabled.value} ocrEnabled=${enabled.value})")
         val fullBoxes = native.copyBoxes()
         // Para DETECTAR y para enmascarar los recortes solo cuentan las cajas de caracteres cuyo
         // glifo es TEXTO REAL (letra, cifra, puntuacion o simbolo habitual). pdfium del movil emite
@@ -206,13 +207,16 @@ class OcrManager(
                 TtsConfig.diag("MIXTO pag=$index glifos-no-decodificados: $muestra")
             }
         }
-        // Reusa el resultado ya calculado (vacio = nada que recuperar). Lo comparten el lector y la
-        // voz -> misma fusion. Con el diagnostico ON se SALTA la cache para ver el detector cada vez
-        // (recomputa en cada visita: mas lento, pero el log refleja el detector real de la pagina).
-        if (!TtsConfig.diagnostics) synchronized(recovered) { recovered[key] }?.let {
-            return@MixedTextProvider mergeOrNull(native.rawText, fullBoxes, it)
+        // Reusa SIEMPRE el resultado ya calculado (vacio = nada que recuperar). Lo comparten el
+        // lector y la voz, y toda visita posterior -> MISMAS lineas -> como PageTextMerger.merge es
+        // puro, el texto fusionado sale identico (resaltado consistente, voz estable). El
+        // diagnostico NO debe recomputar (antes se saltaba la cache y, al re-OCR-ear, las lineas
+        // variaban entre visitas -> dos textos distintos de la misma pagina en una sesion, justo el
+        // fallo que se diagnostica); el detector se registra en la PRIMERA computacion (cache miss).
+        synchronized(recovered) { recovered[key] }?.let { cached ->
+            if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index reusa cache: ${cached.size} lineas")
+            return@MixedTextProvider mergeOrNull(native.rawText, fullBoxes, cached)
         }
-        if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index (diagnostico: recomputa, sin cache)")
         var detectRan = false
         var regionCount = 0
         val results = OcrEngine.get(context).recoverMissingText(pdf, index, OcrEngine.languageFor(book.language), wait, coverable) { gray, w, h, scale ->
@@ -244,6 +248,16 @@ class OcrManager(
     private fun mergeOrNull(nativeText: String, nativeBoxes: FloatArray, lines: List<PageTextMerger.OcrLine>): RawPageText? {
         if (lines.isEmpty()) return null
         val merged = PageTextMerger.merge(nativeText, nativeBoxes, lines)
+        if (TtsConfig.diagnostics) {
+            // Donde aterriza cada linea OCR en el texto fusionado (para ver si queda en su sitio o al
+            // principio): offset de su texto en el resultado y los 20 chars nativos anteriores.
+            for (l in lines) {
+                val probe = l.text.take(18)
+                val at = merged.text.indexOf(probe)
+                val before = if (at > 0) merged.text.substring((at - 20).coerceAtLeast(0), at) else ""
+                TtsConfig.diag("MIXTO merge: off=$at nativo=${nativeText.length} fusionado=${merged.text.length} antes='${TtsConfig.text40(before)}' linea='${TtsConfig.text40(l.text)}'")
+            }
+        }
         return RawPageText(merged.text, merged.boxes)
     }
 

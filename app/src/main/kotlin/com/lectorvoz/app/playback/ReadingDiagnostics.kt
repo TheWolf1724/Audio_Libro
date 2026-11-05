@@ -3,6 +3,7 @@ package com.lectorvoz.app.playback
 import android.content.Context
 import android.os.Build
 import com.lectorvoz.app.BuildConfig
+import com.lectorvoz.format.pdf.PdfDiag
 import com.lectorvoz.tts.playback.TtsConfig
 import java.io.File
 import java.util.concurrent.Executors
@@ -49,12 +50,16 @@ class ReadingDiagnostics(private val context: Context) {
         }
         TtsConfig.diagnosticSink = { line -> append(line) }
         TtsConfig.diagnostics = true
+        // El modulo de PDF no depende de :tts: se le conecta su propio sumidero, con la misma marca
+        // de tiempo que el resto para poder intercalar sus trazas con las de la voz y el mixto.
+        PdfDiag.sink = { msg -> TtsConfig.diag(msg) }
     }
 
     /** Desactiva el registro y suelta el sumidero (vuelve a no tener coste). */
     fun disable() {
         TtsConfig.diagnostics = false
         TtsConfig.diagnosticSink = null
+        PdfDiag.sink = null
     }
 
     private fun append(line: String) {

@@ -35,6 +35,10 @@ class PdfBook internal constructor(
     /** Numero de paginas. */
     val pageCount: Int = backend.pageCount
 
+    /** Id corto de esta instancia (diagnostico: distinguir el PdfBook del lector del de la voz). */
+    val diagInstanceId: Int = nextInstanceId()
+    private val instanceId: Int get() = diagInstanceId
+
     private val sizes = arrayOfNulls<PageSize>(pageCount)
     private val textCache = object : LinkedHashMap<Int, PdfPageText>(8, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Int, PdfPageText>) = size > TEXT_CACHE
@@ -167,14 +171,22 @@ class PdfBook internal constructor(
             val cached = synchronized(textCache) {
                 cleanedCache[index]?.takeIf { it.usesCleaner(cleaner) && !shouldRemixCached(index, wait, it.rawText) }
             }
-            if (cached != null) return cached
+            if (cached != null) {
+                if (PdfDiag.on) PdfDiag.log("pageText inst=$instanceId idx=$index HIT-limpio wait=$wait mixed=${synchronized(textCache) { index in mixedPages }} fb=${synchronized(textCache) { index in fallbackPages }} len=${cached.rawText.length}")
+                return cached
+            }
         }
         val base = run {
             // Acierto de cache ya definitivo. Un acierto de TEXTO PROPIO aun sin fusionar (no esta
             // en mixedPages) se trata como FALLO cuando procede el mixto: hay que recomputar para
             // fusionar (p. ej. tras una peticion previa sin espera que solo cacheo el texto propio).
             synchronized(textCache) {
-                textCache[index]?.let { if (!shouldRemixCached(index, wait, it.rawText)) return@run it }
+                textCache[index]?.let {
+                    if (!shouldRemixCached(index, wait, it.rawText)) {
+                        if (PdfDiag.on) PdfDiag.log("pageText inst=$instanceId idx=$index HIT wait=$wait mixed=${index in mixedPages} fb=${index in fallbackPages} len=${it.rawText.length}")
+                        return@run it
+                    }
+                }
             }
             // Texto propio: lo ya cacheado (texto propio pendiente de fusion, sin re-extraer
             // pdfium) o extraido de pdfium.
@@ -236,6 +248,7 @@ class PdfBook internal constructor(
             val page = recognized ?: merged ?: own
             val isFallback = recognized != null
             val isMixed = merged != null
+            if (PdfDiag.on) PdfDiag.log("pageText inst=$instanceId idx=$index COMPUTE wait=$wait needsFallback=$needsFallback isMixed=$isMixed ownLen=${own.rawText.length} len=${page.rawText.length}")
             onBeforeCacheForTest?.invoke()
             synchronized(textCache) {
                 // Otra corrutina pudo cachear ya la version definitiva mientras se calculaba.
@@ -335,6 +348,10 @@ class PdfBook internal constructor(
 
     companion object {
         private const val TEXT_CACHE = 6
+
+        /** Contador de instancias para el id de diagnostico. */
+        private val instanceCounter = java.util.concurrent.atomic.AtomicInteger(0)
+        private fun nextInstanceId(): Int = instanceCounter.incrementAndGet()
 
         /** Minimo de letras o cifras para considerar que una pagina trae texto propio. */
         private const val MIN_OWN_CHARS = 12

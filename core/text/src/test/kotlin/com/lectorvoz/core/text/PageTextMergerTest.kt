@@ -117,25 +117,26 @@ class PageTextMergerTest {
         val merged = PageTextMerger.merge(text, boxes, listOf(ocrLine("pie", top = 90f, bottom = 100f)))
 
         assertThat(merged.text.indexOf("pie")).isGreaterThan(merged.text.indexOf("CUERPO"))
-        assertThat(merged.text).endsWith("pie")
+        // El bloque OCR va envuelto en corte duro U+2028 delante y detras (tambien al final).
+        assertThat(merged.text).endsWith(" pie ")
     }
 
     @Test
-    fun separador_saltoDeLinea_conCajaVaciaCuandoNoComparteBanda() {
+    fun separador_corteDuro_antesDelBloqueOcr() {
         val (text, boxes) = nativeLine("CUERPO", top = 10f, bottom = 20f)
         val merged = PageTextMerger.merge(text, boxes, listOf(ocrLine("pie", top = 90f, bottom = 100f)))
 
-        // El separador es el caracter inmediatamente anterior al texto OCR.
+        // El separador (caracter inmediatamente anterior al texto OCR) es un corte duro U+2028.
         val sepIdx = merged.text.indexOf("pie") - 1
-        assertThat(merged.text[sepIdx]).isEqualTo('\n')
+        assertThat(merged.text[sepIdx]).isEqualTo(' ')
         assertThat(boxAt(merged.boxes, sepIdx).toList()).isEqualTo(listOf(0f, 0f, 0f, 0f))
     }
 
     @Test
-    fun separador_espacio_conCajaVaciaCuandoComparteBanda() {
+    fun separador_corteDuro_aislaElBloqueOcrDeAmbosVecinos() {
         // OCR en la MISMA banda que la primera linea nativa pero mas a la derecha. Hay otra linea
-        // nativa por debajo, asi que la insercion NO cae al final y el caracter anterior (ultimo de
-        // la banda superior) comparte banda -> separador ' '.
+        // nativa por debajo, asi que la insercion NO cae al final. Debe ir envuelto en corte duro
+        // U+2028 delante y detras (nunca pegado por un espacio), para quedar como frase propia.
         val (text, boxes) = concat(
             nativeLine("IZQ", top = 10f, bottom = 20f, x0 = 10f),
             nativeLine("ABAJO", top = 50f, bottom = 60f, x0 = 10f),
@@ -143,12 +144,34 @@ class PageTextMergerTest {
         val ocr = ocrLine("DER", top = 11f, bottom = 19f, x0 = 200f)
         val merged = PageTextMerger.merge(text, boxes, listOf(ocr))
 
-        val sepIdx = merged.text.indexOf("DER") - 1
-        assertThat(merged.text[sepIdx]).isEqualTo(' ')
-        assertThat(boxAt(merged.boxes, sepIdx).toList()).isEqualTo(listOf(0f, 0f, 0f, 0f))
+        val i = merged.text.indexOf("DER")
+        assertThat(merged.text[i - 1]).isEqualTo(' ')
+        assertThat(merged.text[i + "DER".length]).isEqualTo(' ')
+        assertThat(boxAt(merged.boxes, i - 1).toList()).isEqualTo(listOf(0f, 0f, 0f, 0f))
         // Y el bloque OCR queda entre ambas lineas nativas.
-        assertThat(merged.text.indexOf("DER")).isGreaterThan(merged.text.indexOf("IZQ"))
-        assertThat(merged.text.indexOf("DER")).isLessThan(merged.text.indexOf("ABAJO"))
+        assertThat(i).isGreaterThan(merged.text.indexOf("IZQ"))
+        assertThat(i).isLessThan(merged.text.indexOf("ABAJO"))
+    }
+
+    @Test
+    fun versalitaRecuperada_quedaComoFrasePropia_trasLimpiadorYSegmentador() {
+        // Regresion del bug del movil (Carl pag 262): una linea recuperada por OCR (versalita, SIN
+        // punto final) insertada en la MISMA banda que el cuerpo debe sonar como frase propia. Antes
+        // el separador se colapsaba y la versalita se pegaba a la frase vecina -> la voz se la saltaba.
+        // Aqui se recorre el pipeline real de la voz: merge -> PdfPageFlow.sameLength -> segmentador.
+        val (text, boxes) = concat(
+            nativeLine("En la caja habia cinco piezas. ", top = 10f, bottom = 20f),
+            nativeLine("Cuando examine el papel rojo. ", top = 50f, bottom = 60f),
+        )
+        // Region en la banda del cuerpo (top 30..40, entre ambas lineas) y sin terminador de frase.
+        val ocr = ocrLine("3 VALES POR UNA COPA", top = 30f, bottom = 40f)
+        val merged = PageTextMerger.merge(text, boxes, listOf(ocr))
+
+        val flowed = PdfPageFlow.flow(merged.text)
+        val frases = SentenceSegmenter().segment(flowed.sameLength).map { flowed.sameLength.substring(it.start, it.end).trim() }
+
+        // La versalita aparece como una frase separada (no absorbida por una vecina).
+        assertThat(frases).contains("3 VALES POR UNA COPA")
     }
 
     @Test
