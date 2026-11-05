@@ -105,13 +105,29 @@ object PageTextMerger {
             }
         }
 
-        // Punto de insercion: primer caracter nativo (con caja, en orden de texto) cuya clave sea
-        // MAYOR que la de la linea OCR; si no hay ninguno, al final del texto.
-        fun insertionIndex(region: MissingTextDetector.Region): Int {
-            for (i in 0 until n) {
-                if (anchorable(i) && nativeAfterOcr(i, region) > 0) return i
+        // true si el caracter nativo [a] va ANTES que [b] en orden de LECTURA (banda-Y, luego X).
+        fun readingBefore(a: Int, b: Int): Boolean {
+            val ta = nativeBoxes[a * 4 + 1]; val ba = nativeBoxes[a * 4 + 3]
+            val tb = nativeBoxes[b * 4 + 1]; val bb = nativeBoxes[b * 4 + 3]
+            return if (sameBand(ta, ba, tb, bb)) {
+                (nativeBoxes[a * 4] + nativeBoxes[a * 4 + 2]) < (nativeBoxes[b * 4] + nativeBoxes[b * 4 + 2])
+            } else {
+                (ta + ba) < (tb + bb)
             }
-            return n
+        }
+
+        // Punto de insercion: la linea OCR va justo ANTES de su SUCESOR en orden de LECTURA, es
+        // decir, del caracter nativo real que es "mayor" que la region y, de todos esos, el MENOR
+        // (el mas cercano por debajo/derecha). Se elige por GEOMETRIA, no por el orden del flujo de
+        // pdfium: ese no es fiable (emite cabeceras/pies y las versalitas fuera del orden de lectura,
+        // lo que antes arrastraba la insercion al principio de la pagina). Sin sucesor -> al final.
+        fun insertionIndex(region: MissingTextDetector.Region): Int {
+            var best = -1
+            for (i in 0 until n) {
+                if (!anchorable(i) || nativeAfterOcr(i, region) <= 0) continue
+                if (best < 0 || readingBefore(i, best)) best = i
+            }
+            return if (best < 0) n else best
         }
 
         // Precalcula el punto de insercion de cada linea contra el texto nativo ORIGINAL y ordena:

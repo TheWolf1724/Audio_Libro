@@ -11,8 +11,8 @@ android {
 
     defaultConfig {
         applicationId = "com.lectorvoz.app"
-        versionCode = 29
-        versionName = "1.4.8"
+        versionCode = 30
+        versionName = "1.4.9"
     }
 
     // Firma de release local: la clave vive fuera del repositorio, en ~/.lectorvoz/

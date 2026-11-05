@@ -211,6 +211,29 @@ class PageTextMergerTest {
     }
 
     @Test
+    fun cabeceraFueraDeOrden_noArrastraLaInsercionAlFrente() {
+        // pdfium emite la cabecera/pie ("Pagina 261") y las versalitas FUERA del orden de lectura
+        // (al principio del flujo de texto). La insercion debe elegir el SUCESOR geometrico mas
+        // cercano, no el primer caracter del flujo. Regresion del bug del movil (Carl pag 262): la
+        // versalita se colocaba al PRINCIPIO de la pagina en vez de intercalada. Aqui el "PIE" va
+        // primero en orden de texto pero esta geometricamente ABAJO; la linea OCR de banda media
+        // debe quedar entre "Linea uno" y "Linea dos", no al frente.
+        val (text, boxes) = concat(
+            nativeLine("PIE", top = 800f, bottom = 810f),
+            nativeLine("Linea uno.", top = 100f, bottom = 110f),
+            nativeLine("Linea dos.", top = 200f, bottom = 210f),
+        )
+        val merged = PageTextMerger.merge(text, boxes, listOf(ocrLine("RECUPERADA", top = 150f, bottom = 160f)))
+
+        val iL1 = merged.text.indexOf("Linea uno")
+        val iR = merged.text.indexOf("RECUPERADA")
+        val iL2 = merged.text.indexOf("Linea dos")
+        assertThat(iR).isGreaterThan(iL1)
+        assertThat(iR).isLessThan(iL2)
+        assertThat(iR).isGreaterThan(merged.text.indexOf("PIE")) // no al principio del flujo
+    }
+
+    @Test
     fun idempotenciaConceptual_mismasEntradasMismaSalida() {
         val (text, boxes) = concat(
             nativeLine("ARRIBA", top = 10f, bottom = 20f),
