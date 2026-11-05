@@ -180,10 +180,22 @@ class OcrManager(
         // 0). Excluyendo los espacios/no imprimibles, esa tinta queda como hueco y se detecta; y al
         // enmascarar el recorte no se blanquea la versalita. La FUSION si usa las cajas completas.
         val coverable = coverableBoxes(native.rawText, fullBoxes)
+        if (TtsConfig.diagnostics) {
+            val t = native.rawText
+            val excl = t.count { it.isWhitespace() || it.isISOControl() || it == '�' || it == '\u0000' }
+            TtsConfig.diag("MIXTO pag=$index chars=${t.length} excluidos=$excl coverables=${coverable.size / 4}")
+            // Volcado del texto nativo alrededor de la versalita (off ~900-1150) con codigos de char.
+            val from = 900.coerceIn(0, t.length); val to = (from + 260).coerceAtMost(t.length)
+            val sb = StringBuilder()
+            for (i in from until to) {
+                val c = t[i]
+                sb.append(if (c.isLetterOrDigit() || c == ' ' || c in ".,;:()«»—-¿?¡!") c else "[${c.code}]")
+            }
+            TtsConfig.diag("MIXTO pag=$index raw[$from..$to]=$sb")
+        }
         // Reusa el resultado ya calculado (vacio = nada que recuperar). Lo comparten el lector y la
-        // voz -> misma fusion (resaltado consistente) y no se OCR-ea dos veces la misma pagina.
-        synchronized(recovered) { recovered[key] }?.let {
-            if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index cache lineas=${it.size}")
+        // voz -> misma fusion. Con el diagnostico ON se SALTA la cache para ver el detector cada vez.
+        if (!TtsConfig.diagnostics) synchronized(recovered) { recovered[key] }?.let {
             return@MixedTextProvider mergeOrNull(native.rawText, fullBoxes, it)
         }
         var detectRan = false
