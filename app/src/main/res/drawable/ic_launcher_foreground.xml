@@ -19,10 +19,10 @@
         android:strokeWidth="1.6"
         android:strokeLineCap="round"
         android:pathData="M37,51 L47,52.5 M37,57 L47,58.5 M37,63 L47,64.5 M61,52.5 L71,51 M61,58.5 L71,57 M61,64.5 L71,63" />
-    <!-- Onda de voz -->
+    <!-- Ondas de voz: tres arcos que suben del libro (sonido saliendo). -->
     <path
         android:strokeColor="#F2B84B"
         android:strokeWidth="2.6"
         android:strokeLineCap="round"
-        android:pathData="M44,36 C48,32 60,32 64,36 M48,31 C51,28.5 57,28.5 60,31" />
+        android:pathData="M46,37 C50,33 58,33 62,37 M43,33 C49,27 59,27 65,33 M40,29.5 C48,22 60,22 68,29.5" />
 </vector>
