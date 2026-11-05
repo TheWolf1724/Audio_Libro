@@ -84,7 +84,13 @@ class SpanishNormalizer(
             }
             val w = s.substring(i, e)
             if (!roman(i, e, w) && !acronym(i, e, w)) {
-                for (k in i until e) out.char(s[k], k)
+                // Una palabra que se lee COMO palabra (no sigla deletreada) y viene toda en
+                // mayusculas (versalitas, titulos, NIVEL, texto de OCR) se emite en minuscula:
+                // la voz, sobre todo la neural, pronuncia raro las palabras en mayuscula
+                // ("CLUB" -> "c lub"). Las siglas que SI se deletrean van por acronym() y no
+                // llegan aqui. No cambia la alineacion (es 1:1 por caracter).
+                val lower = allCapsWord(w)
+                for (k in i until e) out.char(if (lower) s[k].lowercaseChar() else s[k], k)
             }
             prevWord = w
             return e
@@ -817,6 +823,23 @@ class SpanishNormalizer(
             if (w.length < 5) return false
             val vowels = w.count { it in VOWELS }
             return vowels * 100 >= w.length * 25 && vowels < w.length
+        }
+
+        /**
+         * true si [w] tiene 2+ letras y TODAS son mayusculas (p. ej. "CLUB", "VALES"). Una
+         * palabra asi, cuando se lee como palabra (no como sigla deletreada), se pasa a
+         * minuscula antes de hablarla para que la voz no la pronuncie letra a letra ni la
+         * deforme. Las palabras con alguna minuscula no se tocan.
+         */
+        internal fun allCapsWord(w: String): Boolean {
+            var letters = 0
+            for (c in w) {
+                if (c.isLetter()) {
+                    if (c.isLowerCase()) return false
+                    letters++
+                }
+            }
+            return letters >= 2
         }
 
         private fun isCapsSentence(s: String): Boolean {

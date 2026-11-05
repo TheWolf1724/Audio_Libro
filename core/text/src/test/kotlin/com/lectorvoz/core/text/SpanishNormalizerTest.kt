@@ -87,12 +87,15 @@ class SpanishNormalizerTest {
     }
 
     @Test
-    fun romanosAmbiguosNoSeTocan() {
-        assertThat(say("MI casa")).isEqualTo("MI casa")
-        assertThat(say("Yo VI la luz")).isEqualTo("Yo VI la luz")
-        assertThat(say("DI que sí")).isEqualTo("DI que sí")
-        assertThat(say("YO VI LA LUZ")).isEqualTo("YO VI LA LUZ")
-        assertThat(say("el XV")).isEqualTo("el XV")
+    fun romanosAmbiguosNoSeConviertenEnNumero() {
+        // "MI", "VI", "DI", "XV" NO se convierten en numero (mil, seis, quince...). Al ir en
+        // mayuscula y leerse como palabra, se pronuncian en minuscula (ver
+        // palabrasEnMayusculasSeLeenComoPalabras), pero siguen sin volverse numeros.
+        assertThat(say("MI casa")).isEqualTo("mi casa")
+        assertThat(say("Yo VI la luz")).isEqualTo("Yo vi la luz")
+        assertThat(say("DI que sí")).isEqualTo("di que sí")
+        assertThat(say("YO VI LA LUZ")).isEqualTo("yo vi la luz")
+        assertThat(say("el XV")).isEqualTo("el xv")
     }
 
     @Test
@@ -130,11 +133,27 @@ class SpanishNormalizerTest {
 
     @Test
     fun siglas() {
-        assertThat(say("La ONU y la OTAN")).isEqualTo("La ONU y la OTAN")
+        // Siglas que se leen como palabra: se pronuncian en minuscula (asi la voz neural no las
+        // deforma); las que se deletrean siguen leyendose letra a letra.
+        assertThat(say("La ONU y la OTAN")).isEqualTo("La onu y la otan")
         assertThat(say("Lo emitió RTVE")).isEqualTo("Lo emitió erre te uve e")
         assertThat(say("Su DNI caducó")).isEqualTo("Su de ene i caducó")
         assertThat(say("Fue al BCX hoy")).isEqualTo("Fue al be ce equis hoy")
-        assertThat(say("La UNESCO y la FAO")).isEqualTo("La UNESCO y la FAO")
+        assertThat(say("La UNESCO y la FAO")).isEqualTo("La unesco y la fao")
+    }
+
+    @Test
+    fun palabrasEnMayusculasSeLeenComoPalabras() {
+        // Versalitas / texto de OCR: las palabras en mayuscula que se leen como palabra se
+        // pronuncian en minuscula, no letra a letra; la voz neural deforma las mayusculas.
+        assertThat(say("CANJEAR EN EL CLUB DESPERADO POR UNA COPA"))
+            .isEqualTo("canjear en el club desperado por una copa")
+        assertThat(say("ESTO ES UNA PRUEBA EN MAYUSCULAS"))
+            .isEqualTo("esto es una prueba en mayusculas")
+        // Tambien una palabra larga en mayuscula suelta dentro de una frase normal.
+        assertThat(say("Aviso: DESBLOQUEADO")).isEqualTo("Aviso: desbloqueado")
+        // Una sigla que SE DELETREA no se minusculiza como palabra (va por otra rama).
+        assertThat(say("Su DNI caducó")).isEqualTo("Su de ene i caducó")
     }
 
     @Test

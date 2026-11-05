@@ -48,7 +48,7 @@ class GameCardTest {
         assertThat(spoken).contains("tres mil")
         assertThat(spoken).contains("más cinco de fuerza")
         assertThat(spoken).contains("menos diez pe uve")
-        assertThat(spoken).contains("NIVEL tres")
+        assertThat(spoken).contains("nivel tres")
         assertThat(spoken).contains("tres vales por una copa")
         assertThat(spoken).contains("canjear en el club desperado")
         // Ninguna letra suelta deletreada: no debe aparecer la secuencia tipica de deletreo.
@@ -59,10 +59,11 @@ class GameCardTest {
 
     @Test
     fun mayusculasLargasSeLeenComoPalabra() {
-        assertThat(say("LOGRO DESBLOQUEADO")).isEqualTo("LOGRO DESBLOQUEADO")
-        assertThat(say("DESBLOQUEADO")).isEqualTo("DESBLOQUEADO")
-        assertThat(say("NIVEL DE PELIGRO MAXIMO")).isEqualTo("NIVEL DE PELIGRO MAXIMO")
-        assertThat(say("ESTADISTICAS DEL JUGADOR")).isEqualTo("ESTADISTICAS DEL JUGADOR")
+        // Se leen como palabra y en minuscula (la voz neural deforma las palabras en mayuscula).
+        assertThat(say("LOGRO DESBLOQUEADO")).isEqualTo("logro desbloqueado")
+        assertThat(say("DESBLOQUEADO")).isEqualTo("desbloqueado")
+        assertThat(say("NIVEL DE PELIGRO MAXIMO")).isEqualTo("nivel de peligro maximo")
+        assertThat(say("ESTADISTICAS DEL JUGADOR")).isEqualTo("estadisticas del jugador")
     }
 
     // ---------------------------------------------------------------- Regresiones
