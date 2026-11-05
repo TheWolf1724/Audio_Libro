@@ -138,21 +138,15 @@ class ScreensTest {
     }
 
     @Test
-    fun forzarOcrSoloApareceEnPdfYCambiaLosAjustesDelLibro() {
+    fun aparienciaYaNoLlevaElInterruptorDeOcr() {
+        // El OCR por libro se movio al menu de 3 puntos del lector; Apariencia no debe mostrarlo.
         var overrides by mutableStateOf(BookOverrides.NONE)
-        var pdf by mutableStateOf(false)
         rule.setContent {
             MaterialTheme {
-                AppearancePanel(ReaderSettings(), overrides, systemDark = false, onReader = {}, onOverrides = { overrides = it(overrides) }, isPdf = pdf)
+                AppearancePanel(ReaderSettings(), overrides, systemDark = false, onReader = {}, onOverrides = { overrides = it(overrides) })
             }
         }
-        // EPUB: el interruptor no esta.
         rule.onNodeWithTag("apariencia-forzar-ocr").assertDoesNotExist()
-        // PDF: aparece y activa el OCR forzado del libro.
-        pdf = true
-        rule.waitForIdle()
-        rule.onNodeWithTag("apariencia-forzar-ocr").performScrollTo().performClick()
-        assertThat(overrides.forceOcr).isTrue()
     }
 
     @Test

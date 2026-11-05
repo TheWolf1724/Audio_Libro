@@ -183,7 +183,8 @@ fun ReaderScreen(
 
         AnimatedVisibility(bars, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter)) {
             TopBar(state, onBack, onPanel = { panel = it }, onBookmark = vm::addBookmark, onVoiceSettings = onVoiceSettings, onBookVoice = vm::toggleBookVoice,
-                onDictionary = { state.book?.let { onDictionary(it.id) } }, onExport = { state.book?.let { onExport(it.id) } })
+                onDictionary = { state.book?.let { onDictionary(it.id) } }, onExport = { state.book?.let { onExport(it.id) } },
+                onToggleOcr = { vm.updateOverrides { o -> o.copy(forceOcr = !o.forceOcr) } })
         }
         AnimatedVisibility(bars, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.BottomCenter)) {
             BottomBar(state, vm, onOpenBook = onOpenBook)
@@ -202,7 +203,7 @@ fun ReaderScreen(
         val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = panel != ReaderPanel.APPEARANCE)
         ModalBottomSheet(onDismissRequest = { panel = ReaderPanel.NONE }, sheetState = sheet) {
             when (panel) {
-                ReaderPanel.APPEARANCE -> AppearancePanel(state.settings, state.overrides, systemDark, vm::updateReader, vm::updateOverrides, onPreview = vm::previewReader, isPdf = state.book?.format == com.lectorvoz.core.model.BookFormat.PDF)
+                ReaderPanel.APPEARANCE -> AppearancePanel(state.settings, state.overrides, systemDark, vm::updateReader, vm::updateOverrides, onPreview = vm::previewReader)
                 ReaderPanel.TOC -> TocList(state.toc, state.locator.chapter) { vm.goTo(it); panel = ReaderPanel.NONE }
                 ReaderPanel.BOOKMARKS -> BookmarkList(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteBookmark, onAdd = vm::addBookmark)
                 ReaderPanel.SEARCH -> SearchPanel(state.search, vm::search, { vm.openSearchResult(it); panel = ReaderPanel.NONE }, vm::clearSearch)
@@ -235,6 +236,7 @@ private fun TopBar(
     onBookVoice: () -> Unit,
     onDictionary: () -> Unit,
     onExport: () -> Unit,
+    onToggleOcr: () -> Unit,
 ) {
     val colors = com.lectorvoz.app.ui.theme.LocalReadingColors.current
     Surface(color = colors.barBackground, contentColor = colors.barContent, modifier = Modifier.fillMaxWidth()) {
@@ -260,6 +262,13 @@ private fun TopBar(
                         onClick = { menu = false; onBookVoice() },
                     )
                     DropdownMenuItem(text = { Text("Pronunciacion de este libro") }, onClick = { menu = false; onDictionary() })
+                    if (state.book?.format == com.lectorvoz.core.model.BookFormat.PDF) {
+                        DropdownMenuItem(
+                            text = { Text("Leer este PDF con OCR") },
+                            trailingIcon = { if (state.overrides.forceOcr) AppIcon(R.drawable.ic_check, "Activado") },
+                            onClick = { menu = false; onToggleOcr() },
+                        )
+                    }
                     DropdownMenuItem(text = { Text("Exportar a audio") }, onClick = { menu = false; onExport() })
                 }
             }
