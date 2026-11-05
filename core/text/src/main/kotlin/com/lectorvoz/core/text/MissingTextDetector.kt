@@ -1,5 +1,8 @@
 package com.lectorvoz.core.text
 
+import kotlin.math.ceil
+import kotlin.math.max
+
 /**
  * Detecta las zonas de una pagina PDF con "tinta de texto" que NINGUNA caja de pdfium cubre:
  * texto que pdfium dibuja pero no supo extraer (versalitas, titulos en fuentes decorativas). Es
@@ -64,6 +67,205 @@ object MissingTextDetector {
         boxPadPx: Float = 1.5f,
         downsample: Int = 3,
     ): List<Region> {
-        TODO("Fase 1: portar el detector de docs/revisiones/detector.py (implementa el experto)")
+        val w = gray.width
+        val h = gray.height
+        val ds = if (downsample < 1) 1 else downsample
+        if (w <= 0 || h <= 0) return emptyList()
+
+        val pxPerPoint = gray.pxPerPoint
+        // dpi = pixeles por punto * 72; todos los umbrales se expresan en unidades reducidas (dpi/ds).
+        val dpiOverDs = pxPerPoint * 72f / ds
+
+        // 2. Mascara de cobertura a resolucion completa: rasterizar cada caja (puntos->px) con pad.
+        val cov = BooleanArray(w * h)
+        var i = 0
+        val n = boxes.size - boxes.size % 4
+        while (i < n) {
+            val left = boxes[i]
+            val top = boxes[i + 1]
+            val right = boxes[i + 2]
+            val bottom = boxes[i + 3]
+            i += 4
+            // Caja sin geometria: ignorar.
+            if (right <= left || bottom <= top) continue
+            val x0 = left * pxPerPoint
+            val y0 = top * pxPerPoint
+            val x1 = right * pxPerPoint
+            val y1 = bottom * pxPerPoint
+            var xa = (x0 - boxPadPx).toInt(); if (xa < 0) xa = 0
+            var xb = ceil(x1 + boxPadPx).toInt(); if (xb > w) xb = w
+            var ya = (y0 - boxPadPx).toInt(); if (ya < 0) ya = 0
+            var yb = ceil(y1 + boxPadPx).toInt(); if (yb > h) yb = h
+            if (xb <= xa || yb <= ya) continue
+            var yy = ya
+            while (yy < yb) {
+                val base = yy * w
+                var xx = xa
+                while (xx < xb) {
+                    cov[base + xx] = true
+                    xx++
+                }
+                yy++
+            }
+        }
+
+        // 4. gap = tinta AND NOT cobertura, muestreado a 1/ds (submuestreo estriado, como gap[::ds,::ds]).
+        val gw = (w + ds - 1) / ds
+        val gh = (h + ds - 1) / ds
+        val gap = BooleanArray(gw * gh)
+        var gy = 0
+        while (gy < gh) {
+            val srcY = gy * ds
+            val srcBase = srcY * w
+            val dstBase = gy * gw
+            var gx = 0
+            while (gx < gw) {
+                val srcX = gx * ds
+                val idx = srcBase + srcX
+                if ((gray.pixels[idx].toInt() and 0xFF) < inkThreshold && !cov[idx]) {
+                    gap[dstBase + gx] = true
+                }
+                gx++
+            }
+            gy++
+        }
+
+        // 5. Dilatacion horizontal (kx ~ 0.12*dpi/ds) + vertical pequena (ky=1), separable.
+        val kx = max(2, (0.12f * dpiOverDs).toInt())
+        val ky = 1
+        val dil = dilateSeparable(gap, gw, gh, kx, ky)
+
+        // 6. Etiquetar componentes conexas (4-conexion, flood fill iterativo).
+        val labels = IntArray(gw * gh)
+        val queue = IntArray(gw * gh)
+        val regions = ArrayList<Region>()
+
+        val lhMin = 0.06f * dpiOverDs
+        val lhMax = 0.6f * dpiOverDs
+        val wMin = 0.15f * dpiOverDs
+
+        var seed = 0
+        var label = 0
+        while (seed < dil.size) {
+            if (dil[seed] && labels[seed] == 0) {
+                label++
+                var head = 0
+                var tail = 0
+                queue[tail++] = seed
+                labels[seed] = label
+                var minX = Int.MAX_VALUE; var maxX = Int.MIN_VALUE
+                var minY = Int.MAX_VALUE; var maxY = Int.MIN_VALUE
+                while (head < tail) {
+                    val p = queue[head++]
+                    val px = p % gw
+                    val py = p / gw
+                    if (px < minX) minX = px
+                    if (px > maxX) maxX = px
+                    if (py < minY) minY = py
+                    if (py > maxY) maxY = py
+                    // vecinos 4-conexos
+                    if (px > 0) { val q = p - 1; if (dil[q] && labels[q] == 0) { labels[q] = label; queue[tail++] = q } }
+                    if (px < gw - 1) { val q = p + 1; if (dil[q] && labels[q] == 0) { labels[q] = label; queue[tail++] = q } }
+                    if (py > 0) { val q = p - gw; if (dil[q] && labels[q] == 0) { labels[q] = label; queue[tail++] = q } }
+                    if (py < gh - 1) { val q = p + gw; if (dil[q] && labels[q] == 0) { labels[q] = label; queue[tail++] = q } }
+                }
+
+                // 7. gpix = tinta real (gap sin dilatar) dentro del bounding box de la componente.
+                val boxH = maxY - minY + 1
+                val boxW = maxX - minX + 1
+                var gpix = 0
+                var ry = minY
+                while (ry <= maxY) {
+                    val rb = ry * gw
+                    var rx = minX
+                    while (rx <= maxX) {
+                        if (gap[rb + rx]) gpix++
+                        rx++
+                    }
+                    ry++
+                }
+                if (gpix < MIN_GAP_PIXELS) { seed++; continue }
+                val dens = gpix.toFloat() / (boxH * boxW)
+                val looksText = boxH >= lhMin && boxH <= lhMax && boxW >= wMin && dens >= MIN_DENSITY
+                if (looksText) {
+                    // 8. Bounding box a puntos: (x*ds) px / pxPerPoint.
+                    regions.add(
+                        Region(
+                            left = minX * ds / pxPerPoint,
+                            top = minY * ds / pxPerPoint,
+                            right = maxX * ds / pxPerPoint,
+                            bottom = maxY * ds / pxPerPoint,
+                        )
+                    )
+                }
+            }
+            seed++
+        }
+        return regions
+    }
+
+    /** gpix minimo (en resolucion reducida) para no tratar ruido como texto (medir.py usa 6). */
+    private const val MIN_GAP_PIXELS = 6
+
+    /** Densidad minima de tinta dentro del bounding box para "parecer texto". */
+    private const val MIN_DENSITY = 0.04f
+
+    /**
+     * Dilatacion binaria con elemento estructurante rectangular (2*rx+1 x 2*ry+1), separable:
+     * primero en X (radio [rx]) y despues en Y (radio [ry]). Usa distancia al "true" mas cercano
+     * para que sea lineal en el numero de pixeles.
+     */
+    private fun dilateSeparable(src: BooleanArray, w: Int, h: Int, rx: Int, ry: Int): BooleanArray {
+        val afterX = if (rx <= 0) src.copyOf() else dilateX(src, w, h, rx)
+        return if (ry <= 0) afterX else dilateY(afterX, w, h, ry)
+    }
+
+    private fun dilateX(src: BooleanArray, w: Int, h: Int, r: Int): BooleanArray {
+        val out = BooleanArray(src.size)
+        var y = 0
+        while (y < h) {
+            val base = y * w
+            // distancia al true mas cercano a la izquierda
+            var last = -1
+            var x = 0
+            while (x < w) {
+                if (src[base + x]) last = x
+                if (last >= 0 && x - last <= r) out[base + x] = true
+                x++
+            }
+            // pasada hacia atras: true mas cercano a la derecha
+            last = -1
+            x = w - 1
+            while (x >= 0) {
+                if (src[base + x]) last = x
+                if (last >= 0 && last - x <= r) out[base + x] = true
+                x--
+            }
+            y++
+        }
+        return out
+    }
+
+    private fun dilateY(src: BooleanArray, w: Int, h: Int, r: Int): BooleanArray {
+        val out = BooleanArray(src.size)
+        var x = 0
+        while (x < w) {
+            var last = -1
+            var y = 0
+            while (y < h) {
+                if (src[y * w + x]) last = y
+                if (last >= 0 && y - last <= r) out[y * w + x] = true
+                y++
+            }
+            last = -1
+            y = h - 1
+            while (y >= 0) {
+                if (src[y * w + x]) last = y
+                if (last >= 0 && last - y <= r) out[y * w + x] = true
+                y--
+            }
+            x++
+        }
+        return out
     }
 }
