@@ -184,9 +184,16 @@ class OcrManager(
         var regionCount = 0
         val results = OcrEngine.get(context).recoverMissingText(pdf, index, OcrEngine.languageFor(book.language), wait, nativeBoxes) { gray, w, h, scale ->
             detectRan = true
-            val regions = MissingTextDetector.detect(MissingTextDetector.GrayPage(gray, w, h, scale), nativeBoxes)
+            val page = MissingTextDetector.GrayPage(gray, w, h, scale)
+            val d: ((String) -> Unit)? = if (TtsConfig.diagnostics) { s -> TtsConfig.diag("MIXTO pag=$index $s") } else null
+            val regions = MissingTextDetector.detect(page, nativeBoxes, diag = d)
             regionCount = regions.size
-            if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index detector: ${regions.size} regiones (render ${w}x${h} px, cajas nativas=${nativeBoxes.size / 4})")
+            if (TtsConfig.diagnostics) {
+                // Prueba a umbrales mas altos: si con 200/230 aparecen regiones, el texto es claro.
+                val r200 = MissingTextDetector.detect(page, nativeBoxes, inkThreshold = 200).size
+                val r230 = MissingTextDetector.detect(page, nativeBoxes, inkThreshold = 230).size
+                TtsConfig.diag("MIXTO pag=$index detector: thr160=${regions.size} thr200=$r200 thr230=$r230 (render ${w}x${h} px, cajas nativas=${nativeBoxes.size / 4})")
+            }
             regions.map { floatArrayOf(it.left, it.top, it.right, it.bottom) }
         }
         // Filtro de CONFIANZA: solo se inserta lo que el OCR reconocio como texto fiable; las

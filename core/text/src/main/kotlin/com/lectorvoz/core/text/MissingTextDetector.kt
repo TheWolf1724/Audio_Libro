@@ -66,6 +66,8 @@ object MissingTextDetector {
         inkThreshold: Int = 160,
         boxPadPx: Float = 1.5f,
         downsample: Int = 3,
+        /** Diagnostico opcional: recibe trazas internas (tinta, huecos, componentes, descartes). */
+        diag: ((String) -> Unit)? = null,
     ): List<Region> {
         val w = gray.width
         val h = gray.height
@@ -113,6 +115,8 @@ object MissingTextDetector {
         val gw = (w + ds - 1) / ds
         val gh = (h + ds - 1) / ds
         val gap = BooleanArray(gw * gh)
+        var inkN = 0
+        var gapN = 0
         var gy = 0
         while (gy < gh) {
             val srcY = gy * ds
@@ -122,12 +126,31 @@ object MissingTextDetector {
             while (gx < gw) {
                 val srcX = gx * ds
                 val idx = srcBase + srcX
-                if ((gray.pixels[idx].toInt() and 0xFF) < inkThreshold && !cov[idx]) {
-                    gap[dstBase + gx] = true
+                val ink = (gray.pixels[idx].toInt() and 0xFF) < inkThreshold
+                if (ink) {
+                    inkN++
+                    if (!cov[idx]) { gap[dstBase + gx] = true; gapN++ }
                 }
                 gx++
             }
             gy++
+        }
+        if (diag != null) {
+            // Cuenta tambien la tinta a varios umbrales (sin cobertura) para ver si el texto es claro.
+            var ink200 = 0; var ink230 = 0
+            var yy2 = 0
+            while (yy2 < gh) {
+                val sb = yy2 * ds * w
+                var xx2 = 0
+                while (xx2 < gw) {
+                    val g = gray.pixels[sb + xx2 * ds].toInt() and 0xFF
+                    if (g < 200) ink200++
+                    if (g < 230) ink230++
+                    xx2++
+                }
+                yy2++
+            }
+            diag("det: ${gw}x${gh} tinta<$inkThreshold=$inkN hueco=$gapN | tinta<200=$ink200 tinta<230=$ink230")
         }
 
         // 5. Dilatacion horizontal (kx ~ 0.12*dpi/ds) + vertical pequena (ky=1), separable.
@@ -187,6 +210,9 @@ object MissingTextDetector {
                 if (gpix < MIN_GAP_PIXELS) { seed++; continue }
                 val dens = gpix.toFloat() / (boxH * boxW)
                 val looksText = boxH >= lhMin && boxH <= lhMax && boxW >= wMin && dens >= MIN_DENSITY
+                if (diag != null && gpix >= MIN_GAP_PIXELS) {
+                    diag("det comp h=$boxH(${lhMin.toInt()}..${lhMax.toInt()}) w=$boxW(>=${wMin.toInt()}) dens=${(dens * 100).toInt()}%(>=4) gpix=$gpix -> ${if (looksText) "OK" else "descartado"}")
+                }
                 if (looksText) {
                     // 8. Bounding box a puntos: (x*ds) px / pxPerPoint.
                     regions.add(
