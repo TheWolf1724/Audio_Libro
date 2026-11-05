@@ -58,6 +58,9 @@ open class BookOpener(private val context: Context) {
     /** Si un PDF debe forzar el OCR aunque traiga capa de texto (ajuste por libro). */
     @Volatile var pdfForceOcr: (suspend (Book) -> Boolean)? = null
 
+    /** Proveedor del modo MIXTO (recuperar palabras que faltan); nulo = sin mixto. */
+    @Volatile var pdfMixedProvider: ((Book) -> com.lectorvoz.format.pdf.MixedTextProvider?)? = null
+
     /** Un cerrojo por libro: dos aperturas a la vez no escriben la misma copia temporal. */
     private val copyLocks = ConcurrentHashMap<String, Mutex>()
 
@@ -78,6 +81,7 @@ open class BookOpener(private val context: Context) {
                     try {
                         pdf.textFallback = pdfTextFallback?.invoke(book)
                         pdf.forceFallback = pdfForceOcr?.invoke(book) ?: false
+                        pdf.mixedProvider = pdfMixedProvider?.invoke(book)
                         OpenedBook(book, BookContent.Pdf(pdf, PdfCleanerAdapter(pdf, skipPdfHeaders)), pdf.toc)
                     } catch (t: Throwable) {
                         pdf.close()

@@ -11,10 +11,14 @@ import com.lectorvoz.app.books.LibraryListener
 import com.lectorvoz.core.data.library.Book
 import com.lectorvoz.core.data.library.LibraryRepository
 import com.lectorvoz.core.model.BookFormat
+import com.lectorvoz.core.text.MissingTextDetector
+import com.lectorvoz.core.text.PageTextMerger
+import com.lectorvoz.format.pdf.MixedTextProvider
 import com.lectorvoz.format.pdf.PageTextFallback
 import com.lectorvoz.format.pdf.PdfBook
 import com.lectorvoz.format.pdf.RawPageText
 import com.lectorvoz.format.pdf.ocr.OcrEngine
+import com.lectorvoz.format.pdf.ocr.OcrRegionResult
 import com.lectorvoz.format.pdf.ocr.OcrStore
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
@@ -80,6 +84,10 @@ class OcrManager(
     private val discardModels: () -> Unit = { OcrEngine.discardModels(context) },
 ) : LibraryListener {
     private val enabled = MutableStateFlow(true)
+    /** Modo MIXTO (recuperar palabras que faltan) activado; ajuste recoverMissingText. */
+    private val recoverEnabled = MutableStateFlow(true)
+    /** (libro shl 24)|pagina de las paginas donde el mixto ya vio que NO hay nada que recuperar. */
+    private val noRecover = ConcurrentHashMap.newKeySet<Long>()
     @Volatile private var saveBattery = true
     private val readerBook = MutableStateFlow<Long?>(null)
     private val voiceBook = MutableStateFlow<Long?>(null)
@@ -134,6 +142,48 @@ class OcrManager(
             inFlight.forEach { (key, job) -> if (key !in forcedKeys) job.cancel() }
             if (forcedKeys.isEmpty()) discardModels()
         }
+    }
+
+    /** Activa o desactiva el modo MIXTO (recuperar palabras que faltan). */
+    fun setRecoverMissingText(on: Boolean) {
+        recoverEnabled.value = on
+        if (!on) noRecover.clear()
+    }
+
+    /**
+     * Proveedor del modo MIXTO para [book]: dado el texto NATIVO de una pagina, recupera con OCR
+     * solo las palabras que el PDF no expone (detector "tinta menos cajas") y las fusiona en orden
+     * de lectura. Null si no procede. El seam de [PdfBook] ya garantiza que solo se llama en
+     * paginas con texto propio y sin OCR forzado; aqui se decide con el AJUSTE, el OCR global y la
+     * CONFIANZA de cada region reconocida.
+     */
+    fun mixedFor(book: Book): MixedTextProvider = MixedTextProvider { pdf, index, native, wait ->
+        if (!recoverEnabled.value || !enabled.value) return@MixedTextProvider null
+        val key = (book.id shl 24) or index.toLong()
+        if (key in noRecover) return@MixedTextProvider null
+        val nativeBoxes = native.copyBoxes()
+        var detectRan = false
+        var regionCount = 0
+        val results = OcrEngine.get(context).recoverMissingText(pdf, index, OcrEngine.languageFor(book.language), urgent = wait) { gray, w, h, scale ->
+            detectRan = true
+            val regions = MissingTextDetector.detect(MissingTextDetector.GrayPage(gray, w, h, scale), nativeBoxes)
+            regionCount = regions.size
+            regions.map { floatArrayOf(it.left, it.top, it.right, it.bottom) }
+        }
+        // Filtro de CONFIANZA: solo se inserta lo que el OCR reconocio como texto fiable; las
+        // zonas que no son texto (figuras, casillas, lineas) vuelven vacias/con baja confianza y
+        // se descartan (asi los falsos positivos del detector son inofensivos).
+        val lines = results.filter { confident(it) }.map { r ->
+            PageTextMerger.OcrLine(r.text, r.charBoxes, MissingTextDetector.Region(r.region[0], r.region[1], r.region[2], r.region[3]))
+        }
+        if (lines.isEmpty()) {
+            // El detector corrio y no encontro nada que recuperar: no volver a renderizar/detectar
+            // esta pagina. Si el modelo no estaba listo (detectRan=false) se reintentara luego.
+            if (detectRan && regionCount == 0) noRecover.add(key)
+            return@MixedTextProvider null
+        }
+        val merged = PageTextMerger.merge(native.rawText, nativeBoxes, lines)
+        RawPageText(merged.text, merged.boxes)
     }
 
     /** Pausar con ahorro de bateria o bateria baja (Ajustes, activado por defecto). */
@@ -407,8 +457,20 @@ class OcrManager(
         refreshSize()
     }
 
+    /** Filtro de confianza: una region OCR se inserta solo si parece texto fiable. */
+    private fun confident(r: OcrRegionResult): Boolean {
+        if (r.text.isBlank() || r.wordCount == 0) return false
+        if (r.meanConfidence < MIN_REGION_CONFIDENCE) return false
+        val letters = r.text.count { it.isLetterOrDigit() }
+        val nonSpace = r.text.count { !it.isWhitespace() }
+        // Al menos 2 alfanumericos y que no sea mayoria de simbolos (basura de figuras/lineas).
+        return letters >= 2 && letters * 2 >= nonSpace
+    }
+
     companion object {
         private const val TAG = "OcrManager"
+        /** Confianza media minima (0..100) de una region para insertar su texto en el mixto. */
+        private const val MIN_REGION_CONFIDENCE = 60f
         private const val SAMPLE = 8
         private const val FINISHED_WINDOW = 10
         private const val BACK_JUMP = 3

@@ -25,6 +25,9 @@ class PdfPageText(
 
     val length: Int get() = rawText.length
 
+    /** Copia de las cajas (4 floats/caracter, puntos) para el modo mixto (detector de :core:text). */
+    fun copyBoxes(): FloatArray = boxes.copyOf()
+
     /** Rangos excluidos (cabeceras/pies), ordenados y dentro del texto. */
     val excludedRanges: List<IntRange> by lazy {
         cleaner.excludedRanges(this)
