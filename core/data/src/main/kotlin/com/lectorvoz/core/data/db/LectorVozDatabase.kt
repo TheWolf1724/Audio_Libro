@@ -102,6 +102,10 @@ abstract class LectorVozDatabase : RoomDatabase() {
         fun build(context: Context): LectorVozDatabase =
             Room.databaseBuilder(context.applicationContext, LectorVozDatabase::class.java, NAME)
                 .addMigrations(*MIGRATIONS)
+                // Abrir una BD de esquema MAS NUEVO que el codigo (instalar un APK anterior, o
+                // restaurar una copia con allowBackup) haria crashear en bucle al arrancar. Mejor
+                // recrear la BD (se pierde biblioteca/progreso, recuperables) que un crash-loop.
+                .fallbackToDestructiveMigrationOnDowngrade()
                 .build()
     }
 }

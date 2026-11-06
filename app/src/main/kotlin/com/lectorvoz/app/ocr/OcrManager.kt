@@ -335,33 +335,47 @@ class OcrManager(
             return it
         }
         val key = (book.id shl 24) or index.toLong()
-        // Forzado por libro: marcar la clave para que apagar el OCR global no lo cancele (S2-1).
-        if (force) forcedKeys.add(key)
-        val job = inFlight.computeIfAbsent(key) {
-            scope.async(Dispatchers.IO, start = CoroutineStart.LAZY) {
-                try {
-                    // Si se desactivo el OCR entre el encolado y el arranque, no se instala ni usa el
-                    // modelo; salvo forzado por libro ([force]), peticion explicita del usuario (S2-1).
-                    if (!enabled.value && !force) return@async null
-                    mutableRecognizing.update { it + key }
-                    val r = recognizer.recognize(pdf, index, OcrEngine.languageFor(book.language), urgent)
-                    if (TtsConfig.diagnostics && urgent) TtsConfig.diag("OCR pag=$index origen=reconocido chars=${r?.text?.length ?: -1} forzado=$force")
-                    if (r != null) {
-                        store.write(book.id, index, r)
-                        pdf.invalidateText(index)
-                        // Quitado de la biblioteca mientras se reconocia: no dejar restos.
-                        if (library.get(book.id) == null) store.deleteBook(book.id)
+        // La cola `inFlight` deduplica por (libro,pagina) sin distinguir la INSTANCIA de PdfBook: el
+        // primer llamante captura SU instancia en la corrutina compartida. Si esa instancia (p.ej. el
+        // lease efimero del OCR de fondo) se cierra a mitad del render, el reconocimiento falla (null)
+        // para TODOS los que esperan esa clave, aunque la pagina sea legible. Por eso, si el trabajo
+        // compartido devuelve null, se reintenta UNA vez con la instancia de ESTE llamante (viva
+        // mientras dure su sesion). En el caso normal (resultado != null) no hay reintento ni coste.
+        repeat(2) { attempt ->
+            // Forzado por libro: marcar la clave para que apagar el OCR global no lo cancele (S2-1).
+            if (force) forcedKeys.add(key)
+            val job = inFlight.computeIfAbsent(key) {
+                scope.async(Dispatchers.IO, start = CoroutineStart.LAZY) {
+                    try {
+                        // Si se desactivo el OCR entre el encolado y el arranque, no se instala ni usa
+                        // el modelo; salvo forzado por libro ([force]), peticion explicita (S2-1).
+                        if (!enabled.value && !force) return@async null
+                        mutableRecognizing.update { it + key }
+                        val r = recognizer.recognize(pdf, index, OcrEngine.languageFor(book.language), urgent)
+                        if (TtsConfig.diagnostics && urgent) TtsConfig.diag("OCR pag=$index origen=reconocido chars=${r?.text?.length ?: -1} forzado=$force")
+                        if (r != null) {
+                            store.write(book.id, index, r)
+                            pdf.invalidateText(index)
+                            // Quitado de la biblioteca mientras se reconocia: no dejar restos.
+                            if (library.get(book.id) == null) store.deleteBook(book.id)
+                        }
+                        r
+                    } finally {
+                        inFlight.remove(key)
+                        forcedKeys.remove(key)
+                        mutableRecognizing.update { it - key }
                     }
-                    r
-                } finally {
-                    inFlight.remove(key)
-                    forcedKeys.remove(key)
-                    mutableRecognizing.update { it - key }
                 }
             }
+            job.start()
+            val r = job.await()
+            if (r != null || attempt == 1) return r
+            // null en el primer intento: si otro llamante la termino y quedo en disco, usala.
+            withContext(Dispatchers.IO) { store.read(book.id, index) }?.let { return it }
+            // Descarta el trabajo fallido (solo si sigue siendo este) y reintenta con la propia instancia.
+            inFlight.remove(key, job)
         }
-        job.start()
-        return job.await()
+        return null
     }
 
     /**

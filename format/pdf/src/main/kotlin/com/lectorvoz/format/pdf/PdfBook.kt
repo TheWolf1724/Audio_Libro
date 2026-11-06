@@ -275,17 +275,18 @@ class PdfBook internal constructor(
             synchronized(textCache) {
                 // Otra corrutina pudo cachear ya la version definitiva mientras se calculaba.
                 textCache[index]?.let { if (!shouldRemixCached(index, wait, it.rawText)) return@run it }
-                // M1: si el flag de OCR cambio tras decidir el OCR (el setter se intercalo entre
-                // el calculo y esta insercion) y la pagina que ibamos a cachear no trae OCR
-                // aunque ahora se exija, no se cachea: seria incoherente (quedaria sin OCR hasta
-                // invalidarla). Se devuelve provisional y la siguiente peticion la recalcula.
-                if (gen != forceFallbackGen && forceFallback && recognized == null && fb != null) {
+                // M1 (ampliada, ambos sentidos): si forceFallback cambio tras decidir el OCR (el
+                // setter se intercalo entre el calculo y esta insercion), la decision con la que
+                // calculamos quedo OBSOLETA y el setter ya limpio la cache. Cachear ahora seria
+                // incoherente en cualquier direccion: recien APAGADO cachearia OCR en una pagina con
+                // texto propio; recien ENCENDIDO cachearia texto propio donde se exige OCR. No se
+                // cachea: provisional, la siguiente peticion recalcula con la decision ya asentada.
+                if (gen != forceFallbackGen) {
                     return if (cleaner === PageTextCleaner.Identity) page else page.withCleaner(cleaner)
                 }
-                // Guarda de carrera del mixto (analoga a M1): si el proveedor desaparecio o cambio,
-                // o forceFallback cambio, entre decidir el mixto y cachear, no se cachea una entrada
-                // mixta incoherente; se devuelve provisional y la siguiente peticion la recalcula.
-                if (isMixed && (mixedProvider !== provider || gen != forceFallbackGen)) {
+                // Guarda de carrera del mixto: si el proveedor desaparecio o cambio entre decidir el
+                // mixto y cachear, no se cachea una entrada mixta incoherente; se devuelve provisional.
+                if (isMixed && mixedProvider !== provider) {
                     return if (cleaner === PageTextCleaner.Identity) page else page.withCleaner(cleaner)
                 }
                 page.also {

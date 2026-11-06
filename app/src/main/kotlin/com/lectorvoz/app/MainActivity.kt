@@ -184,7 +184,10 @@ class MainActivity : ComponentActivity() {
         @Volatile
         private var lastReaderSettings: ReaderSettings? = null
 
-        private const val INITIAL_SETTINGS_TIMEOUT_MS = 300L
+        // Lectura acotada en el hilo de UI solo en arranque en frio (sin ajustes cacheados). Se
+        // limita para no arriesgar jank/ANR con disco lento; si expira, se pinta con los de por
+        // defecto y los reales entran despues por el flujo reactivo (sin parpadeo perceptible).
+        private const val INITIAL_SETTINGS_TIMEOUT_MS = 150L
 
         /** El sistema la relanzo desde Recientes con el intent original. */
         fun launchedFromHistory(intent: Intent): Boolean =

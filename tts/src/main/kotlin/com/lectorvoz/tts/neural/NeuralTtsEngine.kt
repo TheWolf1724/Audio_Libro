@@ -34,6 +34,7 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
@@ -352,7 +353,11 @@ class NeuralTtsEngine(
     override fun release() {
         cancelIdleRelease()
         ownerScope.coroutineContext.cancelChildren()
+        // El unload va con NonCancellable (parent propio, no el de ownerScope): corre igual tras
+        // cancelar el scope. Se cancela el SupervisorJob porque la instancia no se reutiliza tras
+        // release(): asi no queda un Job vacio vivo hasta el GC.
         ownerScope.launch(synthDispatcher + NonCancellable) { unload() }
+        ownerScope.cancel()
     }
 
     // --- Usos y prioridad ---

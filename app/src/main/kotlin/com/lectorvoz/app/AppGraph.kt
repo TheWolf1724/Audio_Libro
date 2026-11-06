@@ -64,6 +64,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import java.util.concurrent.CopyOnWriteArraySet
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -173,6 +174,9 @@ class AppGraph(
     fun start() {
         if (started) return
         started = true
+        // Limpia sesiones de instalacion huerfanas de ejecuciones anteriores (antes de cualquier
+        // instalacion nueva de esta sesion, asi que no toca ninguna en curso).
+        appScope.launch(Dispatchers.IO) { runCatching { installer.cleanupStaleSessions() } }
         appScope.launch {
             playback.bookmarkRequests.collect { loc ->
                 // Un fallo (libro borrado mientras sonaba) no debe matar este recolector.

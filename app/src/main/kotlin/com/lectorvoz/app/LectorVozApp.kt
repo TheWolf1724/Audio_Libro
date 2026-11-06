@@ -22,15 +22,22 @@ class LectorVozApp : Application() {
             CoroutineExceptionHandler { _, e -> Log.e("LectorVozApp", "Error en segundo plano", e) },
     )
 
+    @Volatile
     private var created: AppGraph? = null
 
-    /** Grafo de dependencias (se crea al pedirlo por primera vez). */
+    /**
+     * Grafo de dependencias (se crea al pedirlo por primera vez). Doble-check sincronizado: aunque
+     * casi todo accede desde el hilo principal, `resumeBook`/`keepModelWarm` pueden invocarse desde
+     * un hilo del servicio; sin esto se podrian crear DOS grafos (dos Room, dos OcrManager...).
+     */
     val graph: AppGraph
-        get() = created ?: AppGraph.create(this, appScope).also { created = it; it.start() }
+        get() = created ?: synchronized(this) {
+            created ?: AppGraph.create(this, appScope).also { created = it; it.start() }
+        }
 
     /** Sustituye el grafo (pruebas con repositorios falsos). */
     fun replaceGraph(g: AppGraph) {
-        created = g
+        synchronized(this) { created = g }
     }
 
     @androidx.annotation.OptIn(UnstableApi::class)

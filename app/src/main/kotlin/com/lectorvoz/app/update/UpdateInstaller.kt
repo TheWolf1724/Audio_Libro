@@ -140,6 +140,19 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
         runCatching { context.packageManager.packageInstaller.abandonSession(id) }
     }
 
+    /**
+     * Abandona las sesiones de instalacion PROPIAS que quedaron de un proceso anterior (si el
+     * usuario descarto la notificacion de confirmar, o el proceso murio a mitad): quedan abiertas en
+     * el sistema hasta que Android las recicle. Se llama al arrancar, antes de cualquier instalacion
+     * nueva de esta ejecucion, asi que nunca descarta una sesion en curso de este proceso.
+     */
+    fun cleanupStaleSessions() {
+        runCatching {
+            val pi = context.packageManager.packageInstaller
+            for (s in pi.mySessions) runCatching { pi.abandonSession(s.sessionId) }
+        }
+    }
+
     /** Abre la confirmacion de Android desde la pantalla (la app en primer plano). */
     fun confirm(activity: android.app.Activity) {
         val st = mutable.value as? InstallState.NeedsConfirmation ?: return

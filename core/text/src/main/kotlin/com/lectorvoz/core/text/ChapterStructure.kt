@@ -137,7 +137,13 @@ internal class ChapterStructure(
                 para.type = ParaType.SKIP // cuerpo de la nota: no se lee en su sitio
                 local[href] = text.substring(start, para.end).trim()
             }
-            return ChapterStructure(text, paras, calls, italics.toIntArray(), local)
+            // Los pares [inicio,fin] de cursiva se consumen con busqueda binaria (lowerBoundPairs),
+            // que exige inicios ASCENDENTES. El productor actual (XhtmlConverter) ya ordena los spans
+            // por inicio, pero se ordena aqui tambien para no depender de ese contrato (blindaje).
+            val italicPairs = italics.chunked(2).filter { it.size == 2 }.sortedBy { it[0] }
+            val italicsSorted = IntArray(italicPairs.size * 2)
+            for ((i, p) in italicPairs.withIndex()) { italicsSorted[i * 2] = p[0]; italicsSorted[i * 2 + 1] = p[1] }
+            return ChapterStructure(text, paras, calls, italicsSorted, local)
         }
 
         /**
