@@ -53,6 +53,27 @@ class PdfBookMixedTest {
     }
 
     @Test
+    fun mixtoNoListo_sirveProvisionalSinCachearYReintenta() = runTest {
+        val backend = Backend()
+        val book = PdfBook.create(backend, Dispatchers.Unconfined, "x")
+        var calls = 0
+        // 1a llamada: el OCR aun no esta listo (lanza MixedTextNotReady); 2a: ya fusiona.
+        book.mixedProvider = MixedTextProvider { _, _, native, _ ->
+            calls++
+            if (calls == 1) throw MixedTextNotReady() else raw(native.rawText + MIX_SUFFIX)
+        }
+        // Provisional: se sirve el texto propio, NO se cachea y se marca textProvisional.
+        assertThat(book.pageText(0).rawText).isEqualTo(OWN)
+        assertThat(book.textProvisional(0)).isTrue()
+        assertThat(book.cachedPageText(0)).isNull()
+        // La siguiente peticion reintenta y ya fusiona; deja de ser provisional y se cachea.
+        assertThat(book.pageText(0).rawText).isEqualTo(OWN + MIX_SUFFIX)
+        assertThat(book.textProvisional(0)).isFalse()
+        assertThat(book.cachedPageText(0)?.rawText).isEqualTo(OWN + MIX_SUFFIX)
+        assertThat(calls).isEqualTo(2)
+    }
+
+    @Test
     fun proveedorFusionaConEsperaYSeCachea() = runTest {
         val backend = Backend()
         val book = PdfBook.create(backend, Dispatchers.Unconfined, "x")

@@ -82,6 +82,14 @@ class PdfBook internal constructor(
     private val mixedPages = HashSet<Int>()
 
     /**
+     * Paginas cuyo texto se devolvio PROVISIONAL porque el OCR del mixto aun no estaba listo
+     * (modelo sin cargar); no se cacheo, se reintenta. La voz consulta [textProvisional] para no
+     * congelar en su cache una pagina a la que todavia le falta recuperar texto (mismo candado
+     * que la cache).
+     */
+    private val mixedProvisional = HashSet<Int>()
+
+    /**
      * Fuerza el OCR ([textFallback]) aunque la pagina traiga su capa de texto: para PDF con
      * texto incompleto (p. ej. versalitas que pdfium no extrae y la voz se saltaria). Al
      * cambiar se olvida el texto ya extraido para volver a obtenerlo por OCR.
@@ -98,6 +106,7 @@ class PdfBook internal constructor(
                 fallbackPages.clear()
                 failedPages.clear()
                 mixedPages.clear()
+                mixedProvisional.clear()
             }
         }
 
@@ -232,18 +241,31 @@ class PdfBook internal constructor(
             // paginas (una peticion posterior con espera lo recomputa, ver shouldRemixCached).
             // Captura del proveedor para la guarda de carrera.
             val provider = mixedProvider
+            var mixedNotReady = false
             val merged = if (!needsFallback && wait && provider != null) {
                 try {
                     provider.mixedPageText(this, index, own, true)
                         ?.let { PdfPageText(index, it.text, it.boxes, own.pageSize) }
                 } catch (e: CancellationException) {
                     throw e
+                } catch (e: MixedTextNotReady) {
+                    // El OCR del mixto aun no estaba listo (modelo sin cargar): NO es "nada que
+                    // recuperar", es "todavia no". Provisional, se reintenta.
+                    mixedNotReady = true
+                    null
                 } catch (e: Exception) {
-                    // Cualquier fallo del mixto: tratar como "sin mixto" (usar el texto propio).
+                    // Cualquier otro fallo del mixto: tratar como "sin mixto" (usar el texto propio).
                     null
                 }
             } else {
                 null
+            }
+            // Mixto no listo: devolver el texto propio SIN cachear (ni marcar mixedPages) para que la
+            // siguiente peticion con espera reintente la fusion. Se recuerda como provisional para que
+            // la voz tampoco congele esta version en su cache (ver [textProvisional]).
+            if (mixedNotReady) {
+                synchronized(textCache) { mixedProvisional += index }
+                return if (cleaner === PageTextCleaner.Identity) own else own.withCleaner(cleaner)
             }
             val page = recognized ?: merged ?: own
             val isFallback = recognized != null
@@ -268,6 +290,7 @@ class PdfBook internal constructor(
                 }
                 page.also {
                     textCache[index] = it
+                    mixedProvisional -= index // ya hay version definitiva cacheada
                     if (isFallback) fallbackPages += index else fallbackPages -= index
                     if (isMixed) mixedPages += index else mixedPages -= index
                     // Si el texto crudo cambio (propio <-> fusionado/OCR), su version limpia
@@ -316,7 +339,7 @@ class PdfBook internal constructor(
 
     /** Olvida el texto cacheado de [index] (el OCR acaba de reconocerla). */
     fun invalidateText(index: Int) {
-        synchronized(textCache) { textCache.remove(index); cleanedCache.remove(index); fallbackPages -= index; failedPages -= index; mixedPages -= index }
+        synchronized(textCache) { textCache.remove(index); cleanedCache.remove(index); fallbackPages -= index; failedPages -= index; mixedPages -= index; mixedProvisional -= index }
     }
 
     /**
@@ -325,9 +348,15 @@ class PdfBook internal constructor(
      */
     fun textFailed(index: Int): Boolean = synchronized(textCache) { index in failedPages }
 
+    /**
+     * true si el ultimo texto servido de [index] fue PROVISIONAL (el mixto aun no estaba listo):
+     * la voz no debe congelarlo en su cache, debe volver a pedirlo para fusionar cuando el OCR este.
+     */
+    fun textProvisional(index: Int): Boolean = synchronized(textCache) { index in mixedProvisional }
+
     /** Suelta el texto cacheado (respuesta a falta de memoria). */
     fun trimMemory() {
-        synchronized(textCache) { textCache.clear(); cleanedCache.clear(); fallbackPages.clear(); mixedPages.clear() }
+        synchronized(textCache) { textCache.clear(); cleanedCache.clear(); fallbackPages.clear(); mixedPages.clear(); mixedProvisional.clear() }
     }
 
     /** Fuente de texto para la voz (una "pagina" = un capitulo). */
@@ -439,6 +468,17 @@ fun interface MixedTextProvider {
      * Texto fusionado nativo+OCR de la pagina [index] de [book], o nulo si no hay nada que
      * anadir / no procede (entonces se usa [native] tal cual). [wait] permite tardar
      * (reconocer las zonas); el seam solo lo llama con espera.
+     *
+     * Puede lanzar [MixedTextNotReady] para indicar que el OCR aun no estaba listo (p. ej. el
+     * modelo no se pudo cargar todavia): NO es "nada que recuperar", sino "todavia no", y el seam
+     * devuelve el texto propio SIN cachearlo para reintentar la fusion mas adelante.
      */
     suspend fun mixedPageText(book: PdfBook, index: Int, native: PdfPageText, wait: Boolean): RawPageText?
 }
+
+/**
+ * El modo MIXTO no pudo fusionar porque el OCR aun no estaba listo (modelo sin cargar). Distingue
+ * ese caso de "no hay nada que recuperar" (null): con esto el texto propio se sirve provisional,
+ * sin cachear, y se reintenta la recuperacion en la siguiente peticion. Ver [PdfBook.textProvisional].
+ */
+class MixedTextNotReady : Exception()

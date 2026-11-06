@@ -46,6 +46,13 @@ sealed interface BookContent {
     /** Texto plano del capitulo/pagina en la escala de `Locator.offset`. */
     suspend fun plainText(chapter: Int): String
 
+    /**
+     * true si el texto de [chapter] servido en la ultima [plainText] fue PROVISIONAL (el OCR del
+     * mixto aun no estaba listo): no debe guardarse en la cache de troceo, hay que reconstruirlo
+     * cuando el OCR este. Por defecto false (EPUB y PDF ya definitivos).
+     */
+    fun provisional(chapter: Int): Boolean = false
+
     class Epub(val book: EpubBook) : BookContent {
         override val format get() = BookFormat.EPUB
         override val chapterCount get() = book.chapterCount
@@ -63,6 +70,8 @@ sealed interface BookContent {
             if (book.textFailed(chapter)) throw PdfException.Unreadable("no se pudo reconocer el texto de la pagina ${chapter + 1}")
             return cleaner.flowFor(chapter, raw).sameLength
         }
+
+        override fun provisional(chapter: Int): Boolean = book.textProvisional(chapter)
     }
 }
 
@@ -160,7 +169,10 @@ class UtteranceProviderImpl(
                 TtsConfig.diag("  [$i] id=${u.id} off=${u.range.start.offset} '${TtsConfig.text40(u.displayText)}'")
             }
         }
-        mutex.withLock { if (generation == gen) cache[index] = list }
+        // No guardar un capitulo PROVISIONAL (el OCR del mixto aun no estaba listo): se reconstruye
+        // en la siguiente peticion, cuando el modelo este y la fusion traiga el texto recuperado.
+        val provisional = content.provisional(index)
+        mutex.withLock { if (generation == gen && !provisional) cache[index] = list }
         return list
     }
 

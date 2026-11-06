@@ -14,6 +14,7 @@ import com.lectorvoz.core.model.BookFormat
 import com.lectorvoz.core.text.GlyphClass
 import com.lectorvoz.core.text.MissingTextDetector
 import com.lectorvoz.core.text.PageTextMerger
+import com.lectorvoz.format.pdf.MixedTextNotReady
 import com.lectorvoz.format.pdf.MixedTextProvider
 import com.lectorvoz.format.pdf.PageTextFallback
 import com.lectorvoz.format.pdf.PdfBook
@@ -231,17 +232,24 @@ class OcrManager(
         // Filtro de CONFIANZA: solo se inserta lo que el OCR reconocio como texto fiable; las
         // zonas que no son texto (figuras, casillas, lineas) vuelven vacias/con baja confianza y
         // se descartan (asi los falsos positivos del detector son inofensivos).
+        // El detector no llego a correr = el modelo OCR no estaba listo (no se pudo cargar aun).
+        // No es "nada que recuperar": se senala PROVISIONAL para que el seam sirva el texto propio
+        // sin cachearlo y reintente la fusion cuando el modelo este (no congelar una pagina a la que
+        // le falta la versalita). No se memoiza (solo se memoiza si detectRan).
+        if (!detectRan) {
+            if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index detector NO corrio (modelo OCR no listo) -> provisional")
+            throw MixedTextNotReady()
+        }
         if (TtsConfig.diagnostics) {
-            if (!detectRan) TtsConfig.diag("MIXTO pag=$index detector NO corrio (modelo OCR no listo)")
             for (r in results) TtsConfig.diag("MIXTO pag=$index ocr conf=${r.meanConfidence.roundToInt()} words=${r.wordCount} fiable=${confident(r)} region[L${r.region[0].roundToInt()} T${r.region[1].roundToInt()} R${r.region[2].roundToInt()} B${r.region[3].roundToInt()}] '${TtsConfig.text40(r.text)}'")
         }
         val lines = results.filter { confident(it) }.map { r ->
             PageTextMerger.OcrLine(r.text, r.charBoxes, MissingTextDetector.Region(r.region[0], r.region[1], r.region[2], r.region[3]))
         }
         if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO pag=$index -> insertadas=${lines.size} (de $regionCount regiones)")
-        // Memoiza el resultado (vacio o no) SOLO si el detector corrio (modelo listo); si no estaba
-        // listo se reintenta luego. Evita re-renderizar en cada resaltado paginas sin nada fiable.
-        if (detectRan) synchronized(recovered) { recovered[key] = lines }
+        // Aqui el detector SI corrio (si no, se lanzo MixedTextNotReady arriba): se memoiza el
+        // resultado (vacio = nada que recuperar) para no re-renderizar en cada resaltado.
+        synchronized(recovered) { recovered[key] = lines }
         mergeOrNull(native.rawText, fullBoxes, lines)
     }
 
