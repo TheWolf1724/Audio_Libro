@@ -1,14 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  Copia de seguridad y traspaso entre dispositivos (Android 12+). Se guardan la base de datos
-  (biblioteca, progreso, marcadores, diccionario, estadisticas) y los ajustes (DataStore).
-  Se excluyen las copias de los libros y las portadas: pesan mucho (la copia automatica se
-  omite entera al pasar de 25 MB) y son del usuario; tras restaurar se vuelven a importar.
+  Copia de seguridad y traspaso entre dispositivos (Android 12+).
+  PRIVACIDAD: la base de datos (biblioteca, progreso, marcadores, diccionario personal,
+  estadisticas) NO se sube a la nube (cloud-backup) para no sacar del dispositivo los datos de
+  lectura del usuario; SI se conserva en el traspaso LOCAL movil-a-movil (device-transfer), que no
+  pasa por servidores. Los ajustes (DataStore) si van en ambos. Las copias de los libros y las
+  portadas se excluyen en los dos (pesan mucho y se reimportan tras restaurar).
 -->
 <data-extraction-rules>
     <cloud-backup>
         <exclude domain="file" path="libros/" />
         <exclude domain="file" path="portadas/" />
+        <exclude domain="database" path="lectorvoz.db" />
+        <exclude domain="database" path="lectorvoz.db-wal" />
+        <exclude domain="database" path="lectorvoz.db-shm" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="file" path="libros/" />

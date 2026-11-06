@@ -12,6 +12,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- La descarga sigue si se sale de la app (servicio en primer plano mientras dura). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <!-- Pedir al usuario que exima la app del ahorro de bateria, para que el sistema no corte la
+         lectura en voz alta con la pantalla apagada (dialogo directo desde Ajustes > Permisos). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <application
         android:name=".LectorVozApp"
@@ -25,6 +28,10 @@
         android:enableOnBackInvokedCallback="true"
         android:theme="@style/Theme.LectorVoz"
         tools:targetApi="33">
+
+        <!-- Permite medir el arranque/jank (p.ej. para afinar el baseline profile) en builds de
+             release con adb/Studio. No afecta a usuarios. API 29+. -->
+        <profileable android:shell="true" tools:targetApi="29" />
 
         <activity
             android:name=".MainActivity"

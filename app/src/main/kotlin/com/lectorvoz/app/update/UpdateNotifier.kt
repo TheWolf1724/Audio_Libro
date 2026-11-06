@@ -167,6 +167,20 @@ class UpdateDownloadService : Service() {
         super.onDestroy()
     }
 
+    /**
+     * Android 15+ (targetSdk 35+): un FGS dataSync tiene un tope de tiempo; al alcanzarlo el sistema
+     * llama aqui y, si no se para pronto, mata el servicio y registra ANR. Una descarga de APK no se
+     * acerca a ese tope, pero se para por si acaso (la descarga ya no cuenta con primer plano).
+     */
+    override fun onTimeout(startId: Int) {
+        Log.w("UpdateDownloadService", "FGS dataSync agoto su tiempo; parando")
+        stop()
+    }
+
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        onTimeout(startId)
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val graph = (application as LectorVozApp).graph
         // Android exige startForeground tras startForegroundService aunque ya no haya nada que

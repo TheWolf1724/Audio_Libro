@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Copia automatica en Android 11 y anteriores: igual que data_extraction_rules.xml. -->
+<!-- Copia automatica en la nube (Android 11 y anteriores). PRIVACIDAD: no se suben los datos de
+     lectura (base de datos) ni las copias de libros/portadas; solo quedan los ajustes. -->
 <full-backup-content>
     <exclude domain="file" path="libros/" />
     <exclude domain="file" path="portadas/" />
+    <exclude domain="database" path="lectorvoz.db" />
+    <exclude domain="database" path="lectorvoz.db-wal" />
+    <exclude domain="database" path="lectorvoz.db-shm" />
 </full-backup-content>

@@ -19,7 +19,7 @@
 = SENTENCE|DIALOG|CHAPTER|es|Vámonos ya.
 
 > —¿Vienes? —Sí, ahora mismo —contestó Ana.
-= SENTENCE|DIALOG|SENTENCE|es|¿Vienes?
+= SENTENCE|DIALOG|VERSE|es|¿Vienes?
 = SENTENCE|DIALOG|CLAUSE|es|Sí, ahora mismo,
 = SENTENCE|NARRATOR|CHAPTER|es|contestó Ana.
 

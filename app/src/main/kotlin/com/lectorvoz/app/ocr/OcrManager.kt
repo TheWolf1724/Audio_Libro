@@ -496,7 +496,12 @@ class OcrManager(
         val limit = when {
             textual -> start + TEXTUAL_WINDOW
             book.finished -> start + FINISHED_WINDOW
-            else -> Int.MAX_VALUE
+            // Escaneado en curso: adelantar SOLO una ventana corta por delante del cursor (antes
+            // hasta el final del libro). Reconocer el libro entero mientras se escucha con la
+            // pantalla apagada disparaba CPU/bateria/calor por paginas que no se alcanzarian en
+            // horas. La voz va pocas paginas por delante, asi que con esta ventana no se queda sin
+            // texto; el resto se reconoce al avanzar. Igual con cargador o sin el (cuidar el calor).
+            else -> start + AHEAD_WINDOW
         }
         return if (count == null) limit else minOf(count, limit)
     }
@@ -603,6 +608,8 @@ class OcrManager(
         private const val RECOVERED_CACHE = 64
         private const val SAMPLE = 8
         private const val FINISHED_WINDOW = 10
+        /** Paginas por delante del cursor que se reconocen en un escaneado en curso (CPU/bateria/calor). */
+        private const val AHEAD_WINDOW = 10
         private const val BACK_JUMP = 3
         private const val TEXTUAL_WINDOW = 5
         private const val RECHECK = 16

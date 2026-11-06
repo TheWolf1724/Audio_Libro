@@ -7,6 +7,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -36,6 +37,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -44,6 +46,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
@@ -161,7 +164,11 @@ internal fun <T : PronunciationEntry?> entrySaver(): Saver<T, Any> = Saver(
 
 @Composable
 private fun Check(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth().clickable { onChange(!value) }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .toggleable(value = value, role = Role.Checkbox, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Checkbox(value, null)
         Text(label, modifier = Modifier.padding(start = 8.dp))
     }
@@ -398,23 +405,40 @@ fun AboutScreen(
             summary = "Guarda que frases lee la voz, para diagnosticar saltos. Activalo, reproduce la pagina y comparte el fichero.",
             tag = "app-diagnostico-lectura",
         )
+        var confirmShare by remember { mutableStateOf(false) }
         Button(
             onClick = {
-                val f = diagnosticsFile()
-                if (f == null) {
+                if (diagnosticsFile() == null) {
                     Toast.makeText(context, "Aun no hay diagnostico. Activa el registro y reproduce una pagina.", Toast.LENGTH_LONG).show()
-                    return@Button
+                } else {
+                    confirmShare = true
                 }
-                val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/plain"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(Intent.createChooser(send, "Compartir diagnostico"))
             },
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).heightIn(min = 48.dp).testTag("app-compartir-diagnostico"),
         ) { Text("Compartir diagnostico") }
+        if (confirmShare) {
+            AlertDialog(
+                onDismissRequest = { confirmShare = false },
+                title = { Text("Compartir diagnostico") },
+                // Aviso explicito del contenido antes de compartir: el fichero lleva FRAGMENTOS del
+                // texto del libro y el modelo/version del dispositivo. Evita adjuntarlo sin querer.
+                text = { Text("El fichero incluye fragmentos del texto del libro que estas leyendo y el modelo y version de tu dispositivo. Compartelo solo con quien de soporte.") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmShare = false
+                        val f = diagnosticsFile() ?: return@TextButton
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", f)
+                        val send = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_STREAM, uri)
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(send, "Compartir diagnostico"))
+                    }) { Text("Compartir") }
+                },
+                dismissButton = { TextButton(onClick = { confirmShare = false }) { Text("Cancelar") } },
+            )
+        }
         SectionHeader("Licencias")
         LICENSES.forEach { (name, license, asset) ->
             Column(

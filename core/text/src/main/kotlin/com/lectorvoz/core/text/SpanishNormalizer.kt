@@ -446,6 +446,12 @@ class SpanishNormalizer(
                     out.replace("menos ", i, i + 1)
                     return i + 1
                 }
+                // Rango numerico inline "10-15" / "2-3 veces": el guion entre dos cifras se lee " a "
+                // ("diez a quince", "dos a tres veces"). El rango de anos ya se trato arriba.
+                if (i > 0 && isAsciiDigit(s[i - 1])) {
+                    out.replace(" a ", i, i + 1)
+                    return i + 1
+                }
             }
             SYMBOL_WORDS[c]?.let { word ->
                 out.space(i)

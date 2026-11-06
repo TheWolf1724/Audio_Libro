@@ -100,9 +100,14 @@ class OcrManagerTest {
         assertThat(store.nativePages(1)).contains(4)
     }
 
-    /** Libro largo desde el principio: llega al final (antes volvia una y otra vez a la posicion). */
+    /**
+     * Libro largo: el OCR de fondo se adelanta SOLO una ventana corta por delante del cursor (10
+     * paginas), no hasta el final del libro. Asi no gasta CPU/bateria reconociendo paginas que no
+     * se alcanzaran en horas (sobre todo escuchando con la pantalla apagada). El cursor esta en la
+     * pagina 0; la 0 trae texto propio, asi que reconoce las paginas 1..9 y para.
+     */
     @Test
-    fun deFondoLlegaAlFinalDeUnLibroLargo() {
+    fun deFondoReconoceSoloLaVentanaPorDelante() {
         val b = pdfBook(book(1, opened = 5))
         val library = FakeLibraryRepository(listOf(b))
         val store = OcrStore(tmp.root)
@@ -111,8 +116,11 @@ class OcrManagerTest {
         m.start()
         m.setAppVisible(true)
         m.setReaderBook(1)
-        waitUntil { store.recognizedPages(1).size == 39 }
-        assertThat(recognized.map { it.first }).isEqualTo((1 until 40).toList())
+        waitUntil { store.recognizedPages(1).size >= 9 }
+        val rec = store.recognizedPages(1).sorted()
+        assertThat(rec).isEqualTo((1..9).toList())
+        // No reconoce las paginas lejanas del libro (fuera de la ventana).
+        assertThat(rec).doesNotContain(39)
     }
 
     /** Si el OCR falla, la pagina no se da por vacia (la voz la saltaria hasta acabar el libro). */

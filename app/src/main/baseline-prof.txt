@@ -1,0 +1,16 @@
+# Baseline Profile de LectorVoz (perfil de arranque).
+#
+# Reglas en formato HRF (Human Readable Format) que ART compila AOT al instalar, mejorando el
+# arranque en frio y reduciendo el jank inicial (Compose/Room/navegacion ya no se interpretan).
+# AGP lo empaqueta en el APK de release (assets/dexopt/baseline.prof) y androidx.profileinstaller
+# lo instala en el primer arranque.
+#
+# Al no haber un modulo :macrobenchmark que lo genere en un dispositivo (se descarto CI/automatizar),
+# se curan a mano todas las clases/metodos de los modulos propios, que son los del flujo
+# Biblioteca -> Lector -> Voz. Las librerias (Compose, AndroidX, Media3...) traen su propio baseline
+# profile. Si en el futuro se conecta el movil, un perfil generado con recorrido real seria mas fino.
+#
+# HSPL = clase+metodo con flags Hot/Startup/Post-startup+Layout; L = clase cargada en arranque.
+
+HSPLcom/lectorvoz/**->**(**)**
+Lcom/lectorvoz/**

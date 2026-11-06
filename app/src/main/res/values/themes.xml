@@ -2,7 +2,7 @@
 <resources>
     <!-- Tema de ventana minimo; los colores reales los pone Compose (Material 3). -->
     <style name="Theme.LectorVoz" parent="android:Theme.Material.Light.NoActionBar">
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- Barras transparentes las fija enableEdgeToEdge() en todas las versiones; los atributos
+             statusBarColor/navigationBarColor estan deprecados y son no-op en Android 15+. -->
     </style>
 </resources>

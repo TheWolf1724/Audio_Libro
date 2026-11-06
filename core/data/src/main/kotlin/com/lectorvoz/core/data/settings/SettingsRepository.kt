@@ -98,6 +98,8 @@ data class AppPrefs(
     val historyShowStarted: Boolean = true,
     val historyShowFinished: Boolean = true,
     val historyShowProgress: Boolean = true,
+    /** La pantalla de bienvenida (presentacion + permisos) ya se mostro: no repetirla. */
+    val onboardingDone: Boolean = false,
 )
 
 /** Ajustes persistentes de la app. Todos los valores salen ya saneados. */
@@ -400,6 +402,7 @@ class DataStoreSettingsRepository(
         val historyStarted = booleanPreferencesKey("app.historial.inicio")
         val historyFinished = booleanPreferencesKey("app.historial.fin")
         val historyProgress = booleanPreferencesKey("app.historial.progreso")
+        val onboardingDone = booleanPreferencesKey("app.bienvenida_hecha")
     }
 
     private fun readApp(p: Preferences): AppPrefs {
@@ -421,6 +424,7 @@ class DataStoreSettingsRepository(
             historyShowStarted = p[A.historyStarted] ?: d.historyShowStarted,
             historyShowFinished = p[A.historyFinished] ?: d.historyShowFinished,
             historyShowProgress = p[A.historyProgress] ?: d.historyShowProgress,
+            onboardingDone = p[A.onboardingDone] ?: d.onboardingDone,
         )
     }
 
@@ -441,6 +445,7 @@ class DataStoreSettingsRepository(
         p[A.historyStarted] = s.historyShowStarted
         p[A.historyFinished] = s.historyShowFinished
         p[A.historyProgress] = s.historyShowProgress
+        p[A.onboardingDone] = s.onboardingDone
     }
 
     // ------------------------------------------------------------------ por libro

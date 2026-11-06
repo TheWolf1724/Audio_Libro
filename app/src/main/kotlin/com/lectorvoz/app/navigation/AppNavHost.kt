@@ -32,6 +32,7 @@ import com.lectorvoz.app.ui.settings.DictionaryScreen
 import com.lectorvoz.app.ui.settings.DictionaryViewModel
 import com.lectorvoz.app.ui.settings.ExportScreen
 import com.lectorvoz.app.ui.settings.ExportViewModel
+import com.lectorvoz.app.ui.settings.PermissionsScreen
 import com.lectorvoz.app.ui.settings.ReadingSettingsContent
 import com.lectorvoz.app.ui.settings.SettingsHome
 import com.lectorvoz.app.ui.settings.SettingsRoutes
@@ -102,6 +103,7 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
             )
         }
         composable(Routes.SETTINGS) { SettingsHome(onNavigate = { nav.navigate(it) }, onBack = back) }
+        composable(SettingsRoutes.PERMISSIONS) { PermissionsScreen(onBack = back) }
         composable(SettingsRoutes.READING) {
             val vm = settingsVm(graph)
             val s by vm.state.collectAsStateWithLifecycle()

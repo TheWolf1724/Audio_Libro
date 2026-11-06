@@ -112,6 +112,10 @@ class ReaderController(
     private val renderDispatcher: CoroutineDispatcher = Dispatchers.Default.limitedParallelism(1)
 
     private val pool = BitmapPool(cacheBytes / 2)
+
+    /** Equipo de poca RAM: ahi las paginas opacas se dibujan en RGB_565 (mitad de memoria). */
+    private val lowRam =
+        (appContext.getSystemService(Context.ACTIVITY_SERVICE) as? android.app.ActivityManager)?.isLowRamDevice == true
     private val releaser = DeferredReleaser(sink = { pool.put(it) })
     private var releasePosted = false
     private val releaseRunnable = Runnable {
@@ -723,7 +727,8 @@ class ReaderController(
                 withContext(renderDispatcher) {
                     c.prepare(key)
                     val (w, h) = c.bitmapSize(key)
-                    val b = pool.get(w, h)
+                    val cfg = if (lowRam && c.opaqueConfigSafe()) Bitmap.Config.RGB_565 else Bitmap.Config.ARGB_8888
+                    val b = pool.get(w, h, cfg)
                     bmp = b
                     c.render(key, b, hl, footer)
                 }

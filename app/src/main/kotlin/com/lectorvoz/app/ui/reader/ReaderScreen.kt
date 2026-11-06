@@ -65,6 +65,10 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -279,6 +283,17 @@ private fun TopBar(
 @Composable
 private fun BottomBar(state: ReaderUiState, vm: ReaderViewModel, onOpenBook: (Long) -> Unit) {
     val colors = com.lectorvoz.app.ui.theme.LocalReadingColors.current
+    // Al empezar a escuchar, si faltan las notificaciones (Android 13+) se piden: sin ellas la voz
+    // suena pero quedan ocultos los controles de reproduccion y la pantalla de bloqueo. Se escuche
+    // conceda o no (la lectura no depende del permiso). Android ya no muestra el dialogo si se nego
+    // en firme, asi que no es un acoso. Es la re-solicitud "mas adelante" del onboarding.
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val listenLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.listen() }
+    fun startListening() {
+        val needNotif = android.os.Build.VERSION.SDK_INT >= 33 &&
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (needNotif) listenLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS) else vm.listen()
+    }
     Surface(color = colors.barBackground, contentColor = colors.barContent, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp)) {
             ProgressSlider(state, vm)
@@ -291,7 +306,7 @@ private fun BottomBar(state: ReaderUiState, vm: ReaderViewModel, onOpenBook: (Lo
             if (state.voiceOnThisBook) MiniPlayer(state, vm)
             else {
                 Button(
-                    onClick = { vm.listen() },
+                    onClick = { startListening() },
                     enabled = !state.loading && state.error == null,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).testTag("boton-escuchar"),
                 ) {
@@ -502,7 +517,11 @@ private fun TextActionDialog(action: TextAction, vm: ReaderViewModel) {
             text = {
                 Column {
                     OutlinedTextField(value = replacement, onValueChange = { replacement = it }, label = { Text("Pronunciacion") }, singleLine = true)
-                    Row(Modifier.fillMaxWidth().clickable { forBook = !forBook }.heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .toggleable(value = forBook, role = Role.Checkbox, onValueChange = { forBook = it }),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
                         androidx.compose.material3.Checkbox(checked = forBook, onCheckedChange = null)
                         Text("Solo en este libro", modifier = Modifier.padding(start = 8.dp))
                     }

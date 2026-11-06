@@ -140,7 +140,14 @@ class UtteranceBuilder(
         }
         // Puntos suspensivos: pausa mayor que la de una frase.
         for (p in pieces) {
-            if (p.pause == PauseKind.SENTENCE && p.synthetic == null && endsWithEllipsis(text, p.start, p.end)) p.pause = PauseKind.VERSE
+            // Puntos suspensivos y tambien PREGUNTA/EXCLAMACION: pausa algo mayor que una frase
+            // normal, para que la interrogacion/admiracion "respire" y se perciba como tal (la voz
+            // neuronal no admite control de tono; la pausa es la unica palanca de prosodia nuestra).
+            if (p.pause == PauseKind.SENTENCE && p.synthetic == null &&
+                (endsWithEllipsis(text, p.start, p.end) || endsWithQuestionOrBang(text, p.start, p.end))
+            ) {
+                p.pause = PauseKind.VERSE
+            }
         }
         if (pieces.isNotEmpty()) pieces.last().pause = PauseKind.CHAPTER
 
@@ -462,6 +469,13 @@ class UtteranceBuilder(
             var k = e - 1
             while (k > s && isCloser(text[k])) k--
             return text[k] == '…' || (k >= s + 2 && text[k] == '.' && text[k - 1] == '.' && text[k - 2] == '.')
+        }
+
+        /** true si la frase termina en '?' o '!' (saltando comillas/parentesis de cierre). */
+        private fun endsWithQuestionOrBang(text: String, s: Int, e: Int): Boolean {
+            var k = e - 1
+            while (k > s && isCloser(text[k])) k--
+            return text[k] == '?' || text[k] == '!'
         }
 
         /** Texto de la nota sin la referencia de vuelta inicial ("1.", "[1]", "↑"). */

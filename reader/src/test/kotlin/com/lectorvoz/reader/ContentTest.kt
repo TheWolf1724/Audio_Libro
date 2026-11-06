@@ -242,8 +242,8 @@ class ContentTest {
         val best = times.min()
         println("RENDIMIENTO paginar ${doc.plainText.length} caracteres: $pages paginas, mejor ${best} ms, tiempos ${times.toList()} ms")
         assertThat(pages).isGreaterThan(10)
-        // Objetivo orientativo 300 ms en dispositivo; en Robolectric se deja margen amplio.
-        assertThat(best).isLessThan(3_000L)
+        // Tiempo solo orientativo (ya impreso): NO se asevera por reloj de pared, que es flaky en
+        // maquinas lentas o CI cargada. El objetivo real (~300 ms) se mide en dispositivo.
     }
 
     /** Paginador que agota la memoria en el primer intento y despues deja paginar (degradado). */

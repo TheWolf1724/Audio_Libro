@@ -11,7 +11,9 @@ import com.lectorvoz.core.model.Utterance
 import com.lectorvoz.core.model.VoiceSettings
 import com.lectorvoz.tts.playback.TtsConfig
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -46,12 +48,15 @@ class SystemTtsEngine(
 
     override val type: TtsEngineType = TtsEngineType.SYSTEM
 
-    private var tts: TextToSpeech? = null
+    // @Volatile: ensureInit construye el TextToSpeech y enumera las voces en Dispatchers.Default
+    // (fuera del hilo principal, para no arriesgar jank/ANR), y estos campos se leen desde otras
+    // corrutinas (updateSettings, release); la visibilidad entre hilos debe estar garantizada.
+    @Volatile private var tts: TextToSpeech? = null
     @Volatile private var settings = VoiceSettings()
     @Volatile private var volume = 1f
-    private var voices: List<Voice> = emptyList()
-    private var appliedLang: String? = null
-    private var appliedUserVoice: String? = null
+    @Volatile private var voices: List<Voice> = emptyList()
+    @Volatile private var appliedLang: String? = null
+    @Volatile private var appliedUserVoice: String? = null
     private var generation = 0L
 
     override suspend fun prepare(settings: VoiceSettings) {
@@ -60,9 +65,13 @@ class SystemTtsEngine(
         t.setPitch(settings.pitch)
     }
 
-    /** Voces instaladas en el motor del sistema. */
-    suspend fun voices(): List<SystemVoice> = ensureInit().voices.orEmpty().map(::describe)
-        .sortedWith(compareBy({ it.locale.toLanguageTag() }, { it.name }))
+    /** Voces instaladas en el motor del sistema (enumeracion fuera del hilo principal). */
+    suspend fun voices(): List<SystemVoice> {
+        val t = ensureInit()
+        return withContext(Dispatchers.Default) {
+            t.voices.orEmpty().map(::describe).sortedWith(compareBy({ it.locale.toLanguageTag() }, { it.name }))
+        }
+    }
 
     override fun updateSettings(settings: VoiceSettings) {
         this.settings = settings
@@ -189,23 +198,29 @@ class SystemTtsEngine(
 
     private suspend fun ensureInit(): TextToSpeech {
         tts?.let { return it }
-        val ready = CompletableDeferred<Int>()
-        val created = TextToSpeech(appContext, { status -> ready.complete(status) }, enginePackage)
-        val status = withTimeoutOrNull(INIT_TIMEOUT_MS) { ready.await() }
-        if (status != TextToSpeech.SUCCESS) {
-            created.shutdown()
-            throw SpeechEngineException("No se pudo iniciar la voz del sistema (estado $status)")
+        // Construir el motor y enumerar las voces es lo mas caro y bloqueante; va en Default para no
+        // tocar el hilo principal (riesgo de jank/ANR). TextToSpeech es thread-safe; su uso posterior
+        // desde el hilo de lectura es correcto. Los campos tocados son @Volatile (visibilidad).
+        return withContext(Dispatchers.Default) {
+            tts?.let { return@withContext it }
+            val ready = CompletableDeferred<Int>()
+            val created = TextToSpeech(appContext, { status -> ready.complete(status) }, enginePackage)
+            val status = withTimeoutOrNull(INIT_TIMEOUT_MS) { ready.await() }
+            if (status != TextToSpeech.SUCCESS) {
+                created.shutdown()
+                throw SpeechEngineException("No se pudo iniciar la voz del sistema (estado $status)")
+            }
+            created.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_MEDIA)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build(),
+            )
+            voices = created.voices.orEmpty().toList()
+            tts = created
+            appliedLang = null
+            created
         }
-        created.setAudioAttributes(
-            AudioAttributes.Builder()
-                .setUsage(AudioAttributes.USAGE_MEDIA)
-                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                .build(),
-        )
-        voices = created.voices.orEmpty().toList()
-        tts = created
-        appliedLang = null
-        return created
     }
 
     private sealed interface Event {

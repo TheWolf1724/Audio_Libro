@@ -94,6 +94,10 @@ class PdfContent(
             if (cfg.scrollMode) 0 else (cfg.viewport.heightPx - footerReserve(cfg)).coerceAtLeast(1),
         )
 
+    // La pagina PDF sin recoloreado se dibuja opaca sobre blanco: RGB_565 no banda de forma
+    // perceptible (texto/figuras). Con recoloreado (modo oscuro del PDF) se mantiene ARGB_8888.
+    override fun opaqueConfigSafe(): Boolean = config?.pdfRecolor == false
+
     override fun bitmapSize(key: PageKey): Pair<Int, Int> {
         val cfg = requireConfig()
         val v = cfg.viewport

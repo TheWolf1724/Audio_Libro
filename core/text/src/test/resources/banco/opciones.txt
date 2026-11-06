@@ -1,7 +1,7 @@
 # Opciones: idioma forzado, tablas omitidas y anuncio de capitulo.
 @ readingLanguage=ENGLISH
 > Hola, ¿qué tal? Muy bien.
-= SENTENCE|NARRATOR|SENTENCE|en|Hola, ¿qué tal?
+= SENTENCE|NARRATOR|VERSE|en|Hola, ¿qué tal?
 = SENTENCE|NARRATOR|CHAPTER|en|Muy bien.
 
 @ readingLanguage=SPANISH

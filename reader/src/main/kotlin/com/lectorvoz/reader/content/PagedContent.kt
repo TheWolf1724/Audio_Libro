@@ -59,6 +59,14 @@ interface PagedContent : AutoCloseable {
     /** Tamano del bitmap de la pagina en pixeles. */
     fun bitmapSize(key: PageKey): Pair<Int, Int>
 
+    /**
+     * true si la pagina se dibuja OPACA y SIN recoloreado, de modo que un bitmap RGB_565 (mitad de
+     * memoria) no introduce bandeado perceptible. El controlador solo baja a RGB_565 cuando esto es
+     * true Y el dispositivo es de poca RAM (ActivityManager.isLowRamDevice); en equipos normales se
+     * mantiene ARGB_8888 para no tocar la calidad. Por defecto false (conservador).
+     */
+    fun opaqueConfigSafe(): Boolean = false
+
     /** Dibuja [key] en [bitmap] con [highlights]; [footer] es el texto del pie. */
     suspend fun render(key: PageKey, bitmap: Bitmap, highlights: Highlights, footer: String?)
 

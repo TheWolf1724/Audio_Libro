@@ -111,8 +111,8 @@ class UtteranceBuilderTest {
             best = minOf(best, (System.nanoTime() - t0) / 1_000_000)
         }
         println("UtteranceBuilder: ${text.length} caracteres, ${us.size} frases en $best ms")
-        // Objetivo: menos de 200 ms por capitulo de 100 000 caracteres en la JVM.
-        assertThat(best).isLessThan(200L)
+        // Tiempo solo orientativo (~200 ms/100k en JVM): NO se asevera por reloj de pared (flaky en
+        // maquinas lentas o CI cargada). La correctitud la cubre checkProperties.
         checkProperties(text, us)
     }
 

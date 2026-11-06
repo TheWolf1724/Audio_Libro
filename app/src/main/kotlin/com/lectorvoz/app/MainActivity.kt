@@ -9,10 +9,15 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -21,11 +26,14 @@ import androidx.navigation.compose.rememberNavController
 import com.lectorvoz.app.navigation.AppNavHost
 import com.lectorvoz.app.navigation.LocalAppGraph
 import com.lectorvoz.app.navigation.openReader
+import com.lectorvoz.app.ui.onboarding.OnboardingScreen
 import com.lectorvoz.app.ui.theme.LectorVozTheme
 import com.lectorvoz.core.model.ReaderSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -50,13 +58,23 @@ class MainActivity : ComponentActivity() {
         setContent {
             val reader by graph.settings.reader.collectAsStateWithLifecycle(initial)
             SideEffect { lastReaderSettings = reader }
+            // null mientras se lee el ajuste (1 frame con el fondo del tema, sin parpadeo molesto);
+            // false = primera apertura -> bienvenida; true = uso normal.
+            val onboarding: Flow<Boolean?> = graph.settings.app.map { it.onboardingDone }
+            val onboardingDone by onboarding.collectAsStateWithLifecycle(null)
             LectorVozTheme(themeMode = reader.theme, highContrast = reader.highContrast) {
-                CompositionLocalProvider(LocalAppGraph provides graph) {
-                    val nav = rememberNavController()
-                    LaunchedEffect(nav) {
-                        navRequests.receiveAsFlow().collect { id -> nav.openReader(id) }
+                when (onboardingDone) {
+                    null -> Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+                    false -> OnboardingScreen(onDone = {
+                        lifecycleScope.launch { graph.settings.updateApp { it.copy(onboardingDone = true) } }
+                    })
+                    else -> CompositionLocalProvider(LocalAppGraph provides graph) {
+                        val nav = rememberNavController()
+                        LaunchedEffect(nav) {
+                            navRequests.receiveAsFlow().collect { id -> nav.openReader(id) }
+                        }
+                        AppNavHost(graph, nav)
                     }
-                    AppNavHost(graph, nav)
                 }
             }
         }

@@ -29,15 +29,20 @@ object TextProgress {
     fun compute(position: Locator, chapterCount: Int, charCount: (Int) -> Int?): CharProgress {
         if (chapterCount <= 0) return CharProgress(0, 0, 0f, 0f, true)
         val ch = position.chapter.coerceIn(0, chapterCount - 1)
+        // Snapshot de las longitudes en UNA sola pasada: antes se llamaba a charCount(i) DOS veces
+        // por capitulo (suma + before/after) y cada llamada toma un lock; en un EPUB de ~300
+        // capitulos eran ~600 adquisiciones de cerrojo por cada frase leida, en el hilo principal.
+        val lens = arrayOfNulls<Int>(chapterCount)
         var knownSum = 0L
         var known = 0
         for (i in 0 until chapterCount) {
-            val c = charCount(i) ?: continue
-            knownSum += c; known++
+            val c = charCount(i)
+            lens[i] = c
+            if (c != null) { knownSum += c; known++ }
         }
         if (known == 0) return CharProgress(0, 0, 0f, 0f, false)
         val avg = knownSum.toDouble() / known
-        fun len(i: Int): Double = charCount(i)?.toDouble() ?: avg
+        fun len(i: Int): Double = lens[i]?.toDouble() ?: avg
         val chapterLen = len(ch)
         val offset = position.offset.toDouble().coerceIn(0.0, chapterLen)
         val chapterRemaining = (chapterLen - offset).toLong().coerceAtLeast(0)
