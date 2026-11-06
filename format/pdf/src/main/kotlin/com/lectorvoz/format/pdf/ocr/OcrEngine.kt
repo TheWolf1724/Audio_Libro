@@ -223,45 +223,12 @@ class OcrEngine private constructor(private val context: Context) {
         return out
     }
 
-    /** Mascara (true = cubierto por una caja nativa) para blanquear la tinta nativa en los recortes. */
-    private fun coverageMask(boxes: FloatArray?, w: Int, h: Int, scale: Float): BooleanArray? {
-        if (boxes == null || boxes.isEmpty()) return null
-        val cov = BooleanArray(w * h)
-        val pad = 1
-        var i = 0
-        val n = boxes.size - boxes.size % 4
-        while (i < n) {
-            val l = boxes[i]; val t = boxes[i + 1]; val r = boxes[i + 2]; val b = boxes[i + 3]
-            i += 4
-            if (r <= l || b <= t) continue
-            val xa = (l * scale).toInt().coerceIn(0, w) - pad
-            val xb = kotlin.math.ceil(r * scale).toInt().coerceIn(0, w) + pad
-            val ya = (t * scale).toInt().coerceIn(0, h) - pad
-            val yb = kotlin.math.ceil(b * scale).toInt().coerceIn(0, h) + pad
-            var yy = ya.coerceAtLeast(0)
-            val yEnd = yb.coerceAtMost(h)
-            val xStart = xa.coerceAtLeast(0)
-            val xEnd = xb.coerceAtMost(w)
-            while (yy < yEnd) {
-                val base = yy * w
-                var xx = xStart
-                while (xx < xEnd) { cov[base + xx] = true; xx++ }
-                yy++
-            }
-        }
-        return cov
-    }
-
     /** OCR de UN recorte [region] (puntos) sobre el gris de la pagina; null si no hay texto. */
     private fun recognizeCrop(tess: TessBaseAPI, gray: ByteArray, cov: BooleanArray?, w: Int, h: Int, scale: Float, region: FloatArray): OcrRegionResult? {
-        val margin = (2f * scale).roundToInt()
-        val x0 = ((region[0] * scale).roundToInt() - margin).coerceIn(0, w - 1)
-        val y0 = ((region[1] * scale).roundToInt() - margin).coerceIn(0, h - 1)
-        val x1 = ((region[2] * scale).roundToInt() + margin).coerceIn(x0 + 1, w)
-        val y1 = ((region[3] * scale).roundToInt() + margin).coerceIn(y0 + 1, h)
+        val bounds = cropBounds(region, w, h, scale) ?: return null
+        val x0 = bounds[0]; val y0 = bounds[1]; val x1 = bounds[2]; val y1 = bounds[3]
         val cw = x1 - x0
         val ch = y1 - y0
-        if (cw < 2 || ch < 2) return null
         val crop = ByteArray(cw * ch)
         for (y in 0 until ch) {
             val srcBase = (y0 + y) * w + x0
@@ -510,6 +477,50 @@ class OcrEngine private constructor(private val context: Context) {
         fun languageFor(bookLanguage: String?): String = when (bookLanguage?.lowercase()?.take(2)) {
             "en" -> "eng"
             else -> DEFAULT_LANGUAGE
+        }
+
+        /**
+         * Bordes en pixeles [x0, y0, x1, y1] del recorte de una [region] (en puntos) sobre una
+         * imagen [w]x[h] a [scale] px/pt, con un margen de ~2 pt y recortados a la imagen; null si
+         * el recorte queda demasiado pequeno (menos de 2 px de lado). Aritmetica pura y testable.
+         */
+        internal fun cropBounds(region: FloatArray, w: Int, h: Int, scale: Float): IntArray? {
+            val margin = (2f * scale).roundToInt()
+            val x0 = ((region[0] * scale).roundToInt() - margin).coerceIn(0, w - 1)
+            val y0 = ((region[1] * scale).roundToInt() - margin).coerceIn(0, h - 1)
+            val x1 = ((region[2] * scale).roundToInt() + margin).coerceIn(x0 + 1, w)
+            val y1 = ((region[3] * scale).roundToInt() + margin).coerceIn(y0 + 1, h)
+            if (x1 - x0 < 2 || y1 - y0 < 2) return null
+            return intArrayOf(x0, y0, x1, y1)
+        }
+
+        /** Mascara (true = cubierto por una caja nativa) para blanquear la tinta nativa en los recortes. */
+        internal fun coverageMask(boxes: FloatArray?, w: Int, h: Int, scale: Float): BooleanArray? {
+            if (boxes == null || boxes.isEmpty()) return null
+            val cov = BooleanArray(w * h)
+            val pad = 1
+            var i = 0
+            val n = boxes.size - boxes.size % 4
+            while (i < n) {
+                val l = boxes[i]; val t = boxes[i + 1]; val r = boxes[i + 2]; val b = boxes[i + 3]
+                i += 4
+                if (r <= l || b <= t) continue
+                val xa = (l * scale).toInt().coerceIn(0, w) - pad
+                val xb = kotlin.math.ceil(r * scale).toInt().coerceIn(0, w) + pad
+                val ya = (t * scale).toInt().coerceIn(0, h) - pad
+                val yb = kotlin.math.ceil(b * scale).toInt().coerceIn(0, h) + pad
+                var yy = ya.coerceAtLeast(0)
+                val yEnd = yb.coerceAtMost(h)
+                val xStart = xa.coerceAtLeast(0)
+                val xEnd = xb.coerceAtMost(w)
+                while (yy < yEnd) {
+                    val base = yy * w
+                    var xx = xStart
+                    while (xx < xEnd) { cov[base + xx] = true; xx++ }
+                    yy++
+                }
+            }
+            return cov
         }
     }
 }
