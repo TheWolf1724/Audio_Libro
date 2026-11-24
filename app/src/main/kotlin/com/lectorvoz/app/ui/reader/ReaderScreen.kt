@@ -157,6 +157,7 @@ fun ReaderScreen(
     LaunchedEffect(jumpOffer) {
         if (jumpOffer > 0) {
             val r = snackbar.showSnackbar("Has saltado a otra parte del libro", actionLabel = "Volver", duration = androidx.compose.material3.SnackbarDuration.Long)
+            vm.consumeJumpOffer() // ya mostrado: no reaparece al girar la pantalla
             if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) vm.jumpBack()
         }
     }
@@ -493,6 +494,9 @@ private fun BookmarkList(state: ReaderUiState, onGo: (com.lectorvoz.core.model.L
             items(state.bookmarks, key = { it.id }) { b ->
                 Row(Modifier.fillMaxWidth().clickable { onGo(b.locator) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
+                        val where = if (state.book?.format == com.lectorvoz.core.model.BookFormat.PDF) "Pagina ${b.locator.chapter + 1}"
+                        else (state.toc.lastOrNull { it.locator.chapter <= b.locator.chapter }?.title ?: "Capitulo ${b.locator.chapter + 1}")
+                        Text(where, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(b.excerpt, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
                         b.note?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }

@@ -131,12 +131,12 @@ class LibraryViewModel(
         if (uris.isEmpty()) return
         val job = viewModelScope.launch {
             local.update { it.copy(importing = it.importing + uris.size) }
-            val copy = settings.app.first().copyOnImport
             var ok = 0
             var dup = 0
             var processed = 0
             val failed = ArrayList<String>()
             try {
+                val copy = settings.app.first().copyOnImport
                 for (u in uris) {
                     try {
                         when (val r = library.import(u, copy)) {

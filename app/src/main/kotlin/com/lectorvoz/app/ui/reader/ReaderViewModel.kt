@@ -447,8 +447,20 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
      *  no en la posicion de lectura o de la voz. */
     fun addBookmarkAt(loc: Locator) = viewModelScope.launch { saveBookmark(loc, excerptAt(loc)) }
 
-    private suspend fun saveBookmark(loc: Locator, text: String?) {
-        graph.bookmarks.add(bookId, loc, text ?: "Pagina ${_state.value.pageInfo.pageInChapter + 1}")
+    private suspend fun saveBookmark(at: Locator, text: String?) {
+        // Un marcador cae siempre al inicio de su frase: marcar dos veces el mismo sitio (con o sin voz, o tras
+        // cambiar la fuente) no crea marcadores casi iguales.
+        val chapterText = chapterText(at.chapter)
+        val bounds = chapterText?.let { TextTools.sentenceBounds(it, at.offset) }
+        val loc = if (bounds != null) Locator(at.chapter, bounds.first) else at
+        val excerpt = if (bounds != null) excerptAt(loc) ?: text else text
+        if (_state.value.bookmarks.any { it.locator == loc }) {
+            _state.update { it.copy(message = "Ya estaba marcado") }
+            return
+        }
+        val label = if (_state.value.book?.format == com.lectorvoz.core.model.BookFormat.PDF) "Pagina ${loc.chapter + 1}"
+        else chapterTitleOf(_state.value.toc, loc.chapter) ?: "Capitulo ${loc.chapter + 1}"
+        graph.bookmarks.add(bookId, loc, excerpt ?: label)
         _state.update { it.copy(message = "Marcador anadido") }
     }
 
@@ -791,6 +803,8 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
             _state.update { it.copy(message = "Voz y velocidad guardadas para este libro") }
         }
     }
+
+    fun consumeJumpOffer() = _state.update { it.copy(jumpOffer = 0) }
 
     fun consumeMessage() = _state.update { it.copy(message = null) }
 
