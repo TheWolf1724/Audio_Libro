@@ -17,20 +17,45 @@ object TextTools {
     fun invalidPatterns(entries: List<PronunciationEntry>): Set<String> =
         dictionaryOf(entries).invalidRules.map { it.pattern }.toSet()
 
+    private val ABBREVIATIONS = setOf(
+        "sr", "sra", "srta", "dr", "dra", "prof", "ud", "uds", "vs", "cap", "pag", "pags", "av", "avda", "gral",
+        "dpto", "apdo", "ej", "tel", "pp", "vol", "num", "fig", "mr", "mrs",
+    )
+
+    /** true si en [i] termina una frase: signo de cierre, salvo un punto de abreviatura, decimal o inicial. */
+    private fun isTerminal(text: String, i: Int): Boolean {
+        val c = text[i]
+        if (c == '!' || c == '?' || c == '\u2026') return true
+        if (c != '.') return false
+        val next = text.getOrNull(i + 1)
+        if (next != null && next.isLetterOrDigit()) return false // 3.5, p.ej, www.web
+        var w = i
+        while (w > 0 && text[w - 1].isLetter()) w--
+        val word = text.substring(w, i)
+        if (word.lowercase() in ABBREVIATIONS) return false
+        // Inicial ("J. R. R. Tolkien"): una mayuscula suelta seguida de otra palabra con mayuscula.
+        if (word.length == 1 && word[0].isUpperCase()) {
+            var n = i + 1
+            while (n < text.length && text[n] == ' ') n++
+            if (n < text.length && text[n].isUpperCase()) return false
+        }
+        return true
+    }
+
     /**
      * Frase de [text] que contiene [offset]: desde el final de la anterior (. ! ? o salto de linea) hasta su
-     * propio punto final inclusive. Nula si ahi no hay texto.
+     * propio punto final inclusive; los puntos de abreviaturas ("Sr.", "p. ej."), decimales e iniciales no la
+     * cortan. Nula si ahi no hay texto.
      */
     fun sentenceBounds(text: String, offset: Int): IntRange? {
         if (text.isBlank()) return null
         val pos = offset.coerceIn(0, text.length - 1)
-        fun isEnd(c: Char) = c == '.' || c == '!' || c == '?' || c == '\u2026'
         var s = pos
-        while (s > 0 && text[s - 1] != '\n' && !(isEnd(text[s - 1]) && s - 1 != pos)) s--
+        while (s > 0 && text[s - 1] != '\n' && !(isTerminal(text, s - 1) && s - 1 != pos)) s--
         var e = pos
-        while (e < text.length && text[e] != '\n' && !isEnd(text[e])) e++
+        while (e < text.length && text[e] != '\n' && !isTerminal(text, e)) e++
         // incluye el signo final (y comillas o cierres que lo acompanan)
-        while (e < text.length && (isEnd(text[e]) || text[e] in "\"')\u00BB\u201D")) e++
+        while (e < text.length && (text[e] == '.' || text[e] == '!' || text[e] == '?' || text[e] == '\u2026' || text[e] in "\"')\u00BB\u201D")) e++
         while (s < e && text[s].isWhitespace()) s++
         while (e > s && text[e - 1].isWhitespace()) e--
         return if (e > s) s until e else null

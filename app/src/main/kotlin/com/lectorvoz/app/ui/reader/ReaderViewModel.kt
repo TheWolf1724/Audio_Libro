@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.lectorvoz.app.AppGraph
 import com.lectorvoz.app.books.OpenedBook
 import com.lectorvoz.app.books.SharedBooks
+import com.lectorvoz.app.integration.AnchorText
 import com.lectorvoz.app.integration.BookContent
 import com.lectorvoz.app.integration.BookForVoice
 import com.lectorvoz.app.integration.TextTools
@@ -86,6 +87,8 @@ data class ReaderUiState(
     val toc: List<TocItem> = emptyList(),
     val bookmarks: List<Bookmark> = emptyList(),
     val annotations: List<Annotation> = emptyList(),
+    /** Subrayados cuya cita ya no esta en el texto (cambio de OCR o de analizador): no se pintan. */
+    val orphanAnnotations: Set<Long> = emptySet(),
     val playback: VoiceUiState = VoiceUiState(),
     val sentence: String? = null,
     val search: SearchState = SearchState(),
@@ -248,9 +251,17 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         viewModelScope.launch { graph.settings.forceOcr(bookId).collect { applyForceOcr(it) } }
         viewModelScope.launch { graph.bookmarks.observe(bookId).collect { b -> _state.update { it.copy(bookmarks = b) } } }
         viewModelScope.launch {
-            graph.annotations.observe(bookId).collect { list ->
+            graph.annotations.observe(bookId).collectLatest { list ->
                 _state.update { it.copy(annotations = list) }
-                controller.setMarks(list.map { MarkRange(LocatorRange(Locator(it.chapter, it.start), Locator(it.chapter, it.end)), it.color) })
+                pushMarks(list, emptySet())
+                // Comprueba que cada subrayado sigue sobre su cita; si el texto cambio, lo reubica o lo marca huerfano.
+                val (fixed, orphans) = resolveAnchors(list)
+                if (fixed != list || orphans.isNotEmpty()) {
+                    _state.update { it.copy(annotations = fixed, orphanAnnotations = orphans) }
+                    pushMarks(fixed, orphans)
+                } else {
+                    _state.update { it.copy(orphanAnnotations = emptySet()) }
+                }
             }
         }
         viewModelScope.launch { controller.pageInfo.collect { p -> _state.update { it.copy(pageInfo = p) } } }
@@ -430,6 +441,74 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
 
     // ------------------------------------------------------------------ subrayados y notas
 
+    private fun pushMarks(list: List<Annotation>, orphans: Set<Long>) {
+        controller.setMarks(
+            list.filter { it.id !in orphans }
+                .map { MarkRange(LocatorRange(Locator(it.chapter, it.start), Locator(it.chapter, it.end)), it.color) },
+        )
+    }
+
+    /** Reubica cada subrayado sobre su cita en el texto actual; los que ya no aparecen quedan como huerfanos. */
+    private suspend fun resolveAnchors(list: List<Annotation>): Pair<List<Annotation>, Set<Long>> {
+        if (list.isEmpty()) return list to emptySet()
+        val orphans = HashSet<Long>()
+        val out = ArrayList<Annotation>(list.size)
+        for ((chapter, items) in list.groupBy { it.chapter }) {
+            val text = chapterText(chapter)
+            // Sin texto, o provisional (OCR sin terminar): no se juzga, se deja como esta.
+            if (text == null || auxBook()?.content?.provisional(chapter) == true) { out += items; continue }
+            val anchors = AnchorText(text)
+            for (a in items) {
+                val r = anchors.locate(a.quote, a.start, a.end, text)
+                when {
+                    r == null -> { orphans += a.id; out += a }
+                    r.first == a.start && r.last + 1 == a.end -> out += a
+                    else -> out += a.copy(start = r.first, end = r.last + 1)
+                }
+            }
+        }
+        return out.sortedWith(compareBy({ it.chapter }, { it.start })) to orphans
+    }
+
+    /** Amplia el subrayado [a] con la frase anterior o la siguiente (mas control que un subrayado de frase fija). */
+    fun extendAnnotation(a: Annotation, forward: Boolean) = viewModelScope.launch {
+        dismissTextAction()
+        val live = _state.value.annotations.firstOrNull { it.id == a.id } ?: return@launch
+        val text = chapterText(live.chapter) ?: return@launch
+        var s = live.start.coerceIn(0, text.length)
+        var e = live.end.coerceIn(s, text.length)
+        if (forward) {
+            var p = e
+            while (p < text.length && text[p].isWhitespace()) p++
+            val r = if (p < text.length) TextTools.sentenceBounds(text, p) else null
+            if (r != null) e = r.last + 1
+        } else {
+            var p = s - 1
+            while (p >= 0 && text[p].isWhitespace()) p--
+            val r = if (p >= 0) TextTools.sentenceBounds(text, p) else null
+            if (r != null) s = r.first
+        }
+        if (s == live.start && e == live.end) {
+            _state.update { it.copy(message = "No hay mas texto que anadir") }
+            return@launch
+        }
+        val quote = text.substring(s, e).replace('\uFFFC', ' ').replace(Regex("\\s+"), " ")
+        graph.annotations.update(live, live.color, live.note, s, e, quote)
+    }
+
+    /** Guarda los subrayados y notas en el fichero [uri] (Markdown). */
+    fun saveAnnotationsTo(uri: android.net.Uri) = viewModelScope.launch {
+        val md = annotationsMarkdown()
+        val ok = withContext(Dispatchers.IO) {
+            try {
+                graph.context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(md.toByteArray(Charsets.UTF_8)) } != null
+            } catch (e: Exception) {
+                false
+            }
+        }
+        _state.update { it.copy(message = if (ok) "Notas guardadas" else "No se pudo guardar el fichero") }
+    }
+
     /** Subraya en [color] la frase que contiene [loc] (pulsacion larga). */
     fun highlightSentenceAt(loc: Locator, color: Int) = viewModelScope.launch {
         dismissTextAction()
@@ -437,6 +516,11 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         val r = text?.let { TextTools.sentenceBounds(it, loc.offset) }
         if (text == null || r == null) {
             _state.update { it.copy(message = "No se pudo subrayar aqui") }
+            return@launch
+        }
+        if (auxBook()?.content?.provisional(loc.chapter) == true) {
+            // El texto de esta pagina aun cambiara cuando acabe el reconocimiento: el subrayado quedaria desplazado.
+            _state.update { it.copy(message = "Espera a que termine de reconocerse el texto de esta pagina para subrayar") }
             return@launch
         }
         // Si ya hay un subrayado casi igual (mismo tramo con un caracter de mas o de menos) se recolorea.

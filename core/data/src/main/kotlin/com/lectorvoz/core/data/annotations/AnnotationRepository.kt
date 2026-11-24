@@ -26,7 +26,15 @@ interface AnnotationRepository {
     /** Crea un subrayado de [start] a [end] (exclusivo) en [chapter]; devuelve su id. */
     suspend fun add(bookId: Long, chapter: Int, start: Int, end: Int, color: Int, quote: String, note: String? = null): Long
 
-    suspend fun update(annotation: Annotation, color: Int = annotation.color, note: String? = annotation.note)
+    /** Cambia color, nota y/o tramo (al ampliar o reubicar un subrayado). */
+    suspend fun update(
+        annotation: Annotation,
+        color: Int = annotation.color,
+        note: String? = annotation.note,
+        start: Int = annotation.start,
+        end: Int = annotation.end,
+        quote: String = annotation.quote,
+    )
 
     suspend fun delete(id: Long)
 }
@@ -56,16 +64,16 @@ class RoomAnnotationRepository(
         )
     }
 
-    override suspend fun update(annotation: Annotation, color: Int, note: String?) = dao.update(
+    override suspend fun update(annotation: Annotation, color: Int, note: String?, start: Int, end: Int, quote: String) = dao.update(
         AnnotationEntity(
             id = annotation.id,
             bookId = annotation.bookId,
             chapter = annotation.chapter,
-            startOffset = annotation.start,
-            endOffset = annotation.end,
+            startOffset = start,
+            endOffset = end.coerceAtLeast(start + 1),
             color = color.coerceIn(0, COLORS - 1),
             note = note?.takeIf { it.isNotBlank() },
-            quote = annotation.quote,
+            quote = quote.trim().take(MAX_QUOTE),
             createdAt = annotation.createdAt,
         ),
     )

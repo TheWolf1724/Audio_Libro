@@ -171,4 +171,21 @@ class AudioExporterTest {
         assertThat(opened).isFalse()
         assertThat(tmp.root.listFiles()!!.toList()).isEmpty()
     }
+
+    @Test
+    fun wavQueSuperaElLimiteFallaAlPrincipioYM4aNo() = runTest {
+        // Limite de 300 bytes: la primera frase (100 muestras + 50 de pausa = 300 bytes + cabecera) ya lo rebasa.
+        val ex = runCatching {
+            AudioExporter(FakeRenderer(), StandardTestDispatcher(testScheduler), wavLimitBytes = 300)
+                .exportChapterWavTo(book, 1, VoiceSettings(), tmp.root, {}, closeAfter = true, format = ExportFormat.WAV) { ByteArrayOutputStream() }
+        }.exceptionOrNull()
+        assertThat(ex).isInstanceOf(IllegalStateException::class.java)
+        assertThat(ex!!.message).contains("M4A")
+        assertThat(tmp.root.listFiles()!!.toList()).isEmpty()
+        // En M4A el limite no aplica.
+        val out = ByteArrayOutputStream()
+        AudioExporter(FakeRenderer(), StandardTestDispatcher(testScheduler), FakeEncoder(), wavLimitBytes = 300)
+            .exportChapterWavTo(book, 1, VoiceSettings(), tmp.root, {}, closeAfter = false, format = ExportFormat.M4A) { out }
+        assertThat(out.size()).isEqualTo(9)
+    }
 }

@@ -220,7 +220,7 @@ fun ReaderScreen(
                 ReaderPanel.APPEARANCE -> AppearancePanel(state.settings, state.overrides, systemDark, vm::updateReader, vm::updateOverrides, onPreview = vm::previewReader)
                 ReaderPanel.TOC -> TocList(state.toc, state.locator.chapter) { vm.goTo(it); panel = ReaderPanel.NONE }
                 ReaderPanel.BOOKMARKS -> BookmarkList(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteBookmark, onAdd = vm::addBookmark)
-                ReaderPanel.NOTES -> NotesPanel(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteAnnotation, onExport = vm::annotationsMarkdown)
+                ReaderPanel.NOTES -> NotesPanel(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteAnnotation, onExport = vm::annotationsMarkdown, onSave = vm::saveAnnotationsTo)
                 ReaderPanel.SEARCH -> SearchPanel(state.search, vm::search, { vm.openSearchResult(it); panel = ReaderPanel.NONE }, vm::clearSearch)
                 ReaderPanel.NONE -> Unit
             }
@@ -498,8 +498,14 @@ private fun NotesPanel(
     onGo: (com.lectorvoz.core.model.Locator) -> Unit,
     onDelete: (com.lectorvoz.core.data.annotations.Annotation) -> Unit,
     onExport: () -> String,
+    onSave: (android.net.Uri) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    var filter by rememberSaveable { mutableStateOf(-1) }
+    val save = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/markdown"),
+    ) { uri -> if (uri != null) onSave(uri) }
+    val shown = if (filter < 0) state.annotations else state.annotations.filter { it.color == filter }
     Column(Modifier.fillMaxWidth()) {
         TextButton(
             onClick = {
@@ -513,16 +519,37 @@ private fun NotesPanel(
             enabled = state.annotations.isNotEmpty(),
             modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp).testTag("notas-exportar"),
         ) { Text("Compartir todas (Markdown)") }
+        TextButton(
+            onClick = { save.launch("${state.book?.title.orEmpty()} - notas.md".replace('/', '-')) },
+            enabled = state.annotations.isNotEmpty(),
+            modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp).testTag("notas-guardar"),
+        ) { Text("Guardar en un fichero") }
+        if (state.annotations.isNotEmpty()) {
+            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                androidx.compose.material3.FilterChip(selected = filter < 0, onClick = { filter = -1 }, label = { Text("Todos") })
+                for (i in 0..3) {
+                    androidx.compose.material3.FilterChip(
+                        selected = filter == i,
+                        onClick = { filter = if (filter == i) -1 else i },
+                        label = { Text(listOf("Amarillo", "Verde", "Azul", "Rosa")[i]) },
+                        leadingIcon = { Box(Modifier.size(12.dp).background(androidx.compose.ui.graphics.Color(com.lectorvoz.reader.render.MarkColors.argb(i)), androidx.compose.foundation.shape.CircleShape)) },
+                    )
+                }
+            }
+        }
         if (state.annotations.isEmpty()) {
             Text("Sin subrayados. Manten pulsado sobre el texto para subrayar una frase.", modifier = Modifier.padding(24.dp))
         }
         LazyColumn(Modifier.testTag("notas")) {
-            items(state.annotations, key = { it.id }) { a ->
-                Row(Modifier.fillMaxWidth().clickable { onGo(com.lectorvoz.core.model.Locator(a.chapter, a.start)) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            items(shown, key = { it.id }) { a ->
+                Row(Modifier.fillMaxWidth().clickable { onGo(com.lectorvoz.core.model.Locator(a.chapter, if (a.id in state.orphanAnnotations) 0 else a.start)) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Box(Modifier.size(12.dp).background(androidx.compose.ui.graphics.Color(com.lectorvoz.reader.render.MarkColors.argb(a.color)), androidx.compose.foundation.shape.CircleShape))
                     Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
                         Text(a.quote, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
                         a.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+                        if (a.id in state.orphanAnnotations) {
+                            Text("El texto de este pasaje ha cambiado: ya no se puede marcar en la pagina.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                        }
                     }
                     AppIconButton(R.drawable.ic_delete, "Borrar subrayado", { onDelete(a) })
                 }
@@ -623,6 +650,10 @@ private fun TextActionDialog(action: TextAction, vm: ReaderViewModel) {
                     } else {
                         Text("Cambiar color", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
                         ColorChips(selected = ann.color, onPick = { vm.updateAnnotation(ann, it, ann.note) })
+                        Row {
+                            TextButton(onClick = { vm.extendAnnotation(ann, forward = false) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("ampliar-antes")) { Text("+ frase anterior") }
+                            TextButton(onClick = { vm.extendAnnotation(ann, forward = true) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("ampliar-despues")) { Text("+ frase siguiente") }
+                        }
                         TextButton(onClick = { noteText = ann.note.orEmpty(); noting = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("nota-editar")) {
                             Text(if (ann.note == null) "Anadir nota" else "Editar nota")
                         }

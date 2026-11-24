@@ -346,7 +346,8 @@ fun ExportScreen(vm: ExportViewModel, onBack: () -> Unit, onPickBook: (Book) -> 
         Text(
             "Se crea el audio con la voz y los ajustes actuales. Puede tardar horas en un libro largo; " +
                 "puedes salir de esta pantalla (hay una notificacion con el progreso). El libro completo se guarda como un fichero por parte " +
-                "en la carpeta que elijas; si se interrumpe, al volver a pulsar continua por donde iba.",
+                "en la carpeta que elijas; si se interrumpe, al volver a pulsar continua por donde iba. " +
+                "El WAV no admite partes de mas de unas 13 horas (4 GB): para libros muy largos usa M4A.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(16.dp),
         )

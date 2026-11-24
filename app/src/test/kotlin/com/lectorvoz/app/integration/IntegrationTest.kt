@@ -128,6 +128,10 @@ class IntegrationTest {
         assertThat(t.substring(TextTools.sentenceBounds(t, t.length - 1)!!)).isEqualTo("Fin")
         assertThat(TextTools.sentenceBounds("a\nb c.", 4)!!.let { "a\nb c.".substring(it) }).isEqualTo("b c.")
         assertThat(TextTools.sentenceBounds("  \n ", 1)).isNull()
+        // abreviaturas, decimales e iniciales no cortan la frase
+        val ab = "Hablo con el Sr. Perez sobre 3.5 metros, p.ej. dos. Luego J. R. Tolkien llego."
+        assertThat(ab.substring(TextTools.sentenceBounds(ab, 10)!!)).isEqualTo("Hablo con el Sr. Perez sobre 3.5 metros, p.ej. dos.")
+        assertThat(ab.substring(TextTools.sentenceBounds(ab, 60)!!)).isEqualTo("Luego J. R. Tolkien llego.")
         val prev = TextTools.spokenPreview(listOf(PronunciationEntry(pattern = "SQL", replacement = "ese cu ele")), "Uso SQL a diario.")
         assertThat(prev).contains("ese cu ele")
         assertThat(TextTools.invalidPatterns(listOf(PronunciationEntry(pattern = "([", replacement = "x", isRegex = true)))).containsExactly("([")

@@ -45,6 +45,8 @@ class AudioExporter(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     /** Codificador del formato comprimido (inyectable: el real usa MediaCodec). */
     private val encoder: PcmEncoder = AacEncoder,
+    /** Tamano maximo del WAV (4 GB); parametro solo para poder probarlo. */
+    private val wavLimitBytes: Long = 0xFFFF_FFFFL,
 ) {
     /** Exporta el capitulo [chapter] a [out] (no lo cierra). */
     suspend fun exportChapterWav(
@@ -86,6 +88,10 @@ class AudioExporter(
                         writePcm16(pcmOut, audio.pcm, audio.silenceFrames)
                     }
                     frames += audio.pcm.size + audio.silenceFrames
+                    // WAV no pasa de 4 GB: se avisa YA (no tras horas de sintesis) y se sugiere el formato comprimido.
+                    if (format == ExportFormat.WAV && frames * 2 + WavWriter.HEADER_BYTES > wavLimitBytes) {
+                        throw IllegalStateException("Esta parte supera los 4 GB que admite el WAV: exportala en M4A o elige un tramo mas corto")
+                    }
                     count++
                     onProgress(ExportProgress(count, u.range.endExclusive.offset, length))
                     u = provider.next(u)?.takeIf { it.range.start.chapter == chapter }

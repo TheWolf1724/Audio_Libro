@@ -604,7 +604,12 @@ class ReaderController(
         val newBaked = new.baked()
         if (oldBaked == newBaked) return
         val chapters = HashSet<Int>()
-        for (r in oldBaked.all() + newBaked.all()) for (ch in r.start.chapter..r.endExclusive.chapter) chapters += ch
+        // Los subrayados del usuario solo ensucian donde CAMBIAN (anadir uno no re-renderiza todo el libro).
+        val oldMarks = oldBaked.marks.toSet()
+        val newMarks = newBaked.marks.toSet()
+        val changedMarks = ((oldMarks - newMarks) + (newMarks - oldMarks)).map { it.range }
+        val others = oldBaked.copy(marks = emptyList()).all() + newBaked.copy(marks = emptyList()).all()
+        for (r in others + changedMarks) for (ch in r.start.chapter..r.endExclusive.chapter) chapters += ch
         if (chapters.isEmpty()) return
         for (k in cache.keys()) if (k.chapter in chapters) dirty += k
         for (k in jobs.keys.toList()) if (k.chapter in chapters) { jobs.remove(k)?.cancel(); dirty += k }
