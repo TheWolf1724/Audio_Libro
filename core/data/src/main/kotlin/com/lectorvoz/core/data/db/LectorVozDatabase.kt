@@ -12,18 +12,20 @@ import androidx.sqlite.db.SupportSQLiteDatabase
     entities = [
         BookEntity::class,
         BookmarkEntity::class,
+        AnnotationEntity::class,
         CollectionEntity::class,
         BookCollectionCrossRef::class,
         PronunciationRuleEntity::class,
         ReadingSessionEntity::class,
         ReadingHistoryEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class LectorVozDatabase : RoomDatabase() {
     abstract fun bookDao(): BookDao
     abstract fun bookmarkDao(): BookmarkDao
+    abstract fun annotationDao(): AnnotationDao
     abstract fun collectionDao(): CollectionDao
     abstract fun pronunciationRuleDao(): PronunciationRuleDao
     abstract fun readingSessionDao(): ReadingSessionDao
@@ -95,8 +97,21 @@ abstract class LectorVozDatabase : RoomDatabase() {
             }
         }
 
+        /** 4 -> 5: subrayados de color con notas (`annotations`). */
+        val MIGRATION_4_5: Migration = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `annotations` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                        "`book_id` INTEGER NOT NULL, `chapter` INTEGER NOT NULL, `start_offset` INTEGER NOT NULL, " +
+                        "`end_offset` INTEGER NOT NULL, `color` INTEGER NOT NULL, `note` TEXT, `quote` TEXT NOT NULL, " +
+                        "`created_at` INTEGER NOT NULL, FOREIGN KEY(`book_id`) REFERENCES `books`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE)",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_annotations_book_id_chapter_start_offset` ON `annotations` (`book_id`, `chapter`, `start_offset`)")
+            }
+        }
+
         /** Migraciones entre versiones. */
-        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+        val MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 
         /** Construye la base de datos en disco. */
         fun build(context: Context): LectorVozDatabase =

@@ -66,6 +66,33 @@ data class BookmarkEntity(
     @ColumnInfo(name = "created_at") val createdAt: Long,
 )
 
+/** Subrayado de color con nota opcional dentro de un capitulo. Version 5. */
+@Entity(
+    tableName = "annotations",
+    foreignKeys = [
+        ForeignKey(
+            entity = BookEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["book_id"],
+            onDelete = ForeignKey.CASCADE,
+        ),
+    ],
+    indices = [Index(value = ["book_id", "chapter", "start_offset"])],
+)
+data class AnnotationEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "book_id") val bookId: Long,
+    val chapter: Int,
+    @ColumnInfo(name = "start_offset") val startOffset: Int,
+    @ColumnInfo(name = "end_offset") val endOffset: Int,
+    /** Indice del color (0 amarillo, 1 verde, 2 azul, 3 rosa). */
+    val color: Int,
+    val note: String?,
+    /** Texto subrayado (copia, para listar y exportar sin abrir el libro). */
+    val quote: String,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
 /** Coleccion (estanteria) de libros. */
 @Entity(tableName = "collections", indices = [Index(value = ["name"], unique = true)])
 data class CollectionEntity(

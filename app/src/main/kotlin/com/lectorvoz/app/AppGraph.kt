@@ -33,6 +33,8 @@ import com.lectorvoz.app.integration.PlaybackPort
 import com.lectorvoz.app.integration.UtteranceProviderImpl
 import com.lectorvoz.app.integration.VoicesFacade
 import com.lectorvoz.app.integration.VoicesPort
+import com.lectorvoz.core.data.annotations.AnnotationRepository
+import com.lectorvoz.core.data.annotations.RoomAnnotationRepository
 import com.lectorvoz.core.data.bookmarks.BookmarkRepository
 import com.lectorvoz.core.data.bookmarks.RoomBookmarkRepository
 import com.lectorvoz.core.data.collections.CollectionRepository
@@ -91,6 +93,7 @@ class AppGraph(
     val settings: SettingsRepository,
     library: LibraryRepository,
     val bookmarks: BookmarkRepository,
+    val annotations: AnnotationRepository,
     val pronunciation: PronunciationRepository,
     val stats: ReadingStatsRepository,
     val collections: CollectionRepository,
@@ -355,6 +358,7 @@ class AppGraph(
                 settings = DataStoreSettingsRepository(app.ajustes),
                 library = RoomLibraryRepository(app, db.bookDao(), db.pronunciationRuleDao(), CoverExtractorImpl(app), database = db),
                 bookmarks = RoomBookmarkRepository(db.bookmarkDao()),
+                annotations = RoomAnnotationRepository(db.annotationDao()),
                 pronunciation = RoomPronunciationRepository(db.pronunciationRuleDao()),
                 stats = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao()),
                 collections = RoomCollectionRepository(db),

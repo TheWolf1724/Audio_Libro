@@ -111,6 +111,7 @@ class ExportService : Service() {
         super.onDestroy()
     }
 
+    @android.annotation.SuppressLint("MissingPermission") // `canNotify` comprueba POST_NOTIFICATIONS
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val graph = (application as LectorVozApp).graph
         val n = ExportNotifier.build(this, graph.exports.state.value)
@@ -144,6 +145,7 @@ class ExportService : Service() {
     }
 
     /** Termina el primer plano dejando (si hay permiso) el resultado en la notificacion. */
+    @android.annotation.SuppressLint("MissingPermission") // `canNotify` comprueba POST_NOTIFICATIONS
     private fun finish(st: ExportJobState?) {
         val keep = st != null && ExportNotifier.canNotify(this)
         ServiceCompat.stopForeground(this, if (keep) ServiceCompat.STOP_FOREGROUND_DETACH else ServiceCompat.STOP_FOREGROUND_REMOVE)

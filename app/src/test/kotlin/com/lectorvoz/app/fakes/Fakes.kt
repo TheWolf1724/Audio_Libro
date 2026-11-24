@@ -196,6 +196,22 @@ class FakeBookmarks : BookmarkRepository {
     override suspend fun delete(id: Long) = Unit
 }
 
+class FakeAnnotations : com.lectorvoz.core.data.annotations.AnnotationRepository {
+    val items = MutableStateFlow<List<com.lectorvoz.core.data.annotations.Annotation>>(emptyList())
+    private var next = 1L
+    override fun observe(bookId: Long): Flow<List<com.lectorvoz.core.data.annotations.Annotation>> =
+        items.map { l -> l.filter { it.bookId == bookId }.sortedWith(compareBy({ it.chapter }, { it.start })) }
+    override suspend fun add(bookId: Long, chapter: Int, start: Int, end: Int, color: Int, quote: String, note: String?): Long {
+        val id = next++
+        items.update { it + com.lectorvoz.core.data.annotations.Annotation(id, bookId, chapter, start, end, color, note?.takeIf { n -> n.isNotBlank() }, quote, id) }
+        return id
+    }
+    override suspend fun update(annotation: com.lectorvoz.core.data.annotations.Annotation, color: Int, note: String?) {
+        items.update { l -> l.map { if (it.id == annotation.id) it.copy(color = color, note = note?.takeIf { n -> n.isNotBlank() }) else it } }
+    }
+    override suspend fun delete(id: Long) { items.update { l -> l.filter { it.id != id } } }
+}
+
 class FakePronunciation : PronunciationRepository {
     val state = MutableStateFlow<List<PronunciationEntry>>(emptyList())
     override val global: Flow<List<PronunciationEntry>> = state

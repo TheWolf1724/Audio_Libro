@@ -17,6 +17,25 @@ object TextTools {
     fun invalidPatterns(entries: List<PronunciationEntry>): Set<String> =
         dictionaryOf(entries).invalidRules.map { it.pattern }.toSet()
 
+    /**
+     * Frase de [text] que contiene [offset]: desde el final de la anterior (. ! ? o salto de linea) hasta su
+     * propio punto final inclusive. Nula si ahi no hay texto.
+     */
+    fun sentenceBounds(text: String, offset: Int): IntRange? {
+        if (text.isBlank()) return null
+        val pos = offset.coerceIn(0, text.length - 1)
+        fun isEnd(c: Char) = c == '.' || c == '!' || c == '?' || c == '\u2026'
+        var s = pos
+        while (s > 0 && text[s - 1] != '\n' && !(isEnd(text[s - 1]) && s - 1 != pos)) s--
+        var e = pos
+        while (e < text.length && text[e] != '\n' && !isEnd(text[e])) e++
+        // incluye el signo final (y comillas o cierres que lo acompanan)
+        while (e < text.length && (isEnd(text[e]) || text[e] in "\"')\u00BB\u201D")) e++
+        while (s < e && text[s].isWhitespace()) s++
+        while (e > s && text[e - 1].isWhitespace()) e--
+        return if (e > s) s until e else null
+    }
+
     /** Palabra de [text] que contiene la posicion [offset] (o la siguiente). */
     fun wordAt(text: String, offset: Int): String? {
         if (text.isEmpty()) return null

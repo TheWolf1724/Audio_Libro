@@ -74,7 +74,11 @@ class EpubPageRenderer(private val density: Float) {
         canvas.translate(g.columnLeft, g.contentTop - top)
         canvas.clipRect(-g.columnLeft, top, g.columnWidth + g.columnLeft, bottom)
 
-        // Fondos (detras del texto).
+        // Fondos (detras del texto). Los subrayados del usuario, lo primero.
+        for (m in hl.marks) {
+            val s = Highlights.clip(m.range, cl.chapterIndex, len)?.intersect(ps, pe) ?: continue
+            fillSelection(canvas, cl, s, MarkColors.argb(m.color))
+        }
         if (sentence != null) fillSelection(canvas, cl, sentence, colors.ttsSentenceHighlight)
         for (r in hl.search) {
             val s = Highlights.clip(r, cl.chapterIndex, len)?.intersect(ps, pe) ?: continue

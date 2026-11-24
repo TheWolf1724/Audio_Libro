@@ -78,7 +78,7 @@ class MigrationTest {
             // La tabla nueva funciona.
             db.readingSessionDao().insert(ReadingSessionEntity(bookId = 1, kind = "READ", startedAt = 1, durationMs = 10_000, chars = 5))
             assertThat(db.readingSessionDao().observeCount().first()).isEqualTo(1)
-            assertThat(db.openHelper.readableDatabase.version).isEqualTo(4)
+            assertThat(db.openHelper.readableDatabase.version).isEqualTo(5)
             // 2 -> 3: el libro abierto entra en el historial (sin sesiones: inicio = ultima apertura).
             val h = db.readingHistoryDao().observeAll().first()
             assertThat(h.map { it.quickHash }).containsExactly("h1")
@@ -180,7 +180,9 @@ class MigrationTest {
             assertThat(h.startedAt).isEqualTo(100L)
             assertThat(h.finishedAt).isEqualTo(200L)
             assertThat(h.altHashes).isEmpty()
-            assertThat(db.openHelper.readableDatabase.version).isEqualTo(4)
+            // 4 -> 5: la tabla de subrayados existe y esta vacia.
+            assertThat(db.annotationDao().observeForBook(1L).first()).isEmpty()
+            assertThat(db.openHelper.readableDatabase.version).isEqualTo(5)
         } finally {
             db.close()
             context.deleteDatabase(name)

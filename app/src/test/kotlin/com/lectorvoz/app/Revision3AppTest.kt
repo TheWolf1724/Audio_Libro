@@ -219,6 +219,7 @@ class Revision3AppTest {
             settings = settings,
             library = library,
             bookmarks = bookmarks,
+            annotations = com.lectorvoz.app.fakes.FakeAnnotations(),
             pronunciation = FakePronunciation(),
             stats = FakeStats(),
             collections = FakeCollectionRepository(),

@@ -26,6 +26,7 @@ import com.lectorvoz.reader.layout.PageChrome
 import com.lectorvoz.reader.layout.Viewport
 import com.lectorvoz.reader.render.HighlightLayer
 import com.lectorvoz.reader.render.Highlights
+import com.lectorvoz.reader.render.MarkRange
 import com.lectorvoz.reader.view.PageFlipView
 import com.lectorvoz.reader.view.PageHost
 import com.lectorvoz.reader.view.PageKey
@@ -553,6 +554,11 @@ class ReaderController(
     fun clearHighlight(kind: HighlightKind) {
         updateHighlights(highlights.with(kind, null))
         if (kind == HighlightKind.SENTENCE) sentenceChanged(null)
+    }
+
+    /** Subrayados de color del usuario (se pintan bajo el resto de resaltados). */
+    fun setMarks(marks: List<MarkRange>) {
+        updateHighlights(highlights.copy(marks = marks))
     }
 
     /** Resultados de busqueda; [current] se marca con contorno grueso. */

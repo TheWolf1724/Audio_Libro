@@ -88,6 +88,22 @@ interface BookmarkDao {
     suspend fun find(bookId: Long, chapter: Int, offset: Int): BookmarkEntity?
 }
 
+/** Acceso a los subrayados y notas. */
+@Dao
+interface AnnotationDao {
+    @Query("SELECT * FROM annotations WHERE book_id = :bookId ORDER BY chapter, start_offset")
+    fun observeForBook(bookId: Long): Flow<List<AnnotationEntity>>
+
+    @Insert
+    suspend fun insert(annotation: AnnotationEntity): Long
+
+    @Update
+    suspend fun update(annotation: AnnotationEntity)
+
+    @Query("DELETE FROM annotations WHERE id = :id")
+    suspend fun delete(id: Long)
+}
+
 /** Acceso a colecciones y su relacion con libros. */
 @Dao
 interface CollectionDao {

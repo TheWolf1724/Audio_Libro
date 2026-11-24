@@ -12,6 +12,8 @@ import com.lectorvoz.app.integration.BookForVoice
 import com.lectorvoz.app.integration.TextTools
 import com.lectorvoz.app.integration.TimerChoice
 import com.lectorvoz.app.integration.VoiceUiState
+import com.lectorvoz.core.data.annotations.Annotation
+import com.lectorvoz.core.data.annotations.AnnotationExport
 import com.lectorvoz.core.data.bookmarks.Bookmark
 import com.lectorvoz.core.data.library.Book
 import com.lectorvoz.core.data.pronunciation.PronunciationEntry
@@ -28,6 +30,7 @@ import com.lectorvoz.core.model.ReaderSettings
 import com.lectorvoz.core.model.TtsEngineType
 import com.lectorvoz.core.model.VoiceSettings
 import com.lectorvoz.reader.PageInfo
+import com.lectorvoz.reader.render.MarkRange
 import com.lectorvoz.reader.ReaderController
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +52,7 @@ import kotlinx.coroutines.withContext
 
 /** Accion pendiente tras una pulsacion larga sobre el texto. */
 @Immutable
-data class TextAction(val locator: Locator, val word: String?)
+data class TextAction(val locator: Locator, val word: String?, val annotation: Annotation? = null)
 
 /** Estado de la busqueda en el libro. */
 @Immutable
@@ -82,6 +85,7 @@ data class ReaderUiState(
     val locator: Locator = Locator.START,
     val toc: List<TocItem> = emptyList(),
     val bookmarks: List<Bookmark> = emptyList(),
+    val annotations: List<Annotation> = emptyList(),
     val playback: VoiceUiState = VoiceUiState(),
     val sentence: String? = null,
     val search: SearchState = SearchState(),
@@ -243,6 +247,12 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         viewModelScope.launch { graph.settings.overrides(bookId).collect { o -> _state.update { it.copy(overrides = o) } } }
         viewModelScope.launch { graph.settings.forceOcr(bookId).collect { applyForceOcr(it) } }
         viewModelScope.launch { graph.bookmarks.observe(bookId).collect { b -> _state.update { it.copy(bookmarks = b) } } }
+        viewModelScope.launch {
+            graph.annotations.observe(bookId).collect { list ->
+                _state.update { it.copy(annotations = list) }
+                controller.setMarks(list.map { MarkRange(LocatorRange(Locator(it.chapter, it.start), Locator(it.chapter, it.end)), it.color) })
+            }
+        }
         viewModelScope.launch { controller.pageInfo.collect { p -> _state.update { it.copy(pageInfo = p) } } }
         viewModelScope.launch { controller.busy.collect { b -> _state.update { it.copy(busy = b) } } }
         viewModelScope.launch {
@@ -418,6 +428,40 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         _state.update { it.copy(message = "Marcador anadido") }
     }
 
+    // ------------------------------------------------------------------ subrayados y notas
+
+    /** Subraya en [color] la frase que contiene [loc] (pulsacion larga). */
+    fun highlightSentenceAt(loc: Locator, color: Int) = viewModelScope.launch {
+        dismissTextAction()
+        val text = chapterText(loc.chapter)
+        val r = text?.let { TextTools.sentenceBounds(it, loc.offset) }
+        if (text == null || r == null) {
+            _state.update { it.copy(message = "No se pudo subrayar aqui") }
+            return@launch
+        }
+        graph.annotations.add(bookId, loc.chapter, r.first, r.last + 1, color, text.substring(r.first, r.last + 1).replace('\n', ' '))
+        _state.update { it.copy(message = "Subrayado") }
+    }
+
+    fun updateAnnotation(a: Annotation, color: Int, note: String?) = viewModelScope.launch {
+        dismissTextAction()
+        graph.annotations.update(a, color, note)
+    }
+
+    fun deleteAnnotation(a: Annotation) = viewModelScope.launch {
+        dismissTextAction()
+        graph.annotations.delete(a.id)
+    }
+
+    /** Subrayados y notas del libro en Markdown (para compartir). */
+    fun annotationsMarkdown(): String {
+        val st = _state.value
+        return AnnotationExport.markdown(st.book?.title ?: "Libro", st.annotations) { ch -> chapterTitleOf(st.toc, ch) }
+    }
+
+    private fun chapterTitleOf(toc: List<TocItem>, chapter: Int): String? =
+        (toc.lastOrNull { it.locator.chapter == chapter } ?: toc.lastOrNull { it.locator.chapter <= chapter })?.title
+
     fun deleteBookmark(b: Bookmark) = viewModelScope.launch { graph.bookmarks.delete(b.id) }
 
     // ------------------------------------------------------------------ texto auxiliar (busqueda, palabras)
@@ -504,7 +548,8 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     private fun onLongPress(loc: Locator) = viewModelScope.launch {
         val text = chapterText(loc.chapter)
         val word = text?.let { TextTools.wordAt(it, loc.offset) }
-        _state.update { it.copy(textAction = TextAction(loc, word)) }
+        val existing = _state.value.annotations.firstOrNull { it.chapter == loc.chapter && loc.offset >= it.start && loc.offset < it.end }
+        _state.update { it.copy(textAction = TextAction(loc, word, existing)) }
     }
 
     fun dismissTextAction() = _state.update { it.copy(textAction = null) }

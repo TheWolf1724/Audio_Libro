@@ -121,6 +121,13 @@ class IntegrationTest {
         assertThat(TextTools.wordAt("Hola, mundo cruel", 8)).isEqualTo("mundo")
         assertThat(TextTools.wordAt("Hola, mundo", 4)).isEqualTo("mundo")
         assertThat(TextTools.wordAt("   ", 1)).isNull()
+        // frases: desde el final de la anterior hasta su punto
+        val t = "Primera frase. Segunda frase larga! \u00bfTercera? Fin"
+        assertThat(t.substring(TextTools.sentenceBounds(t, 20)!!)).isEqualTo("Segunda frase larga!")
+        assertThat(t.substring(TextTools.sentenceBounds(t, 0)!!)).isEqualTo("Primera frase.")
+        assertThat(t.substring(TextTools.sentenceBounds(t, t.length - 1)!!)).isEqualTo("Fin")
+        assertThat(TextTools.sentenceBounds("a\nb c.", 4)!!.let { "a\nb c.".substring(it) }).isEqualTo("b c.")
+        assertThat(TextTools.sentenceBounds("  \n ", 1)).isNull()
         val prev = TextTools.spokenPreview(listOf(PronunciationEntry(pattern = "SQL", replacement = "ese cu ele")), "Uso SQL a diario.")
         assertThat(prev).contains("ese cu ele")
         assertThat(TextTools.invalidPatterns(listOf(PronunciationEntry(pattern = "([", replacement = "x", isRegex = true)))).containsExactly("([")

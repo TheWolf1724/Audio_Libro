@@ -45,9 +45,11 @@ data class PdfPageHighlights(
     val selection: List<RectF> = emptyList(),
     val search: List<RectF> = emptyList(),
     val searchCurrent: List<RectF> = emptyList(),
+    /** Subrayados del usuario: rectangulos y su color (indice). */
+    val marks: List<Pair<List<RectF>, Int>> = emptyList(),
 ) {
     val isEmpty: Boolean
-        get() = sentence.isEmpty() && word.isEmpty() && selection.isEmpty() && search.isEmpty() && searchCurrent.isEmpty()
+        get() = sentence.isEmpty() && word.isEmpty() && selection.isEmpty() && search.isEmpty() && searchCurrent.isEmpty() && marks.isEmpty()
 }
 
 /**
@@ -156,6 +158,7 @@ class PdfPageRenderer(private val density: Float) {
             blend.color = color
             for (r in rects) { pl.toBitmap(r, tmp); canvas.drawRect(tmp, blend) }
         }
+        for ((rects, c) in hl.marks) fillAll(rects, MarkColors.argb(c))
         fillAll(hl.sentence, colors.ttsSentenceHighlight)
         fillAll(hl.search, colors.searchHighlight)
         fillAll(hl.searchCurrent, colors.searchCurrentHighlight)

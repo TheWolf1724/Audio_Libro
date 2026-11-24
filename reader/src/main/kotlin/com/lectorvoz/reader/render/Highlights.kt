@@ -7,12 +7,22 @@ import com.lectorvoz.core.model.LocatorRange
  * Resaltados activos (inmutable). Frase, palabra y seleccion tienen un rango cada una; la
  * busqueda puede tener varios con uno "actual".
  */
+/** Subrayado de color del usuario: [color] es el indice 0..3 (ver [MarkColors]). */
+data class MarkRange(val range: LocatorRange, val color: Int)
+
+/** Colores de los subrayados (translucidos: sirven sobre fondo claro y oscuro). */
+object MarkColors {
+    private val ARGB = intArrayOf(0x99FFD54F.toInt(), 0x9981C784.toInt(), 0x9964B5F6.toInt(), 0x99F48FB1.toInt())
+    fun argb(index: Int): Int = ARGB[index.coerceIn(0, ARGB.lastIndex)]
+}
+
 data class Highlights(
     val sentence: LocatorRange? = null,
     val word: LocatorRange? = null,
     val selection: LocatorRange? = null,
     val search: List<LocatorRange> = emptyList(),
     val searchCurrent: LocatorRange? = null,
+    val marks: List<MarkRange> = emptyList(),
 ) {
     fun with(kind: HighlightKind, range: LocatorRange?): Highlights = when (kind) {
         HighlightKind.SENTENCE -> copy(sentence = range)
@@ -29,7 +39,7 @@ data class Highlights(
     }
 
     /** Todos los rangos (para saber que paginas hay que redibujar). */
-    fun all(): List<LocatorRange> = listOfNotNull(sentence, word, selection) + search
+    fun all(): List<LocatorRange> = listOfNotNull(sentence, word, selection) + search + marks.map { it.range }
 
     companion object {
         val NONE = Highlights()

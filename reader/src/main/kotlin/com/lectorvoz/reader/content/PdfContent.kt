@@ -150,6 +150,7 @@ class PdfContent(
             selection = rects(hl.selection, page),
             search = others.flatMap { rects(it, page) },
             searchCurrent = rects(hl.searchCurrent, page),
+            marks = hl.marks.map { rects(it.range, page) to it.color }.filter { it.first.isNotEmpty() },
         )
     }
 

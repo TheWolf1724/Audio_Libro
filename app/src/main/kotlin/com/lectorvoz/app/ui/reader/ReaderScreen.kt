@@ -6,6 +6,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -94,7 +95,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.roundToInt
 
 /** Paneles del lector. */
-enum class ReaderPanel { NONE, APPEARANCE, TOC, BOOKMARKS, SEARCH }
+enum class ReaderPanel { NONE, APPEARANCE, TOC, BOOKMARKS, SEARCH, NOTES }
 
 /** Pantalla del lector con voz integrada. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -219,6 +220,7 @@ fun ReaderScreen(
                 ReaderPanel.APPEARANCE -> AppearancePanel(state.settings, state.overrides, systemDark, vm::updateReader, vm::updateOverrides, onPreview = vm::previewReader)
                 ReaderPanel.TOC -> TocList(state.toc, state.locator.chapter) { vm.goTo(it); panel = ReaderPanel.NONE }
                 ReaderPanel.BOOKMARKS -> BookmarkList(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteBookmark, onAdd = vm::addBookmark)
+                ReaderPanel.NOTES -> NotesPanel(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteAnnotation, onExport = vm::annotationsMarkdown)
                 ReaderPanel.SEARCH -> SearchPanel(state.search, vm::search, { vm.openSearchResult(it); panel = ReaderPanel.NONE }, vm::clearSearch)
                 ReaderPanel.NONE -> Unit
             }
@@ -298,6 +300,7 @@ private fun TopBar(
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                     DropdownMenuItem(text = { Text("Anadir marcador") }, onClick = { menu = false; onBookmark() })
                     DropdownMenuItem(text = { Text("Marcadores") }, onClick = { menu = false; onPanel(ReaderPanel.BOOKMARKS) })
+                    DropdownMenuItem(text = { Text("Notas y subrayados") }, onClick = { menu = false; onPanel(ReaderPanel.NOTES) })
                     DropdownMenuItem(text = { Text("Ajustes de voz") }, onClick = { menu = false; onVoiceSettings() })
                     val ownVoice = state.overrides.voiceId != null || state.overrides.speed != null
                     DropdownMenuItem(
@@ -488,6 +491,47 @@ private fun BookmarkList(state: ReaderUiState, onGo: (com.lectorvoz.core.model.L
     }
 }
 
+/** Lista de subrayados y notas del libro, con exportacion a Markdown (compartir). */
+@Composable
+private fun NotesPanel(
+    state: ReaderUiState,
+    onGo: (com.lectorvoz.core.model.Locator) -> Unit,
+    onDelete: (com.lectorvoz.core.data.annotations.Annotation) -> Unit,
+    onExport: () -> String,
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    Column(Modifier.fillMaxWidth()) {
+        TextButton(
+            onClick = {
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, onExport())
+                    putExtra(android.content.Intent.EXTRA_SUBJECT, "Notas de ${state.book?.title.orEmpty()}")
+                }
+                context.startActivity(android.content.Intent.createChooser(send, "Compartir notas"))
+            },
+            enabled = state.annotations.isNotEmpty(),
+            modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp).testTag("notas-exportar"),
+        ) { Text("Compartir todas (Markdown)") }
+        if (state.annotations.isEmpty()) {
+            Text("Sin subrayados. Manten pulsado sobre el texto para subrayar una frase.", modifier = Modifier.padding(24.dp))
+        }
+        LazyColumn(Modifier.testTag("notas")) {
+            items(state.annotations, key = { it.id }) { a ->
+                Row(Modifier.fillMaxWidth().clickable { onGo(com.lectorvoz.core.model.Locator(a.chapter, a.start)) }.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(12.dp).background(androidx.compose.ui.graphics.Color(com.lectorvoz.reader.render.MarkColors.argb(a.color)), androidx.compose.foundation.shape.CircleShape))
+                    Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                        Text(a.quote, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+                        a.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+                    }
+                    AppIconButton(R.drawable.ic_delete, "Borrar subrayado", { onDelete(a) })
+                }
+                HorizontalDivider()
+            }
+        }
+    }
+}
+
 @Composable
 private fun SearchPanel(search: SearchState, onSearch: (String) -> Unit, onOpen: (Int) -> Unit, onClear: () -> Unit) {
     var q by rememberSaveable { mutableStateOf(search.query) }
@@ -529,12 +573,39 @@ private fun SearchPanel(search: SearchState, onSearch: (String) -> Unit, onOpen:
     }
 }
 
+/** Cuatro colores de subrayado; [selected] marca el actual (-1 ninguno). */
+@Composable
+private fun ColorChips(selected: Int, onPick: (Int) -> Unit) {
+    val names = listOf("amarillo", "verde", "azul", "rosa")
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(vertical = 4.dp)) {
+        names.forEachIndexed { i, n ->
+            Box(
+                Modifier.size(48.dp).padding(4.dp)
+                    .background(androidx.compose.ui.graphics.Color(com.lectorvoz.reader.render.MarkColors.argb(i)), androidx.compose.foundation.shape.CircleShape)
+                    .then(if (i == selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape) else Modifier)
+                    .clickable(onClickLabel = "Subrayar en $n") { onPick(i) }
+                    .testTag("color-$i"),
+            )
+        }
+    }
+}
+
 @Composable
 private fun TextActionDialog(action: TextAction, vm: ReaderViewModel) {
     var fixing by remember { mutableStateOf(false) }
     var replacement by remember { mutableStateOf("") }
     var forBook by remember { mutableStateOf(true) }
-    if (!fixing) {
+    var noting by remember { mutableStateOf(false) }
+    var noteText by remember { mutableStateOf("") }
+    if (noting && action.annotation != null) {
+        AlertDialog(
+            onDismissRequest = vm::dismissTextAction,
+            title = { Text("Nota") },
+            text = { OutlinedTextField(value = noteText, onValueChange = { noteText = it }, label = { Text("Tu nota") }, modifier = Modifier.fillMaxWidth().testTag("nota-texto")) },
+            confirmButton = { TextButton(onClick = { vm.updateAnnotation(action.annotation, action.annotation.color, noteText) }) { Text("Guardar") } },
+            dismissButton = { TextButton(onClick = vm::dismissTextAction) { Text("Cancelar") } },
+        )
+    } else if (!fixing) {
         AlertDialog(
             onDismissRequest = vm::dismissTextAction,
             title = { Text(action.word ?: "Texto") },
@@ -545,6 +616,18 @@ private fun TextActionDialog(action: TextAction, vm: ReaderViewModel) {
                         TextButton(onClick = { fixing = true; replacement = action.word }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Corregir pronunciacion") }
                     }
                     TextButton(onClick = { vm.dismissTextAction(); vm.addBookmarkAt(action.locator) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Marcar") }
+                    val ann = action.annotation
+                    if (ann == null) {
+                        Text("Subrayar la frase", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                        ColorChips(selected = -1, onPick = { vm.highlightSentenceAt(action.locator, it) })
+                    } else {
+                        Text("Cambiar color", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                        ColorChips(selected = ann.color, onPick = { vm.updateAnnotation(ann, it, ann.note) })
+                        TextButton(onClick = { noteText = ann.note.orEmpty(); noting = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).testTag("nota-editar")) {
+                            Text(if (ann.note == null) "Anadir nota" else "Editar nota")
+                        }
+                        TextButton(onClick = { vm.deleteAnnotation(ann) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Quitar subrayado") }
+                    }
                 }
             },
             confirmButton = { TextButton(onClick = vm::dismissTextAction) { Text("Cerrar") } },
