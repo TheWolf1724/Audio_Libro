@@ -92,34 +92,14 @@ class SettingsViewModel(
         _message.value = playback.preview(v, SAMPLE)
     }
 
-    /** Texto grande (TEMAS.md seccion 6): 24 sp, interlineado 1,6, margen 16 dp, peso 450. */
-    fun setLargeText(on: Boolean) = viewModelScope.launch {
-        settings.updateApp { it.copy(largeText = on) }
-        val d = ReaderSettings()
-        settings.updateReader {
-            if (on) it.copy(fontSizeSp = 24f, lineSpacing = 1.6f, marginHorizontalDp = 16, fontWeight = 450)
-            else it.copy(fontSizeSp = d.fontSizeSp, lineSpacing = d.lineSpacing, marginHorizontalDp = d.marginHorizontalDp, fontWeight = d.fontWeight)
-        }
-    }
+    /** Texto grande (24 sp, interlineado 1,6, margen 16 dp, peso 450): se aplica al leer, sin tocar tus ajustes. */
+    fun setLargeText(on: Boolean) = viewModelScope.launch { settings.updateApp { it.copy(largeText = on) } }
 
-    /** Fuente para dislexia: OpenDyslexic + espaciado ampliado + alineacion izquierda. */
-    fun setDyslexia(on: Boolean) = viewModelScope.launch {
-        settings.updateApp { it.copy(dyslexiaFont = on) }
-        val d = ReaderSettings()
-        settings.updateReader {
-            if (on) it.copy(fontFamily = "opendyslexic", letterSpacingEm = 0.05f, wordSpacingEm = 0.1f, textAlign = TextAlign.START, lineSpacing = maxOf(it.lineSpacing, 1.6f))
-            else it.copy(fontFamily = d.fontFamily, letterSpacingEm = d.letterSpacingEm, wordSpacingEm = d.wordSpacingEm, textAlign = d.textAlign, lineSpacing = d.lineSpacing)
-        }
-    }
+    /** Fuente para dislexia (OpenDyslexic, mas espacio, alineacion izquierda): se aplica al leer. */
+    fun setDyslexia(on: Boolean) = viewModelScope.launch { settings.updateApp { it.copy(dyslexiaFont = on) } }
 
-    /** Reducir movimiento: fundido corto en lugar de curvar o deslizar. */
-    fun setReduceMotion(on: Boolean) = viewModelScope.launch {
-        settings.updateApp { it.copy(reduceMotion = on) }
-        settings.updateReader {
-            if (on) it.copy(pageAnimation = PageAnimation.FADE, pageAnimationMillis = 150)
-            else it.copy(pageAnimation = ReaderSettings().pageAnimation, pageAnimationMillis = ReaderSettings().pageAnimationMillis)
-        }
-    }
+    /** Reducir movimiento: fundido corto en lugar de curvar o deslizar (se aplica al leer). */
+    fun setReduceMotion(on: Boolean) = viewModelScope.launch { settings.updateApp { it.copy(reduceMotion = on) } }
 
     companion object {
         const val SAMPLE = "Hola. Esta es la voz con la que se leeran tus libros. ¿Te gusta como suena?"

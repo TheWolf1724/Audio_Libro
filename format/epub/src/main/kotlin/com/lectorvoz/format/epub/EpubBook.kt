@@ -242,6 +242,8 @@ class EpubBook private constructor(
             parseChapter(index).anchors
         } catch (e: EpubException) {
             emptyMap()
+        } catch (e: OutOfMemoryError) {
+            return emptyMap() // fallo transitorio: no se cachea el vacio
         }
         anchorCache.putIfAbsent(index, anchors)
         return anchors

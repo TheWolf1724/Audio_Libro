@@ -334,7 +334,12 @@ fun ExportScreen(vm: ExportViewModel, onBack: () -> Unit, onPickBook: (Book) -> 
     }
     SettingsScaffold("Exportar audio", onBack) {
         val job = s.job
-        if (job != null) ExportJobCard(job, onCancel = vm::cancel, onClear = vm::clearResult)
+        if (job != null) {
+            if (job.bookId != book.id) {
+                Text("Exportacion de otro libro: ${job.title}", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            }
+            ExportJobCard(job, onCancel = vm::cancel, onClear = vm::clearResult)
+        }
         Text(book.title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(16.dp))
         if (s.parts.isNotEmpty()) {
             ChoiceRow("Parte", s.parts.indices.toList(), s.part, { s.parts.getOrNull(it) ?: "${it + 1}" }, vm::setPart, tag = "exportar-capitulo")

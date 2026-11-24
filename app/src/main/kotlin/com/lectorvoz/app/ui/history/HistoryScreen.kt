@@ -152,8 +152,11 @@ fun HistoryContent(
     onClearHistory: () -> Unit = {},
 ) {
     var filter by rememberSaveable { mutableStateOf(HistoryFilter.ALL) }
-    var menu by remember { mutableStateOf<HistoryEntry?>(null) }
-    var confirm by remember { mutableStateOf<HistoryEntry?>(null) }
+    // Se guardan por id para que sobrevivan a girar la pantalla.
+    var menuId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var confirmId by rememberSaveable { mutableStateOf<Long?>(null) }
+    val menu = s.entries.firstOrNull { it.id == menuId }
+    val confirm = s.entries.firstOrNull { it.id == confirmId }
     var merging by remember { mutableStateOf<Pair<HistoryEntry, List<HistoryEntry>>?>(null) }
     var confirmClear by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -237,8 +240,8 @@ fun HistoryContent(
                             .combinedClickable(
                                 onClickLabel = if (e.bookId != null) "Abrir" else "Opciones",
                                 onLongClickLabel = "Opciones",
-                                onClick = { val id = e.bookId; if (id != null) onOpen(id) else menu = e },
-                                onLongClick = { menu = e },
+                                onClick = { val id = e.bookId; if (id != null) onOpen(id) else menuId = e.id },
+                                onLongClick = { menuId = e.id },
                             )
                             .heightIn(min = 56.dp)
                             .padding(horizontal = 16.dp, vertical = 10.dp)
@@ -267,19 +270,19 @@ fun HistoryContent(
     }
     menu?.let { e ->
         AlertDialog(
-            onDismissRequest = { menu = null },
+            onDismissRequest = { menuId = null },
             title = { Text(e.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
             text = {
                 Column {
                     TextButton(
-                        onClick = { menu = null; scope.launch { merging = e to mergeOptions(e) } },
+                        onClick = { menuId = null; scope.launch { merging = e to mergeOptions(e) } },
                         modifier = Modifier.fillMaxWidth().testTag("historial-unir"),
                     ) { Text("Es otra edicion de otra lectura: unir") }
-                    TextButton(onClick = { menu = null; confirm = e }, modifier = Modifier.fillMaxWidth().testTag("historial-quitar")) { Text("Quitar del historial") }
+                    TextButton(onClick = { menuId = null; confirmId = e.id }, modifier = Modifier.fillMaxWidth().testTag("historial-quitar")) { Text("Quitar del historial") }
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { menu = null }) { Text("Cancelar") } },
+            dismissButton = { TextButton(onClick = { menuId = null }) { Text("Cancelar") } },
         )
     }
     merging?.let { (e, options) ->
@@ -296,11 +299,11 @@ fun HistoryContent(
     }
     confirm?.let { e ->
         AlertDialog(
-            onDismissRequest = { confirm = null },
+            onDismissRequest = { confirmId = null },
             title = { Text("Quitar del historial") },
             text = { Text("Se quitara \"${e.title}\" del historial. El libro de la biblioteca no cambia.") },
-            confirmButton = { TextButton(onClick = { onDelete(e); confirm = null }) { Text("Quitar") } },
-            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancelar") } },
+            confirmButton = { TextButton(onClick = { onDelete(e); confirmId = null }) { Text("Quitar") } },
+            dismissButton = { TextButton(onClick = { confirmId = null }) { Text("Cancelar") } },
         )
     }
     if (confirmClear) {

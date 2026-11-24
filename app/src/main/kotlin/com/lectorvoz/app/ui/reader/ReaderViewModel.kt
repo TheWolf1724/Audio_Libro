@@ -664,7 +664,10 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         var s = loc.offset.coerceIn(0, t.length)
         // Empieza en una palabra entera (el desplazamiento puede caer a mitad de una).
         while (s > 0 && s < t.length && t[s - 1].isLetterOrDigit() && t[s].isLetterOrDigit()) s--
-        return t.substring(s, (s + 160).coerceAtMost(t.length)).replace('\uFFFC', ' ').replace(Regex("\\s+"), " ").trim().ifEmpty { null }
+        if (s > 0 && s < t.length && t[s].isLowSurrogate()) s--
+        var e = (s + 160).coerceAtMost(t.length)
+        if (e < t.length && e > 0 && t[e - 1].isHighSurrogate()) e++
+        return t.substring(s, e).replace('\uFFFC', ' ').replace(Regex("\\s+"), " ").trim().ifEmpty { null }
     }
 
     // ------------------------------------------------------------------ busqueda

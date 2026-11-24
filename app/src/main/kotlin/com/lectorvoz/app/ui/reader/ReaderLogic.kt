@@ -123,8 +123,11 @@ private fun foldChar(c: Char): Char = when (val l = c.lowercaseChar()) {
 
 /** Fragmento de [text] alrededor de [start, end) para mostrar un resultado. */
 fun excerpt(text: String, start: Int, end: Int, context: Int = 40): String {
-    val a = (start - context).coerceAtLeast(0)
-    val b = (end + context).coerceAtMost(text.length)
+    var a = (start - context).coerceAtLeast(0)
+    var b = (end + context).coerceAtMost(text.length)
+    // No partir un par sustituto (emoji): se mueve el corte a un limite valido.
+    if (a > 0 && a < text.length && text[a].isLowSurrogate()) a--
+    if (b < text.length && b > 0 && text[b - 1].isHighSurrogate()) b++
     val pre = if (a > 0) "..." else ""
     val post = if (b < text.length) "..." else ""
     return pre + text.substring(a, b).replace('\n', ' ').trim() + post
