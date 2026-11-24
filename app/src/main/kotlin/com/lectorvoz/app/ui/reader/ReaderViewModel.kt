@@ -439,13 +439,24 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
             _state.update { it.copy(message = "No se pudo subrayar aqui") }
             return@launch
         }
-        graph.annotations.add(bookId, loc.chapter, r.first, r.last + 1, color, text.substring(r.first, r.last + 1).replace('\n', ' '))
+        // Si ya hay un subrayado casi igual (mismo tramo con un caracter de mas o de menos) se recolorea.
+        val dup = _state.value.annotations.firstOrNull {
+            it.chapter == loc.chapter && minOf(it.end, r.last + 1) - maxOf(it.start, r.first) > (r.last + 1 - r.first) / 2
+        }
+        if (dup != null) {
+            graph.annotations.update(dup, color, dup.note)
+        } else {
+            val quote = text.substring(r.first, r.last + 1).replace('\uFFFC', ' ').replace(Regex("\\s+"), " ")
+            graph.annotations.add(bookId, loc.chapter, r.first, r.last + 1, color, quote)
+        }
         _state.update { it.copy(message = "Subrayado") }
     }
 
     fun updateAnnotation(a: Annotation, color: Int, note: String?) = viewModelScope.launch {
         dismissTextAction()
-        graph.annotations.update(a, color, note)
+        // La copia del dialogo puede estar desfasada: se actua sobre la version actual (si sigue existiendo).
+        val live = _state.value.annotations.firstOrNull { it.id == a.id } ?: return@launch
+        graph.annotations.update(live, color, note)
     }
 
     fun deleteAnnotation(a: Annotation) = viewModelScope.launch {

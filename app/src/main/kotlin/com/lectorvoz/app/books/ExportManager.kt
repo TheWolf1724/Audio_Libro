@@ -61,16 +61,62 @@ interface ExportFiles {
 
     /** Borra un documento creado (exportacion cancelada, fallida o vacia). */
     fun delete(uri: Uri)
+
+    /** La parte [name] de [tree] se escribio entera: solo entonces la reanudacion puede darla por buena. */
+    fun markDone(tree: Uri, name: String) {}
+
+    companion object {
+        /** Nombre seguro para cualquier proveedor de ficheros (sin caracteres reservados, longitud acotada). */
+        fun safeName(name: String): String =
+            name.replace(Regex("[\\\\/:*?\"<>|\\n\\r\\t]"), "-").replace(Regex("\\s+"), " ").trim().let {
+                if (it.length <= 120) it else {
+                    val dot = it.lastIndexOf('.')
+                    val ext = if (dot >= it.length - 6 && dot > 0) it.substring(dot) else ""
+                    it.take(120 - ext.length).trimEnd() + ext
+                }
+            }
+    }
 }
 
 /** [ExportFiles] con `DocumentsContract`. */
 class SafExportFiles(private val context: Context) : ExportFiles {
+    // Partes "a medias": se anotan al crearlas y se quitan al terminar de escribirlas. Si el proceso muere
+    // durante la escritura queda anotada, y la reanudacion la rehace en vez de darla por buena.
+    private val prefs get() = context.getSharedPreferences("exportacion", Context.MODE_PRIVATE)
+    private fun key(tree: Uri, name: String) = "$tree|$name"
+
     override fun create(tree: Uri, name: String, mime: String): Uri? {
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        return DocumentsContract.createDocument(context.contentResolver, parent, mime, name)
+        // Resto de un intento anterior interrumpido: se borra para no acumular "nombre (1)".
+        findDocument(tree, name)?.let { delete(it) }
+        val uri = DocumentsContract.createDocument(context.contentResolver, parent, mime, name)
+        if (uri != null) prefs.edit().putBoolean(key(tree, name), true).apply()
+        return uri
     }
 
-    override fun existsComplete(tree: Uri, name: String): Boolean = try {
+    override fun markDone(tree: Uri, name: String) {
+        prefs.edit().remove(key(tree, name)).apply()
+    }
+
+    private fun findDocument(tree: Uri, name: String): Uri? = try {
+        val treeId = DocumentsContract.getTreeDocumentId(tree)
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, treeId)
+        context.contentResolver.query(
+            children,
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            null, null, null,
+        )?.use { c ->
+            var found: Uri? = null
+            while (c.moveToNext()) {
+                if (c.getString(1) == name) { found = DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)); break }
+            }
+            found
+        }
+    } catch (e: Exception) {
+        null
+    }
+
+    override fun existsComplete(tree: Uri, name: String): Boolean = if (prefs.getBoolean(key(tree, name), false)) false else try {
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         context.contentResolver.query(
             children,
@@ -139,7 +185,13 @@ class ExportManager(
         val p = parts.getOrNull(part) ?: return@runJob "Parte no valida"
         _state.update { it?.copy(parts = 1, part = 0) }
         when (val r = exportOne(provider, part, uri, voice, format) { f -> _state.update { it?.copy(progress = f) } }) {
-            is ExportOutcome.Done -> "Exportado \"${p.title}\": ${duration(r.durationMs)}, ${r.bytes / (1024 * 1024)} MB"
+            is ExportOutcome.Done ->
+                if (r.durationMs <= 0L) {
+                    files.delete(uri)
+                    "La parte \"${p.title}\" no tiene texto que leer: no se creo el fichero"
+                } else {
+                    "Exportado \"${p.title}\": ${duration(r.durationMs)}, ${r.bytes / (1024 * 1024)} MB"
+                }
             is ExportOutcome.Failed -> "Error: ${r.message}"
         }
     }
@@ -156,11 +208,11 @@ class ExportManager(
         var totalMs = 0L
         for ((i, p) in parts.withIndex()) {
             _state.update { it?.copy(part = i, progress = i.toFloat() / parts.size) }
-            val name = "%02d - %s.${format.extension}".format(i + 1, p.title).replace('/', '-')
+            val name = ExportFiles.safeName("%02d - %s.${format.extension}".format(java.util.Locale.ROOT, i + 1, p.title))
             if (files.existsComplete(tree, name)) { skipped++; continue }
             val uri = files.create(tree, name, format.mime) ?: return@runJob "Error: no se pudo crear $name"
             when (val r = exportOne(provider, i, uri, voice, format) { f -> _state.update { it?.copy(progress = (i + (f ?: 0f)) / parts.size) } }) {
-                is ExportOutcome.Done -> if (r.durationMs <= 0L) files.delete(uri) else { done++; totalMs += r.durationMs }
+                is ExportOutcome.Done -> if (r.durationMs <= 0L) files.delete(uri) else { files.markDone(tree, name); done++; totalMs += r.durationMs }
                 is ExportOutcome.Failed -> return@runJob "Error en \"${p.title}\": ${r.message}. Exportadas $done partes."
             }
         }
@@ -203,6 +255,7 @@ class ExportManager(
 
     private fun runJob(book: Book, wholeBook: Boolean, body: suspend (UtteranceProvider, List<ExportPart>, VoiceSettings) -> String) {
         if (job?.isActive == true) return
+        pauseReason = null
         _state.value = ExportJobState(book.id, book.title, wholeBook = wholeBook)
         job = scope.launch {
             val result = try {

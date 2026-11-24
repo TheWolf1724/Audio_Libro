@@ -24,6 +24,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /** Notificacion de la exportacion de audio: progreso (con "Cancelar") y, al acabar, el resultado. */
@@ -101,8 +102,9 @@ class ExportActionReceiver : BroadcastReceiver() {
  * servicio (Android 15+), la exportacion se PAUSA con un aviso y se reanuda saltando lo ya hecho.
  */
 class ExportService : Service() {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var watching = false
+    private var lastShown: Triple<Int, Int, Boolean>? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -114,6 +116,8 @@ class ExportService : Service() {
     @android.annotation.SuppressLint("MissingPermission") // `canNotify` comprueba POST_NOTIFICATIONS
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val graph = (application as LectorVozApp).graph
+        // Reutilizada tras pararse (stopSelf y nuevo arranque antes del onDestroy): colector nuevo.
+        if (!scope.isActive) { scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate); watching = false }
         val n = ExportNotifier.build(this, graph.exports.state.value)
             ?: ExportNotifier.build(this, ExportJobState(bookId = 0, title = "Audio"))!!
         try {
@@ -132,6 +136,10 @@ class ExportService : Service() {
                 graph.exports.state.collect { st ->
                     if (st == null) { finish(null); return@collect }
                     if (st.running) {
+                        val pct = ((st.progress ?: 0f) * 100).toInt()
+                        val key = Triple(pct, st.part, st.progress == null)
+                        if (key == lastShown) return@collect
+                        lastShown = key
                         if (ExportNotifier.canNotify(this@ExportService)) {
                             runCatching { NotificationManagerCompat.from(this@ExportService).notify(ExportNotifier.ID, ExportNotifier.build(this@ExportService, st)!!) }
                         }
@@ -154,11 +162,14 @@ class ExportService : Service() {
     }
 
     /** Android 15+: el servicio de datos agoto su tiempo. Se pausa la exportacion (reanudable) y se para. */
-    override fun onTimeout(startId: Int, fgsType: Int) {
-        (application as LectorVozApp).graph.exports.pauseForTimeout()
-    }
+    override fun onTimeout(startId: Int, fgsType: Int) = timedOut()
 
-    override fun onTimeout(startId: Int) {
+    override fun onTimeout(startId: Int) = timedOut()
+
+    /** Android exige parar el servicio a los pocos segundos: se hace ya (la exportacion se desenrolla despues). */
+    private fun timedOut() {
         (application as LectorVozApp).graph.exports.pauseForTimeout()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 }

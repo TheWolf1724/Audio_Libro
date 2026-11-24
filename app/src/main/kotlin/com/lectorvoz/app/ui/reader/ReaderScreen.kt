@@ -595,8 +595,8 @@ private fun TextActionDialog(action: TextAction, vm: ReaderViewModel) {
     var fixing by remember { mutableStateOf(false) }
     var replacement by remember { mutableStateOf("") }
     var forBook by remember { mutableStateOf(true) }
-    var noting by remember { mutableStateOf(false) }
-    var noteText by remember { mutableStateOf("") }
+    var noting by rememberSaveable { mutableStateOf(false) }
+    var noteText by rememberSaveable { mutableStateOf("") }
     if (noting && action.annotation != null) {
         AlertDialog(
             onDismissRequest = vm::dismissTextAction,

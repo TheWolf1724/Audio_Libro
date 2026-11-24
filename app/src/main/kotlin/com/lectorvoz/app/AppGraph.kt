@@ -194,6 +194,14 @@ class AppGraph(
         }
         // Copias y portadas sin fila (p. ej. tras recrearse la base de datos): fuera, pasado un margen.
         appScope.launch(Dispatchers.IO) { runCatching { library.sweepOrphanFiles() } }
+        // Temporales de una exportacion que murio con el proceso (PCM de horas de audio): fuera si tienen mas de 1 h.
+        appScope.launch(Dispatchers.IO) {
+            runCatching {
+                val limit = System.currentTimeMillis() - 60 * 60_000L
+                context.cacheDir.listFiles { f -> f.isFile && f.name.startsWith("export") && (f.name.endsWith(".pcm") || f.name.endsWith(".m4a")) && f.lastModified() < limit }
+                    ?.forEach { it.delete() }
+            }
+        }
         appScope.launch {
             playback.bookmarkRequests.collect { loc ->
                 // Un fallo (libro borrado mientras sonaba) no debe matar este recolector.

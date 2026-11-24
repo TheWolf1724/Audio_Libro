@@ -498,6 +498,14 @@ class Revision3AppTest {
     }
 
     @Test
+    fun losNombresDeParteSeSaneanParaCualquierProveedor() {
+        assertThat(ExportFiles.safeName("01 - Cap: \"Que?\" <1>/2 | *.m4a")).isEqualTo("01 - Cap- -Que-- -1--2 - -.m4a")
+        val largo = ExportFiles.safeName("05 - " + "x".repeat(300) + ".m4a")
+        assertThat(largo.length).isAtMost(120)
+        assertThat(largo).endsWith(".m4a")
+    }
+
+    @Test
     fun partesDePdfPorIndiceOPorTramos() {
         val sinIndice = ExportManager.pdfParts(45, emptyList())
         assertThat(sinIndice.map { it.chapters }).containsExactly(0..19, 20..39, 40..44).inOrder()
