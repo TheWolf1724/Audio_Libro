@@ -484,7 +484,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
             if (r != null) e = r.last + 1
         } else {
             var p = s - 1
-            while (p >= 0 && text[p].isWhitespace()) p--
+            while (p >= 0 && (text[p].isWhitespace() || text[p] in "\"')\u00BB\u201D")) p--
             val r = if (p >= 0) TextTools.sentenceBounds(text, p) else null
             if (r != null) s = r.first
         }
@@ -492,7 +492,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
             _state.update { it.copy(message = "No hay mas texto que anadir") }
             return@launch
         }
-        val quote = text.substring(s, e).replace('\uFFFC', ' ').replace(Regex("\\s+"), " ")
+        val quote = AnchorText(text.substring(s, e)).norm
         graph.annotations.update(live, live.color, live.note, s, e, quote)
     }
 
@@ -530,7 +530,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         if (dup != null) {
             graph.annotations.update(dup, color, dup.note)
         } else {
-            val quote = text.substring(r.first, r.last + 1).replace('\uFFFC', ' ').replace(Regex("\\s+"), " ")
+            val quote = AnchorText(text.substring(r.first, r.last + 1)).norm
             graph.annotations.add(bookId, loc.chapter, r.first, r.last + 1, color, quote)
         }
         _state.update { it.copy(message = "Subrayado") }

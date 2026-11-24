@@ -34,4 +34,17 @@ class AnnotationAnchorTest {
         val r = AnchorText(t).locate("Antes la luz.", 99, 120, t)!!
         assertThat(t.substring(r.first, r.last + 1)).isEqualTo(t)
     }
+
+    @Test
+    fun citaLargaTruncadaSeComparaPorElPrincipio() {
+        val text = "x".repeat(1500)
+        val a = AnchorText(text)
+        assertThat(a.locate(text.take(1000), 0, 1500, text)).isEqualTo(0 until 1500)
+    }
+
+    @Test
+    fun citaVaciaNoSeJuzga() {
+        val text = "hola mundo"
+        assertThat(AnchorText(text).locate("", 0, 4, text)).isEqualTo(0 until 4)
+    }
 }

@@ -168,8 +168,7 @@ class ExportService : Service() {
 
     /** Android exige parar el servicio a los pocos segundos: se hace ya (la exportacion se desenrolla despues). */
     private fun timedOut() {
-        (application as LectorVozApp).graph.exports.pauseForTimeout()
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        val st = (application as LectorVozApp).graph.exports.pauseForTimeout()
+        finish(st)
     }
 }

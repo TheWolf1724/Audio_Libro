@@ -88,9 +88,11 @@ class SafExportFiles(private val context: Context) : ExportFiles {
     override fun create(tree: Uri, name: String, mime: String): Uri? {
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
         // Resto de un intento anterior interrumpido: se borra para no acumular "nombre (1)".
-        findDocument(tree, name)?.let { delete(it) }
+        // Solo si es nuestro (anotado) o esta confirmado vacio: nunca un fichero ajeno de tamano desconocido.
+        val own = prefs.getBoolean(key(tree, name), false)
+        findDocument(tree, name, own)?.let { delete(it) }
         val uri = DocumentsContract.createDocument(context.contentResolver, parent, mime, name)
-        if (uri != null) prefs.edit().putBoolean(key(tree, name), true).apply()
+        if (uri != null) prefs.edit().putBoolean(key(tree, name), true).commit()
         return uri
     }
 
@@ -98,17 +100,17 @@ class SafExportFiles(private val context: Context) : ExportFiles {
         prefs.edit().remove(key(tree, name)).apply()
     }
 
-    private fun findDocument(tree: Uri, name: String): Uri? = try {
+    private fun findDocument(tree: Uri, name: String, own: Boolean): Uri? = try {
         val treeId = DocumentsContract.getTreeDocumentId(tree)
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, treeId)
         context.contentResolver.query(
             children,
-            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+            arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_SIZE),
             null, null, null,
         )?.use { c ->
             var found: Uri? = null
             while (c.moveToNext()) {
-                if (c.getString(1) == name) { found = DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)); break }
+                if (c.getString(1) == name && (own || (!c.isNull(2) && c.getLong(2) == 0L))) { found = DocumentsContract.buildDocumentUriUsingTree(tree, c.getString(0)); break }
             }
             found
         }
@@ -229,10 +231,13 @@ class ExportManager(
      * Android corta los servicios de datos tras unas horas (Android 15+): se detiene la exportacion con un
      * aviso claro. Las partes ya exportadas se conservan; volver a pulsar "Exportar el libro" continua.
      */
-    fun pauseForTimeout() {
-        if (job?.isActive != true) return
-        pauseReason = "Pausada: Android limita el tiempo de las tareas largas. Vuelve a pulsar \"Exportar el libro completo\" para continuar (se saltan las partes ya hechas)."
+    fun pauseForTimeout(): ExportJobState? {
+        if (job?.isActive != true) return null
+        val why = "Pausada: Android limita el tiempo de las tareas largas. Vuelve a pulsar \"Exportar el libro completo\" para continuar (se saltan las partes ya hechas)."
+        pauseReason = why
+        val st = _state.value?.copy(running = false, result = why)
         job?.cancel()
+        return st
     }
 
     @Volatile private var pauseReason: String? = null

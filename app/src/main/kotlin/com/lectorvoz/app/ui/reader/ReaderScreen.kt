@@ -520,12 +520,12 @@ private fun NotesPanel(
             modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp).testTag("notas-exportar"),
         ) { Text("Compartir todas (Markdown)") }
         TextButton(
-            onClick = { save.launch("${state.book?.title.orEmpty()} - notas.md".replace('/', '-')) },
+            onClick = { save.launch("${state.book?.title.orEmpty()} - notas.md".let { com.lectorvoz.app.books.ExportFiles.safeName(it) }) },
             enabled = state.annotations.isNotEmpty(),
             modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp).testTag("notas-guardar"),
         ) { Text("Guardar en un fichero") }
         if (state.annotations.isNotEmpty()) {
-            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.FilterChip(selected = filter < 0, onClick = { filter = -1 }, label = { Text("Todos") })
                 for (i in 0..3) {
                     androidx.compose.material3.FilterChip(
@@ -539,6 +539,9 @@ private fun NotesPanel(
         }
         if (state.annotations.isEmpty()) {
             Text("Sin subrayados. Manten pulsado sobre el texto para subrayar una frase.", modifier = Modifier.padding(24.dp))
+        }
+        if (state.annotations.isNotEmpty() && shown.isEmpty()) {
+            Text("No hay subrayados de este color.", modifier = Modifier.padding(24.dp))
         }
         LazyColumn(Modifier.testTag("notas")) {
             items(shown, key = { it.id }) { a ->

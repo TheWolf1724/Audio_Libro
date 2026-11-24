@@ -28,11 +28,14 @@ object TextTools {
         if (c == '!' || c == '?' || c == '\u2026') return true
         if (c != '.') return false
         val next = text.getOrNull(i + 1)
-        if (next != null && next.isLetterOrDigit()) return false // 3.5, p.ej, www.web
+        // 3.5, p.ej, www.web: sigue una minuscula o un decimal ("Fin.Siguiente" pegado si corta)
+        if (next != null && (next.isLowerCase() || (next.isDigit() && i > 0 && text[i - 1].isDigit()))) return false
         var w = i
         while (w > 0 && text[w - 1].isLetter()) w--
         val word = text.substring(w, i)
         if (word.lowercase() in ABBREVIATIONS) return false
+        // "p. ej.": la p suelta antes de "ej"
+        if (word == "p" && text.startsWith("ej", (i + 1..text.length).firstOrNull { it >= text.length || text[it] != ' ' } ?: text.length)) return false
         // Inicial ("J. R. R. Tolkien"): una mayuscula suelta seguida de otra palabra con mayuscula.
         if (word.length == 1 && word[0].isUpperCase()) {
             var n = i + 1

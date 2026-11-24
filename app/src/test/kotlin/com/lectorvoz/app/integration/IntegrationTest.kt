@@ -132,6 +132,9 @@ class IntegrationTest {
         val ab = "Hablo con el Sr. Perez sobre 3.5 metros, p.ej. dos. Luego J. R. Tolkien llego."
         assertThat(ab.substring(TextTools.sentenceBounds(ab, 10)!!)).isEqualTo("Hablo con el Sr. Perez sobre 3.5 metros, p.ej. dos.")
         assertThat(ab.substring(TextTools.sentenceBounds(ab, 60)!!)).isEqualTo("Luego J. R. Tolkien llego.")
+        val pe = "Es asi, p. ej. esto. Fin.Siguiente frase."
+        assertThat(pe.substring(TextTools.sentenceBounds(pe, 3)!!)).isEqualTo("Es asi, p. ej. esto.")
+        assertThat(pe.substring(TextTools.sentenceBounds(pe, 30)!!)).isEqualTo("Siguiente frase.")
         val prev = TextTools.spokenPreview(listOf(PronunciationEntry(pattern = "SQL", replacement = "ese cu ele")), "Uso SQL a diario.")
         assertThat(prev).contains("ese cu ele")
         assertThat(TextTools.invalidPatterns(listOf(PronunciationEntry(pattern = "([", replacement = "x", isRegex = true)))).containsExactly("([")

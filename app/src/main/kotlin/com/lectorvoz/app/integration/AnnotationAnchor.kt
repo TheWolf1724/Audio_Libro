@@ -38,10 +38,17 @@ class AnchorText(text: String) {
      * Rango actual de la cita guardada en [start, end): el mismo si sigue coincidiendo; si no, la aparicion mas
      * cercana a [start]; nulo si el texto ya no la contiene (subrayado huerfano).
      */
+    private companion object { const val QUOTE_LIMIT = 1000 }
+
     fun locate(quote: String, start: Int, end: Int, original: String): IntRange? {
         val q = normalize(quote)
-        if (q.isEmpty()) return null
-        if (start in 0 until end && end <= original.length && AnchorText(original.substring(start, end)).norm == q) return start until end
+        val valid = start in 0 until end && end <= original.length
+        if (q.isEmpty()) return if (valid) start until end else null // sin cita no se juzga
+        if (valid) {
+            val cur = AnchorText(original.substring(start, end)).norm
+            // La cita se guarda truncada (MAX_QUOTE): una cita larga se compara por el principio.
+            if (cur == q || (quote.length >= QUOTE_LIMIT && cur.startsWith(q))) return start until end
+        }
         var best = -1
         var bestDist = Int.MAX_VALUE
         var from = 0
