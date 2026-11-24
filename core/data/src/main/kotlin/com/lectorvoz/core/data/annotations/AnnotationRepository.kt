@@ -34,6 +34,7 @@ interface AnnotationRepository {
         start: Int = annotation.start,
         end: Int = annotation.end,
         quote: String = annotation.quote,
+        chapter: Int = annotation.chapter,
     )
 
     suspend fun delete(id: Long)
@@ -64,11 +65,11 @@ class RoomAnnotationRepository(
         )
     }
 
-    override suspend fun update(annotation: Annotation, color: Int, note: String?, start: Int, end: Int, quote: String) = dao.update(
+    override suspend fun update(annotation: Annotation, color: Int, note: String?, start: Int, end: Int, quote: String, chapter: Int) = dao.update(
         AnnotationEntity(
             id = annotation.id,
             bookId = annotation.bookId,
-            chapter = annotation.chapter,
+            chapter = chapter,
             startOffset = start,
             endOffset = end.coerceAtLeast(start + 1),
             color = color.coerceIn(0, COLORS - 1),

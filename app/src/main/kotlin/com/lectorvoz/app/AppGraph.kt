@@ -145,7 +145,7 @@ class AppGraph(
     val imports = ImportCoordinator(appScope, this.library)
 
     /** Exportar a audio (sobrevive a la pantalla). */
-    val exports = ExportManager(appScope, playback, books, settings, pronunciation, exportFiles)
+    val exports = ExportManager(appScope, playback, books, settings, pronunciation, exportFiles) { runCatching { android.os.StatFs(context.cacheDir.path).availableBytes }.getOrDefault(Long.MAX_VALUE) }
 
     /** Posicion y estadisticas de escucha aunque el lector este cerrado. */
     val listening = ListeningTracker(appScope, playback, this.library, stats, progressOf = { id, loc -> speech.progressOf(id, loc) })

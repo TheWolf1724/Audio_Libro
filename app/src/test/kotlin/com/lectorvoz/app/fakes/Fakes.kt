@@ -206,8 +206,8 @@ class FakeAnnotations : com.lectorvoz.core.data.annotations.AnnotationRepository
         items.update { it + com.lectorvoz.core.data.annotations.Annotation(id, bookId, chapter, start, end, color, note?.takeIf { n -> n.isNotBlank() }, quote, id) }
         return id
     }
-    override suspend fun update(annotation: com.lectorvoz.core.data.annotations.Annotation, color: Int, note: String?, start: Int, end: Int, quote: String) {
-        items.update { l -> l.map { if (it.id == annotation.id) it.copy(color = color, note = note?.takeIf { n -> n.isNotBlank() }, start = start, end = end, quote = quote) else it } }
+    override suspend fun update(annotation: com.lectorvoz.core.data.annotations.Annotation, color: Int, note: String?, start: Int, end: Int, quote: String, chapter: Int) {
+        items.update { l -> l.map { if (it.id == annotation.id) it.copy(chapter = chapter, color = color, note = note?.takeIf { n -> n.isNotBlank() }, start = start, end = end, quote = quote) else it } }
     }
     override suspend fun delete(id: Long) { items.update { l -> l.filter { it.id != id } } }
 }

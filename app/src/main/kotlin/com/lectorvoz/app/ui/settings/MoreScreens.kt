@@ -343,11 +343,20 @@ fun ExportScreen(vm: ExportViewModel, onBack: () -> Unit, onPickBook: (Book) -> 
             "Formato", com.lectorvoz.tts.export.ExportFormat.entries, s.format, { it.label }, vm::setFormat, tag = "exportar-formato",
         )
         s.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
+        if (s.format == com.lectorvoz.tts.export.ExportFormat.WAV && s.parts.size > 1) {
+            Text(
+                "Con WAV el libro completo puede ocupar varios GB; M4A es mucho mas pequeno y suena igual de claro para voz.",
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
         Text(
             "Se crea el audio con la voz y los ajustes actuales. Puede tardar horas en un libro largo; " +
                 "puedes salir de esta pantalla (hay una notificacion con el progreso). El libro completo se guarda como un fichero por parte " +
                 "en la carpeta que elijas; si se interrumpe, al volver a pulsar continua por donde iba. " +
-                "El WAV no admite partes de mas de unas 13 horas (4 GB): para libros muy largos usa M4A.",
+                "Hacen falta al menos 300 MB libres en el movil mientras se exporta. El WAV ocupa unas 20 veces mas que M4A (cerca de 2,6 MB por minuto de voz) " +
+                "y no admite partes de mas de unas 13 horas (4 GB): en libros largos usa M4A.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(16.dp),
         )

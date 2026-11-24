@@ -220,7 +220,7 @@ fun ReaderScreen(
                 ReaderPanel.APPEARANCE -> AppearancePanel(state.settings, state.overrides, systemDark, vm::updateReader, vm::updateOverrides, onPreview = vm::previewReader)
                 ReaderPanel.TOC -> TocList(state.toc, state.locator.chapter) { vm.goTo(it); panel = ReaderPanel.NONE }
                 ReaderPanel.BOOKMARKS -> BookmarkList(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteBookmark, onAdd = vm::addBookmark)
-                ReaderPanel.NOTES -> NotesPanel(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteAnnotation, onExport = vm::annotationsMarkdown, onSave = vm::saveAnnotationsTo)
+                ReaderPanel.NOTES -> NotesPanel(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteAnnotation, onExport = { vm.annotationsMarkdown(it) }, onSave = { uri, items -> vm.saveAnnotationsTo(uri, items) }, onReassign = { vm.reassignAnnotation(it); panel = ReaderPanel.NONE })
                 ReaderPanel.SEARCH -> SearchPanel(state.search, vm::search, { vm.openSearchResult(it); panel = ReaderPanel.NONE }, vm::clearSearch)
                 ReaderPanel.NONE -> Unit
             }
@@ -497,34 +497,47 @@ private fun NotesPanel(
     state: ReaderUiState,
     onGo: (com.lectorvoz.core.model.Locator) -> Unit,
     onDelete: (com.lectorvoz.core.data.annotations.Annotation) -> Unit,
-    onExport: () -> String,
-    onSave: (android.net.Uri) -> Unit,
+    onExport: (List<com.lectorvoz.core.data.annotations.Annotation>) -> String,
+    onSave: (android.net.Uri, List<com.lectorvoz.core.data.annotations.Annotation>) -> Unit,
+    onReassign: (com.lectorvoz.core.data.annotations.Annotation?) -> Unit,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var filter by rememberSaveable { mutableStateOf(-1) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val q = query.trim()
+    val shown = state.annotations.filter { a ->
+        (filter < 0 || a.color == filter) && (q.isEmpty() || a.quote.contains(q, ignoreCase = true) || a.note?.contains(q, ignoreCase = true) == true)
+    }
+    val filtered = shown.size != state.annotations.size
     val save = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.CreateDocument("text/markdown"),
-    ) { uri -> if (uri != null) onSave(uri) }
-    val shown = if (filter < 0) state.annotations else state.annotations.filter { it.color == filter }
+    ) { uri -> if (uri != null) onSave(uri, shown) }
     Column(Modifier.fillMaxWidth()) {
         TextButton(
             onClick = {
                 val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(android.content.Intent.EXTRA_TEXT, onExport())
+                    putExtra(android.content.Intent.EXTRA_TEXT, onExport(shown))
                     putExtra(android.content.Intent.EXTRA_SUBJECT, "Notas de ${state.book?.title.orEmpty()}")
                 }
                 context.startActivity(android.content.Intent.createChooser(send, "Compartir notas"))
             },
-            enabled = state.annotations.isNotEmpty(),
+            enabled = shown.isNotEmpty(),
             modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp).testTag("notas-exportar"),
-        ) { Text("Compartir todas (Markdown)") }
+        ) { Text(if (filtered) "Compartir las mostradas (Markdown)" else "Compartir todas (Markdown)") }
         TextButton(
             onClick = { save.launch("${state.book?.title.orEmpty()} - notas.md".let { com.lectorvoz.app.books.ExportFiles.safeName(it) }) },
-            enabled = state.annotations.isNotEmpty(),
+            enabled = shown.isNotEmpty(),
             modifier = Modifier.padding(horizontal = 12.dp).heightIn(min = 48.dp).testTag("notas-guardar"),
-        ) { Text("Guardar en un fichero") }
+        ) { Text(if (filtered) "Guardar las mostradas en un fichero" else "Guardar en un fichero") }
         if (state.annotations.isNotEmpty()) {
+            OutlinedTextField(
+                value = query,
+                onValueChange = { query = it },
+                label = { Text("Buscar en las notas") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).testTag("notas-buscar"),
+            )
             Row(Modifier.horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                 androidx.compose.material3.FilterChip(selected = filter < 0, onClick = { filter = -1 }, label = { Text("Todos") })
                 for (i in 0..3) {
@@ -541,7 +554,7 @@ private fun NotesPanel(
             Text("Sin subrayados. Manten pulsado sobre el texto para subrayar una frase.", modifier = Modifier.padding(24.dp))
         }
         if (state.annotations.isNotEmpty() && shown.isEmpty()) {
-            Text("No hay subrayados de este color.", modifier = Modifier.padding(24.dp))
+            Text("No hay subrayados que coincidan.", modifier = Modifier.padding(24.dp))
         }
         LazyColumn(Modifier.testTag("notas")) {
             items(shown, key = { it.id }) { a ->
@@ -552,6 +565,7 @@ private fun NotesPanel(
                         a.note?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
                         if (a.id in state.orphanAnnotations) {
                             Text("El texto de este pasaje ha cambiado: ya no se puede marcar en la pagina.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                            TextButton(onClick = { onReassign(a) }, modifier = Modifier.heightIn(min = 48.dp).testTag("notas-reasignar")) { Text("Reasignar a otra frase") }
                         }
                     }
                     AppIconButton(R.drawable.ic_delete, "Borrar subrayado", { onDelete(a) })

@@ -72,6 +72,17 @@ class AnnotationsTest {
     }
 
     @Test
+    fun reasignarCambiaDeCapituloYConservaLaNota() = runTest {
+        val id = libro("a")
+        val a = repo.add(id, 0, 5, 9, 1, "vieja", note = "mi nota")
+        repo.update(repo.observe(id).first().first { it.id == a }, 2, "mi nota", 40, 60, "nueva frase", chapter = 3)
+        val r = repo.observe(id).first().single()
+        assertThat(listOf(r.chapter, r.start, r.end, r.color)).containsExactly(3, 40, 60, 2).inOrder()
+        assertThat(r.note).isEqualTo("mi nota")
+        assertThat(r.quote).isEqualTo("nueva frase")
+    }
+
+    @Test
     fun unSubrayadoVacioSeRechaza() = runTest {
         val id = libro("a")
         val r = runCatching { repo.add(id, 0, 5, 5, 0, "x") }

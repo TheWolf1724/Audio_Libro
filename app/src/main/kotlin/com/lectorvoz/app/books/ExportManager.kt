@@ -163,6 +163,8 @@ class ExportManager(
     private val settings: SettingsRepository,
     private val pronunciation: PronunciationRepository,
     private val files: ExportFiles,
+    /** Espacio libre (bytes) donde se escribe el audio temporal. */
+    private val freeSpace: () -> Long = { Long.MAX_VALUE },
 ) {
     private val _state = MutableStateFlow<ExportJobState?>(null)
 
@@ -264,6 +266,11 @@ class ExportManager(
         _state.value = ExportJobState(book.id, book.title, wholeBook = wholeBook)
         job = scope.launch {
             val result = try {
+                val free = freeSpace()
+                if (free < MIN_FREE_BYTES) {
+                    _state.update { it?.copy(running = false, progress = null, result = "Error: queda poco espacio libre en el movil (${free / (1024 * 1024)} MB). Libera al menos ${MIN_FREE_BYTES / (1024 * 1024)} MB y vuelve a intentarlo.") }
+                    return@launch
+                }
                 val voice = settings.voiceFor(book.id).first()
                 val dict = pronunciation.effective(book.id).first()
                 val lease = books.acquire(book, voice.skipPdfHeadersFooters)
@@ -289,6 +296,9 @@ class ExportManager(
 
     companion object {
         private const val TAG = "ExportManager"
+
+        /** Margen minimo para el audio temporal de una parte (PCM) mas su codificacion. */
+        const val MIN_FREE_BYTES = 300L * 1024 * 1024
 
         /** Paginas por fichero en un PDF sin indice. */
         const val PDF_PAGES_PER_PART = 20

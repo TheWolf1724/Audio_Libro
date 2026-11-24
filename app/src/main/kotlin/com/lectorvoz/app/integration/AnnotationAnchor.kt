@@ -38,7 +38,17 @@ class AnchorText(text: String) {
      * Rango actual de la cita guardada en [start, end): el mismo si sigue coincidiendo; si no, la aparicion mas
      * cercana a [start]; nulo si el texto ya no la contiene (subrayado huerfano).
      */
-    private companion object { const val QUOTE_LIMIT = 1000 }
+    companion object {
+        private const val QUOTE_LIMIT = 1000
+
+        /** El tramo [span] sigue siendo la cita [quote] (igual, o con su principio si la cita se guardo truncada). */
+        fun matches(span: String, quote: String): Boolean {
+            val q = AnchorText(quote).norm
+            if (q.isEmpty()) return false
+            val cur = AnchorText(span).norm
+            return cur == q || (quote.length >= QUOTE_LIMIT && cur.startsWith(q))
+        }
+    }
 
     fun locate(quote: String, start: Int, end: Int, original: String): IntRange? {
         val q = normalize(quote)

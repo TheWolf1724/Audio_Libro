@@ -37,6 +37,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -89,6 +90,8 @@ data class ReaderUiState(
     val annotations: List<Annotation> = emptyList(),
     /** Subrayados cuya cita ya no esta en el texto (cambio de OCR o de analizador): no se pintan. */
     val orphanAnnotations: Set<Long> = emptySet(),
+    /** Subrayado huerfano que se esta reasignando: la proxima frase subrayada lo sustituye. */
+    val reassigning: Long? = null,
     val playback: VoiceUiState = VoiceUiState(),
     val sentence: String? = null,
     val search: SearchState = SearchState(),
@@ -252,15 +255,22 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         viewModelScope.launch { graph.bookmarks.observe(bookId).collect { b -> _state.update { it.copy(bookmarks = b) } } }
         viewModelScope.launch {
             graph.annotations.observe(bookId).collectLatest { list ->
-                _state.update { it.copy(annotations = list) }
-                pushMarks(list, emptySet())
-                // Comprueba que cada subrayado sigue sobre su cita; si el texto cambio, lo reubica o lo marca huerfano.
-                val (fixed, orphans) = resolveAnchors(list)
-                if (fixed != list || orphans.isNotEmpty()) {
-                    _state.update { it.copy(annotations = fixed, orphanAnnotations = orphans) }
-                    pushMarks(fixed, orphans)
-                } else {
-                    _state.update { it.copy(orphanAnnotations = emptySet()) }
+                // Lo ya comprobado se aplica al instante (sin pintar la posicion cruda); solo se comprueba lo nuevo.
+                resolved.keys.retainAll(list.mapTo(HashSet()) { it.id })
+                applyResolved(list)
+                val pending = list.filter { a -> resolved[a.id]?.let { sameAnchor(it.raw, a) } != true }
+                if (pending.isNotEmpty()) {
+                    val judged = resolveAnchors(pending)
+                    resolved.putAll(judged)
+                    applyResolved(list)
+                    // La reubicacion se guarda: no se repite en cada apertura.
+                    withContext(NonCancellable) {
+                        for (r in judged.values) {
+                            if (!r.orphan && (r.fixed.start != r.raw.start || r.fixed.end != r.raw.end)) {
+                                graph.annotations.update(r.raw, r.raw.color, r.raw.note, r.fixed.start, r.fixed.end, r.raw.quote)
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -441,6 +451,25 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
 
     // ------------------------------------------------------------------ subrayados y notas
 
+    /** Resultado de comprobar un subrayado ([raw] tal como esta guardado). */
+    private class Resolved(val raw: Annotation, val fixed: Annotation, val orphan: Boolean)
+
+    private val resolved = HashMap<Long, Resolved>()
+
+    private fun sameAnchor(a: Annotation, b: Annotation) =
+        a.chapter == b.chapter && a.start == b.start && a.end == b.end && a.quote == b.quote
+
+    private fun applyResolved(list: List<Annotation>) {
+        val orphans = HashSet<Long>()
+        val view = list.map { a ->
+            val r = resolved[a.id]?.takeIf { sameAnchor(it.raw, a) }
+            if (r?.orphan == true) orphans += a.id
+            if (r == null) a else r.fixed.copy(color = a.color, note = a.note)
+        }.sortedWith(compareBy({ it.chapter }, { it.start }))
+        _state.update { it.copy(annotations = view, orphanAnnotations = orphans) }
+        pushMarks(view, orphans)
+    }
+
     private fun pushMarks(list: List<Annotation>, orphans: Set<Long>) {
         controller.setMarks(
             list.filter { it.id !in orphans }
@@ -449,25 +478,29 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     }
 
     /** Reubica cada subrayado sobre su cita en el texto actual; los que ya no aparecen quedan como huerfanos. */
-    private suspend fun resolveAnchors(list: List<Annotation>): Pair<List<Annotation>, Set<Long>> {
-        if (list.isEmpty()) return list to emptySet()
-        val orphans = HashSet<Long>()
-        val out = ArrayList<Annotation>(list.size)
+    private suspend fun resolveAnchors(list: List<Annotation>): Map<Long, Resolved> {
+        val out = HashMap<Long, Resolved>()
         for ((chapter, items) in list.groupBy { it.chapter }) {
             val text = chapterText(chapter)
             // Sin texto, o provisional (OCR sin terminar): no se juzga, se deja como esta.
-            if (text == null || auxBook()?.content?.provisional(chapter) == true) { out += items; continue }
-            val anchors = AnchorText(text)
+            if (text == null || auxBook()?.content?.provisional(chapter) == true) continue
+            val anchors by lazy(LazyThreadSafetyMode.NONE) { AnchorText(text) }
             for (a in items) {
-                val r = anchors.locate(a.quote, a.start, a.end, text)
-                when {
-                    r == null -> { orphans += a.id; out += a }
-                    r.first == a.start && r.last + 1 == a.end -> out += a
-                    else -> out += a.copy(start = r.first, end = r.last + 1)
+                val r = locateFast(text, a) ?: anchors.locate(a.quote, a.start, a.end, text)
+                out[a.id] = when {
+                    r == null -> Resolved(a, a, true)
+                    r.first == a.start && r.last + 1 == a.end -> Resolved(a, a, false)
+                    else -> Resolved(a, a.copy(start = r.first, end = r.last + 1), false)
                 }
             }
         }
-        return out.sortedWith(compareBy({ it.chapter }, { it.start })) to orphans
+        return out
+    }
+
+    /** Ruta rapida: el tramo guardado sigue sobre su cita (sin construir el texto normalizado del capitulo entero). */
+    private fun locateFast(text: String, a: Annotation): IntRange? {
+        if (a.start !in 0 until a.end || a.end > text.length) return null
+        return if (a.quote.isNotEmpty() && AnchorText.matches(text.substring(a.start, a.end), a.quote)) a.start until a.end else null
     }
 
     /** Amplia el subrayado [a] con la frase anterior o la siguiente (mas control que un subrayado de frase fija). */
@@ -497,8 +530,8 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     }
 
     /** Guarda los subrayados y notas en el fichero [uri] (Markdown). */
-    fun saveAnnotationsTo(uri: android.net.Uri) = viewModelScope.launch {
-        val md = annotationsMarkdown()
+    fun saveAnnotationsTo(uri: android.net.Uri, items: List<Annotation> = _state.value.annotations) = viewModelScope.launch {
+        val md = annotationsMarkdown(items)
         val ok = withContext(Dispatchers.IO) {
             try {
                 graph.context.contentResolver.openOutputStream(uri, "wt")?.use { it.write(md.toByteArray(Charsets.UTF_8)) } != null
@@ -523,6 +556,13 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
             _state.update { it.copy(message = "Espera a que termine de reconocerse el texto de esta pagina para subrayar") }
             return@launch
         }
+        val target = _state.value.reassigning?.let { id -> _state.value.annotations.firstOrNull { it.id == id } }
+        if (target != null) {
+            val q = AnchorText(text.substring(r.first, r.last + 1)).norm
+            graph.annotations.update(target, color, target.note, r.first, r.last + 1, q, loc.chapter)
+            _state.update { it.copy(reassigning = null, message = "Subrayado reasignado") }
+            return@launch
+        }
         // Si ya hay un subrayado casi igual (mismo tramo con un caracter de mas o de menos) se recolorea.
         val dup = _state.value.annotations.firstOrNull {
             it.chapter == loc.chapter && minOf(it.end, r.last + 1) - maxOf(it.start, r.first) > (r.last + 1 - r.first) / 2
@@ -543,15 +583,26 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         graph.annotations.update(live, color, note)
     }
 
+    /** Empieza (o cancela, si [a] es nulo) la reasignacion de un subrayado huerfano. */
+    fun reassignAnnotation(a: Annotation?) {
+        _state.update {
+            it.copy(
+                reassigning = a?.id,
+                message = if (a != null) "Manten pulsada la frase donde va este subrayado (en el capitulo ${a.chapter + 1} o en otro)" else it.message,
+            )
+        }
+    }
+
     fun deleteAnnotation(a: Annotation) = viewModelScope.launch {
         dismissTextAction()
+        if (_state.value.reassigning == a.id) _state.update { it.copy(reassigning = null) }
         graph.annotations.delete(a.id)
     }
 
     /** Subrayados y notas del libro en Markdown (para compartir). */
-    fun annotationsMarkdown(): String {
+    fun annotationsMarkdown(items: List<Annotation> = _state.value.annotations): String {
         val st = _state.value
-        return AnnotationExport.markdown(st.book?.title ?: "Libro", st.annotations) { ch -> chapterTitleOf(st.toc, ch) }
+        return AnnotationExport.markdown(st.book?.title ?: "Libro", items) { ch -> chapterTitleOf(st.toc, ch) }
     }
 
     private fun chapterTitleOf(toc: List<TocItem>, chapter: Int): String? =
