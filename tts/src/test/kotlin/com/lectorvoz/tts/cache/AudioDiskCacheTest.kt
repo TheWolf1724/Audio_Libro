@@ -111,4 +111,20 @@ class AudioDiskCacheTest {
         assertThat(c.sizeBytes()).isEqualTo(0L)
         assertThat(c.get("l", 0, "v", p, "a")).isNull()
     }
+
+    @Test
+    fun siElPcmSeBorraConElIndiceEnMemoriaNoSeSirveAudioDeOtraFrase() {
+        val c = cache()
+        // Dos frases: "A" en el offset 0 y "B" tras ella.
+        c.put("l", 0, "v", p, "A", FloatArray(100) { 0.5f }, 44_100)
+        c.put("l", 0, "v", p, "B", FloatArray(100) { -0.5f }, 44_100)
+        // Android (o el usuario) borra los ficheros de la cache con la instancia viva.
+        tmp.root.resolve("c").walkTopDown().filter { it.isFile }.forEach { it.delete() }
+        // Una frase nueva se escribe desde el offset 0: antes, "B" (con su offset viejo) devolvia ese audio.
+        c.put("l", 0, "v", p, "C", FloatArray(100) { 0.9f }, 44_100)
+        assertThat(c.get("l", 0, "v", p, "B")).isNull()
+        assertThat(c.contains("l", 0, "v", p, "B")).isFalse()
+        val cBack = c.get("l", 0, "v", p, "C")!!
+        assertThat(cBack.pcm[0]).isWithin(1e-3f).of(0.9f)
+    }
 }

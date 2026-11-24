@@ -93,6 +93,7 @@ class AudioDiskCache(
         }
         pcmFile.setLastModified(now())
         idx[k] = Entry(offset, pcm.size, sampleRate)
+        expectedPcmLen[base] = offset + pcm.size * 2L
         totalBytes += pcm.size * 2L + RECORD
         evictUntil(maxBytes) { it != pcmFile }
     }
@@ -124,6 +125,7 @@ class AudioDiskCache(
     fun clear() = synchronized(lock) {
         root.deleteRecursively()
         indexes.clear()
+        expectedPcmLen.clear()
         totalBytes = 0
     }
 
@@ -142,15 +144,34 @@ class AudioDiskCache(
             val idx = File(pcm.path.removeSuffix(PCM) + IDX)
             totalBytes -= pcm.length() + idx.length()
             pcm.delete(); idx.delete()
-            indexes.remove(File(pcm.path.removeSuffix(PCM)))
+            File(pcm.path.removeSuffix(PCM)).let { indexes.remove(it); expectedPcmLen.remove(it) }
             pcm.parentFile?.takeIf { it.list()?.isEmpty() == true }?.delete()
         }
     }
 
-    private fun index(base: File): HashMap<Long, Entry> = indexes.getOrPut(base) {
+    /** Longitud del .pcm que cada indice en memoria da por buena (para detectar borrados externos). */
+    private val expectedPcmLen = HashMap<File, Long>()
+
+    private fun index(base: File): HashMap<Long, Entry> {
+        // Si el sistema (o el usuario, "Borrar cache") borro o recorto el .pcm con el indice en memoria,
+        // los offsets guardados apuntarian a OTRO audio al reescribir desde 0 (sonaria texto distinto del
+        // resaltado). Se descarta el indice y se vuelve a leer del disco.
+        val cached = indexes[base]
+        if (cached != null) {
+            val len = File(base.path + PCM).length()
+            if (len >= (expectedPcmLen[base] ?: 0L)) return cached
+            indexes.remove(base)
+            expectedPcmLen.remove(base)
+            totalBytes = -1
+        }
+        return loadIndex(base).also { indexes[base] = it }
+    }
+
+    private fun loadIndex(base: File): HashMap<Long, Entry> {
         val map = HashMap<Long, Entry>()
         val idx = File(base.path + IDX)
         val pcmLen = File(base.path + PCM).length()
+        expectedPcmLen[base] = pcmLen
         if (idx.isFile) {
             try {
                 // Un registro a medias (corte durante la escritura) desalinearia los siguientes.
@@ -173,7 +194,7 @@ class AudioDiskCache(
                 // Indice danado: se ignora lo que no se pudo leer.
             }
         }
-        map
+        return map
     }
 
     private fun chapterBase(bookId: String, chapter: Int): File = File(File(root, hashHex(bookId)), "c$chapter")

@@ -238,13 +238,17 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
                     }
                 }
             }
-            if (release.apkSize > 0 && done != release.apkSize) throw UpdateError("La descarga quedo incompleta. Reintentalo.")
+            if (release.apkSize > 0 && done != release.apkSize) throw UpdateError("La descarga quedo incompleta. Reintentalo.", keepPart = true)
             val sha = digest.digest().joinToString("") { "%02x".format(it) }
             release.apkSha256?.let { if (it != sha) throw UpdateError("La APK descargada no coincide con la publicada") }
         } catch (e: Exception) {
-            // Un parcial con huella equivocada (p. ej. de otra version) se borra: el reintento baja entero.
-            part.delete()
-            if (e !is CancellationException && isNoSpace(e)) throw UpdateError("No hay espacio para la actualizacion")
+            // El parcial se CONSERVA ante un corte de red o una cancelacion (el reintento lo reanuda con
+            // Range en vez de bajar 220 MB otra vez). Se borra si no hay espacio, o si la descarga
+            // acabo pero no cuadra (huella o tamano de otra version): ahi un reintento baja entero.
+            val noSpace = e !is CancellationException && isNoSpace(e)
+            val keep = !noSpace && (e is CancellationException || (e is IOException && !(e is UpdateError && !e.keepPart)))
+            if (!keep) part.delete()
+            if (noSpace) throw UpdateError("No hay espacio para la actualizacion")
             throw e
         } finally {
             conn.disconnect()
@@ -324,7 +328,7 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
 }
 
 /** Fallo con un mensaje propio para el usuario (los de la red se resumen en uno). */
-private class UpdateError(message: String) : IOException(message)
+private class UpdateError(message: String, val keepPart: Boolean = false) : IOException(message)
 
 /** Recibe el resultado del instalador del sistema. */
 class InstallResultReceiver : BroadcastReceiver() {

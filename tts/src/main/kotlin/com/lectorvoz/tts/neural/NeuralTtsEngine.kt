@@ -931,7 +931,16 @@ class NeuralTtsEngine(
         if (current != null && loadedId == ref.voiceId) return current
         unload()
         val t0 = System.nanoTime()
-        val loaded = loader.load(ref, numThreads)
+        // Un movil justo de RAM puede quedarse sin memoria al cargar el modelo (OutOfMemoryError) o fallar
+        // el JNI nativo (LinkageError): eso son Error, no Exception, y tumbaban el proceso. Se convierten
+        // en SpeechEngineException para que el controlador use el salto automatico a la voz del sistema.
+        val loaded = try {
+            loader.load(ref, numThreads)
+        } catch (e: OutOfMemoryError) {
+            throw SpeechEngineException("No hay memoria suficiente para la voz natural", e)
+        } catch (e: LinkageError) {
+            throw SpeechEngineException("No se pudo cargar la voz natural en este movil", e)
+        }
         synth = loaded
         loadedId = ref.voiceId
         if (TtsConfig.diagnostics) {

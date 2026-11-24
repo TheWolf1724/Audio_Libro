@@ -476,6 +476,12 @@ class ReadAloudController(
                     fail(e.message ?: "Error de voz", e)
                     focus.abandon()
                 }
+            } catch (e: OutOfMemoryError) {
+                // Sin memoria durante la sintesis: error visible en vez de tumbar el proceso del servicio.
+                if (session == mySession) {
+                    fail("No hay memoria suficiente para seguir leyendo. Prueba con la voz del sistema.", e)
+                    focus.abandon()
+                }
             }
         }
     }

@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -54,6 +55,13 @@ interface LibraryRepository {
 
     /** Quita el libro de la biblioteca (y su copia privada); el original no se toca. */
     suspend fun delete(id: Long)
+
+    /**
+     * Borra las copias y portadas de la carpeta propia que ya no tienen fila en la biblioteca (p. ej.
+     * tras recrearse la base de datos al instalar una version anterior). Solo toca ficheros mas
+     * antiguos que [minAgeMs] para no pisar una importacion en curso. Devuelve cuantos borro.
+     */
+    suspend fun sweepOrphanFiles(minAgeMs: Long = 10 * 60_000L): Int = 0
 }
 
 /**
@@ -149,7 +157,13 @@ class RoomLibraryRepository(
             }
             val fmt = format ?: FormatSniffer.detect(head.copyOf(headLen), name)
                 ?: return@withContext ImportResult.Failed(name, ImportError.UNSUPPORTED_FORMAT)
-            val hash = hasher.digest()
+            val quick = hasher.digest()
+            // El hash rapido (cabecera + final + tamano) puede coincidir en dos ficheros DISTINTOS (misma
+            // plantilla y tamano). Antes de dar por duplicado, si la copia guardada existe se compara el
+            // contenido completo; si difiere, se importa como otro libro con un hash propio.
+            val candidate = dao.findByHash(quick)
+            val collision = candidate != null && readable(candidate) && !sameContent(candidate, tmp)
+            val hash = if (collision) quick + "-" + fullSha256(tmp).take(10) else quick
             dao.findByHash(hash)?.let { existing ->
                 if (readable(existing)) return@withContext ImportResult.Duplicate(existing.toBook())
                 // Ya estaba pero su fichero falta (copia de seguridad restaurada, otro movil,
@@ -246,8 +260,17 @@ class RoomLibraryRepository(
     }
 
     private fun takePersistable(uri: Uri): Boolean = try {
-        resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        true
+        // Android limita los permisos persistentes (128 en versiones antiguas, 512 en las nuevas) y, al
+        // pasarse, descarta los MAS ANTIGUOS sin avisar: esos libros dejarian de abrirse. Cerca del
+        // limite se guarda copia privada en vez de referenciar el original.
+        val used = runCatching { resolver.persistedUriPermissions.size }.getOrDefault(0)
+        if (used >= PERSISTED_PERMISSION_SOFT_LIMIT) {
+            Log.i(TAG, "Muchos permisos persistentes ($used); se guarda una copia privada")
+            false
+        } else {
+            resolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            true
+        }
     } catch (e: SecurityException) {
         Log.i(TAG, "Sin permiso persistente; se guarda una copia privada")
         false
@@ -305,11 +328,50 @@ class RoomLibraryRepository(
         }
     }
 
+    override suspend fun sweepOrphanFiles(minAgeMs: Long): Int = withContext(io) {
+        val keep = HashSet<String>()
+        for (b in books.first()) {
+            b.localPath?.let { keep += File(it).canonicalPath }
+            b.coverPath?.let { keep += File(it).canonicalPath }
+        }
+        val cutoff = clock() - minAgeMs
+        var n = 0
+        for (dir in listOf(booksDir, coversDir)) {
+            dir.listFiles()?.forEach { f ->
+                if (f.isFile && f.canonicalPath !in keep && f.lastModified() < cutoff && f.delete()) n++
+            }
+        }
+        n
+    }
+
+    /** true si [tmp] tiene el mismo contenido que la copia guardada de [b] (o no hay copia con la que comparar). */
+    private fun sameContent(b: BookEntity, tmp: File): Boolean {
+        val local = b.localPath?.let(::File)?.takeIf { it.isFile } ?: return true
+        if (local.length() != tmp.length()) return false
+        return fullSha256(local) == fullSha256(tmp)
+    }
+
+    private fun fullSha256(f: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        f.inputStream().buffered(64 * 1024).use { input ->
+            val buf = ByteArray(64 * 1024)
+            while (true) {
+                val n = input.read(buf)
+                if (n < 0) break
+                md.update(buf, 0, n)
+            }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
+
     private fun File.isInside(dir: File): Boolean =
         canonicalPath.startsWith(dir.canonicalPath + File.separator)
 
     companion object {
         private const val TAG = "LibraryRepository"
+
+        /** Por debajo del limite del sistema (128 en Android antiguo): a partir de aqui, copia privada. */
+        private const val PERSISTED_PERMISSION_SOFT_LIMIT = 100
 
         /** Carpeta de `cacheDir` con las copias temporales de los libros solo referenciados. */
         const val OPENED_CACHE_DIR = "abiertos"

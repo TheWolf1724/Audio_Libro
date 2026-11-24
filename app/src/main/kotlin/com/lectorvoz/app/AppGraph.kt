@@ -177,6 +177,8 @@ class AppGraph(
         // Limpia sesiones de instalacion huerfanas de ejecuciones anteriores (antes de cualquier
         // instalacion nueva de esta sesion, asi que no toca ninguna en curso).
         appScope.launch(Dispatchers.IO) { runCatching { installer.cleanupStaleSessions() } }
+        // Copias y portadas sin fila (p. ej. tras recrearse la base de datos): fuera, pasado un margen.
+        appScope.launch(Dispatchers.IO) { runCatching { library.sweepOrphanFiles() } }
         appScope.launch {
             playback.bookmarkRequests.collect { loc ->
                 // Un fallo (libro borrado mientras sonaba) no debe matar este recolector.

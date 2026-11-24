@@ -119,6 +119,43 @@ class LibraryRepositoryTest {
     }
 
     @Test
+    fun dosFicherosConElMismoHashRapidoPeroContenidoDistintoNoSonDuplicados() = runTest {
+        // Mismo tamano y mismos 64 KiB al principio y al final, distinto en medio.
+        fun grande(nombre: String, medio: Byte): File {
+            val cab = "%PDF-1.4\n".toByteArray()
+            val cuerpo = ByteArray(400 * 1024) { 'a'.code.toByte() }
+            for (i in 150_000 until 250_000) cuerpo[i] = medio
+            return tmp.newFile(nombre).apply { writeBytes(cab + cuerpo + "%%EOF".toByteArray()) }
+        }
+        val a = grande("a.pdf", 'b'.code.toByte())
+        val b = grande("b.pdf", 'c'.code.toByte())
+        assertThat(repo.import(uriFor(a))).isInstanceOf(ImportResult.Imported::class.java)
+        // Contenido distinto: se importa como otro libro, no como duplicado.
+        assertThat(repo.import(uriFor(b))).isInstanceOf(ImportResult.Imported::class.java)
+        assertThat(repo.books.first()).hasSize(2)
+        // Y reimportar uno de ellos sigue detectandose como duplicado.
+        val a2 = tmp.newFile("a-copia.pdf").apply { writeBytes(a.readBytes()) }
+        assertThat(repo.import(uriFor(a2))).isInstanceOf(ImportResult.Duplicate::class.java)
+        val b2 = tmp.newFile("b-copia.pdf").apply { writeBytes(b.readBytes()) }
+        assertThat(repo.import(uriFor(b2))).isInstanceOf(ImportResult.Duplicate::class.java)
+        assertThat(repo.books.first()).hasSize(2)
+    }
+
+    @Test
+    fun barreFicherosHuerfanosPeroNoLosRecientesNiLosDeLaBiblioteca() = runTest {
+        val r = repo.import(uriFor(pdf("uno.pdf"))) as ImportResult.Imported
+        val viejo = File(repo.booksDir, "huerfano-viejo.pdf").apply { writeText("x"); setLastModified(500L) }
+        val reciente = File(repo.booksDir, "huerfano-reciente.pdf").apply { writeText("x") }
+        val portadaVieja = File(repo.coversDir, "sin-fila.jpg").apply { writeText("x"); setLastModified(500L) }
+        val borrados = repo.sweepOrphanFiles(minAgeMs = 0L) // el reloj de las pruebas va fijo en 1000
+        assertThat(borrados).isEqualTo(2)
+        assertThat(viejo.exists()).isFalse()
+        assertThat(portadaVieja.exists()).isFalse()
+        assertThat(reciente.exists()).isTrue() // reciente: podria ser una importacion en curso
+        assertThat(r.book.localFile!!.exists()).isTrue() // el de la biblioteca no se toca
+    }
+
+    @Test
     fun libroDanadoNoSeAnade() = runTest {
         extractorFails = true
         val r = repo.import(uriFor(pdf("roto.pdf")))
