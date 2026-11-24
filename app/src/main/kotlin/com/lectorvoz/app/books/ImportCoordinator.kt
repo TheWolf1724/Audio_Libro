@@ -51,6 +51,8 @@ class ImportCoordinator(
         scope.launch {
             var last: Long? = null
             var failed = 0
+            var left = uris.size
+            try {
             for (u in uris) {
                 try {
                     when (val r = library.import(u, copy = true)) {
@@ -64,8 +66,13 @@ class ImportCoordinator(
                     Log.w(TAG, "Importacion fallida", e)
                     failed++
                 } finally {
+                    left--
                     _running.update { (it - 1).coerceAtLeast(0) }
                 }
+            }
+            } finally {
+                // Cancelado a mitad: los que no llegaron a procesarse tambien dejan de contar.
+                if (left > 0) _running.update { (it - left).coerceAtLeast(0) }
             }
             channel.send(ExternalImport(if (uris.size == 1) last else null, failed))
         }

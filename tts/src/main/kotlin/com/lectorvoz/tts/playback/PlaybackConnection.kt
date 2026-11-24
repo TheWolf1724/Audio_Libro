@@ -72,6 +72,7 @@ class PlaybackConnection(
                 try {
                     cont.resume(f.get())
                 } catch (e: ExecutionException) {
+                    future = null // un intento fallido no se cachea
                     cont.resumeWithException(e.cause ?: e)
                 }
             }, ContextCompat.getMainExecutor(appContext))

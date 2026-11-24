@@ -637,10 +637,12 @@ private fun ColorChips(selected: Int, onPick: (Int) -> Unit) {
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.padding(vertical = 4.dp)) {
         names.forEachIndexed { i, n ->
             Box(
-                Modifier.size(48.dp).padding(4.dp)
+                Modifier.size(48.dp)
+                    .semantics { stateDescription = if (i == selected) "seleccionado" else "no seleccionado" }
+                    .clickable(onClickLabel = "Subrayar en $n", role = androidx.compose.ui.semantics.Role.Button) { onPick(i) }
+                    .padding(4.dp)
                     .background(androidx.compose.ui.graphics.Color(com.lectorvoz.reader.render.MarkColors.argb(i)), androidx.compose.foundation.shape.CircleShape)
                     .then(if (i == selected) Modifier.border(3.dp, MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape) else Modifier)
-                    .clickable(onClickLabel = "Subrayar en $n") { onPick(i) }
                     .testTag("color-$i"),
             )
         }

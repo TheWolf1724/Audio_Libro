@@ -120,8 +120,9 @@ class PdfPageRenderer(private val density: Float) {
         )
         if (recolor) {
             val s = scratch?.takeIf { it.width == target.width && it.height == target.height && !it.isRecycled }
-                ?: createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888).also {
-                    scratch?.recycle(); scratch = it
+                ?: run {
+                    scratch?.recycle(); scratch = null // libera antes de pedir el nuevo (menos pico de memoria)
+                    createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888).also { scratch = it }
                 }
             book.renderPage(page, s, placement.scale, left, top)
             val key = (colors.readerBackground.toLong() shl 32) or (colors.readerText.toLong() and 0xFFFFFFFFL)

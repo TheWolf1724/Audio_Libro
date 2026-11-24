@@ -288,6 +288,8 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
                 val intent = Intent(context, InstallResultReceiver::class.java).setPackage(context.packageName)
                 // Mutable: el instalador anade el resultado al intent.
                 val pending = PendingIntent.getBroadcast(context, id, intent, PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+                // Cancelado mientras se escribia (cancel() abandono la sesion): no se entrega.
+                if (sessionId != id) throw CancellationException("Actualizacion cancelada")
                 session.commit(pending.intentSender)
             }
         } catch (e: Exception) {

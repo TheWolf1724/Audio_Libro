@@ -16,6 +16,7 @@ import com.lectorvoz.core.model.Locator
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -134,6 +135,7 @@ class RoomLibraryRepository(
                     FileOutputStream(tmp).use { out ->
                         val buf = ByteArray(64 * 1024)
                         while (true) {
+                            kotlin.coroutines.coroutineContext.ensureActive()
                             val n = ins.read(buf)
                             if (n < 0) break
                             if (headLen < head.size) {

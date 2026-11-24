@@ -155,11 +155,18 @@ class LibraryViewModel(
     }
 
     fun delete(book: Book) = viewModelScope.launch {
-        onDelete?.invoke(book) ?: run {
-            library.delete(book.id)
-            settings.clearOverrides(book.id)
+        val ok = try {
+            onDelete?.invoke(book) ?: run {
+                library.delete(book.id)
+                settings.clearOverrides(book.id)
+            }
+            true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
         }
-        local.update { it.copy(message = "\"${book.title}\" quitado de la biblioteca. El fichero original no se ha borrado.") }
+        local.update { it.copy(message = if (ok) "\"${book.title}\" quitado de la biblioteca. El fichero original no se ha borrado." else "No se pudo quitar \"${book.title}\"") }
     }
 
     fun toggleFavorite(book: Book) = viewModelScope.launch { library.setFavorite(book.id, !book.favorite) }

@@ -100,12 +100,15 @@ class PdfContent(
     // perceptible (texto/figuras). Con recoloreado (modo oscuro del PDF) se mantiene ARGB_8888.
     override fun opaqueConfigSafe(): Boolean = config?.pdfRecolor == false
 
+    private val MAX_SCROLL_HEIGHT = 8192
+
     override fun bitmapSize(key: PageKey): Pair<Int, Int> {
         val cfg = requireConfig()
         val v = cfg.viewport
         if (!cfg.scrollMode) return v.widthPx to v.heightPx
         val s = sizes.getOrNull(key.chapter) ?: return v.widthPx to v.heightPx
-        return v.widthPx to (s.height * v.widthPx / s.width.coerceAtLeast(1f)).roundToInt().coerceAtLeast(1)
+        // Tope de alto: un plano o poster enorme pediria un bitmap que no cabe en memoria.
+        return v.widthPx to (s.height * v.widthPx / s.width.coerceAtLeast(1f)).roundToInt().coerceIn(1, MAX_SCROLL_HEIGHT)
     }
 
     /** Alto conocido de la pagina en modo scroll (null si aun no se sabe su tamano). */

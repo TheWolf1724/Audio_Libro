@@ -25,6 +25,8 @@ import com.lectorvoz.format.pdf.ocr.OcrRegionResult
 import com.lectorvoz.format.pdf.ocr.OcrStore
 import com.lectorvoz.tts.playback.TtsConfig
 import kotlin.math.roundToInt
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -377,7 +379,14 @@ class OcrManager(
                 }
             }
             job.start()
-            val r = job.await()
+            // Si el trabajo compartido lo cancelaron desde fuera (OCR apagado) y este llamante sigue vivo,
+            // no es una cancelacion propia: se trata como "sin resultado".
+            val r = try {
+                job.await()
+            } catch (e: CancellationException) {
+                currentCoroutineContext().ensureActive()
+                null
+            }
             if (r != null || attempt == 1) return r
             // null en el primer intento: si otro llamante la termino y quedo en disco, usala.
             withContext(Dispatchers.IO) { store.read(book.id, index) }?.let { return it }

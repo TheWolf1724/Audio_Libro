@@ -750,8 +750,14 @@ class ReaderController(
             } catch (e: Exception) {
                 Log.w(TAG, "Error al dibujar $key", e)
                 false
+            } catch (e: OutOfMemoryError) {
+                // Poca memoria: se suelta lo reutilizable y la pagina queda como fallida (no tumba la app).
+                Log.w(TAG, "Sin memoria al dibujar $key", e)
+                pool.clear()
+                false
             }
             if (jobs[key] === self) jobs.remove(key)
+            if (!ok && bmp == null) { failedRenders += key; if (key == currentKey) refreshBusy() }
             val b = bmp ?: return@launch
             if (!ok || gen != renderGen) {
                 pool.put(b)
