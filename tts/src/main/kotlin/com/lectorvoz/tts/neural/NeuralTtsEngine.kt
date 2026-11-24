@@ -9,6 +9,7 @@ import com.lectorvoz.core.model.VoiceRole
 import com.lectorvoz.core.model.VoiceSettings
 import com.lectorvoz.tts.audio.PauseSplitter
 import com.lectorvoz.tts.audio.ProcessingOptions
+import com.lectorvoz.tts.audio.QuestionIntonation
 import com.lectorvoz.tts.audio.TimeStretch
 import com.lectorvoz.tts.audio.TruncationDetector
 import com.lectorvoz.tts.audio.VoiceProcessor
@@ -195,9 +196,33 @@ class NeuralTtsEngine(
     val synthesisRtf: Float?
         get() = synchronized(rtfLock) { if (rtfAudioSec < 5.0) null else (rtfSynthSec / rtfAudioSec).toFloat() }
 
-    private fun recordSynthesis(seconds: Double, audioSeconds: Double) = synchronized(rtfLock) {
-        rtfSynthSec = rtfSynthSec * RTF_DECAY + seconds
-        rtfAudioSec = rtfAudioSec * RTF_DECAY + audioSeconds
+    private var lastRtfSaveMs = 0L
+
+    init {
+        // Velocidad medida en una sesion anterior de ESTE movil: asi un equipo lento se trata como
+        // tal desde la primera frase (buffer mayor), sin esperar a medir de nuevo.
+        TtsConfig.persistedRtf?.takeIf { it > 0f && it.isFinite() }?.let {
+            rtfAudioSec = SEED_AUDIO_SEC
+            rtfSynthSec = SEED_AUDIO_SEC * it
+        }
+    }
+
+    private fun recordSynthesis(seconds: Double, audioSeconds: Double) {
+        var toSave: Float? = null
+        synchronized(rtfLock) {
+            rtfSynthSec = rtfSynthSec * RTF_DECAY + seconds
+            rtfAudioSec = rtfAudioSec * RTF_DECAY + audioSeconds
+            val now = System.currentTimeMillis()
+            if (rtfAudioSec >= 5.0 && now - lastRtfSaveMs > RTF_SAVE_EVERY_MS) {
+                lastRtfSaveMs = now
+                // Se guarda el RTF EQUIVALENTE A LA CALIDAD PEDIDA: con el tope de pasos activo se mide
+                // mas bajo, y sin normalizar la proxima sesion quitaria el tope y volveria a subir.
+                val wanted = settings.quality.steps
+                val used = minOf(wanted, maxOf(MIN_LIVE_STEPS, liveStepsCap))
+                toSave = (rtfSynthSec / rtfAudioSec).toFloat() * wanted / used
+            }
+        }
+        toSave?.let { TtsConfig.rtfSink?.invoke(it) }
     }
     private var memorySamples = 0L
 
@@ -284,6 +309,13 @@ class NeuralTtsEngine(
             coroutineScope {
                 val active = withContext(synthDispatcher) { ensureLoaded(settings) }
                 val sampleRate = active.sampleRate
+                // Adaptacion a este movil: si ya se midio que sintetiza al limite, menos pasos de
+                // inferencia en directo (algo menos de calidad, pero sin pausas). Solo baja.
+                val cap = stepsCapFor(synthesisRtf)
+                if (cap < liveStepsCap) {
+                    liveStepsCap = cap
+                    if (TtsConfig.diagnostics) TtsConfig.diag("NEURAL adaptacion pasos<=$cap rtf=${synthesisRtf} (calidad pedida=${settings.quality.steps})")
+                }
                 // Sin capacidad fija: el productor se limita solo (ver Ahead).
                 val queue = Channel<Chunk>(capacity = Channel.UNLIMITED)
                 val ahead = Ahead(sampleRate)
@@ -454,12 +486,22 @@ class NeuralTtsEngine(
         return s.speed * base * AdaptivePace.factor(u, s)
     }
 
-    private fun paramsFor(u: Utterance, s: VoiceSettings, ref: VoiceRef): SynthesisParams =
+    /**
+     * Tope de pasos de inferencia en la LECTURA EN VIVO, segun lo rapido que sintetiza este movil
+     * ([stepsCapFor]). Solo baja (nunca sube dentro del proceso: evita oscilar entre dos calidades) y
+     * solo afecta a la reproduccion en directo; exportar y preparar usan siempre la calidad elegida.
+     */
+    @Volatile private var liveStepsCap = Int.MAX_VALUE
+
+    /** El colchon previo grande ya se uso desde que se cargo el modelo (ver [consume]). */
+    @Volatile private var prebufferDone = false
+
+    private fun paramsFor(u: Utterance, s: VoiceSettings, ref: VoiceRef, live: Boolean = false): SynthesisParams =
         SynthesisParams(
             speed = modelSpeed(wantedSpeed(u, s, ref)),
             sid = ref.sid,
             lang = SpeechLanguage.of(u, s),
-            numSteps = s.quality.steps,
+            numSteps = if (live) minOf(s.quality.steps, maxOf(MIN_LIVE_STEPS, liveStepsCap)) else s.quality.steps,
         )
 
     /**
@@ -473,11 +515,13 @@ class NeuralTtsEngine(
         s: VoiceSettings,
         isCancelled: () -> Boolean,
         preempted: () -> Boolean = NEVER,
+        live: Boolean = false,
     ): FloatArray {
         if (u.spokenText.isBlank()) return FloatArray(0)
         val ref = refFor(u, s)
-        val params = paramsFor(u, s, ref)
-        val raw = rawAudio(active, u, ref, params, isCancelled, preempted)
+        val params = paramsFor(u, s, ref, live)
+        val full = if (live && params.numSteps < s.quality.steps) params.copy(numSteps = s.quality.steps) else null
+        val raw = rawAudio(active, u, ref, params, isCancelled, preempted, alsoAccept = full)
         val wanted = wantedSpeed(u, s, ref)
         var timed = TimeStretch.stretchKeepingEnd(raw, active.sampleRate, wanted / params.speed)
         // Red de seguridad sobre lo que de verdad va a sonar: si aun asi acaba cortado (muy raro,
@@ -488,7 +532,14 @@ class NeuralTtsEngine(
             val slowRaw = rawAudio(active, u, ref, slow, isCancelled, preempted)
             timed = TimeStretch.stretchKeepingEnd(slowRaw, active.sampleRate, wanted / slow.speed)
         }
-        return processor.process(timed, active.sampleRate, ProcessingOptions.from(s))
+        val out = processor.process(timed, active.sampleRate, ProcessingOptions.from(s))
+        // Entonacion: la voz natural no admite control de tono; en las preguntas de si/no se sube el
+        // tono de la cola de la frase (ver [QuestionIntonation]). La voz del sistema ya entona sola.
+        return if (s.questionIntonation && QuestionIntonation.isYesNoQuestion(u.spokenText, u.language)) {
+            QuestionIntonation.raiseTail(out, active.sampleRate)
+        } else {
+            out
+        }
     }
 
     /**
@@ -525,16 +576,20 @@ class NeuralTtsEngine(
         params: SynthesisParams,
         isCancelled: () -> Boolean,
         preempted: () -> Boolean,
+        // Parametros a calidad COMPLETA: en directo con tope de pasos, el audio ya preparado/exportado
+        // a la calidad pedida (otra clave de cache) se aprovecha en vez de sintetizar de nuevo.
+        alsoAccept: SynthesisParams? = null,
     ): FloatArray {
         val key = RawKey(ref.voiceId, params, u.spokenText)
-        memory[key]?.let {
+        (memory[key] ?: alsoAccept?.let { memory[RawKey(ref.voiceId, it, u.spokenText)] })?.let {
             if (TtsConfig.diagnostics) TtsConfig.diag("NEURAL-RAW id=${u.id} origen=memoria muestras=${it.size}")
             return it
         }
         val book = bookId
         val chapter = u.range.start.chapter
         val fromDisk = if (diskCache != null && book != null) {
-            diskCache.get(book, chapter, ref.voiceId, params, u.spokenText)
+            (diskCache.get(book, chapter, ref.voiceId, params, u.spokenText)
+                ?: alsoAccept?.let { diskCache.get(book, chapter, ref.voiceId, it, u.spokenText) })
                 ?.takeIf { it.sampleRate == active.sampleRate }?.pcm
         } else {
             null
@@ -660,7 +715,7 @@ class NeuralTtsEngine(
             val pcm = withContext(synthDispatcher) {
                 // El modelo se fija al empezar; un cambio de modelo exige reiniciar la lectura.
                 if (synth !== active) throw SpeechEngineException("El modelo de voz se libero durante la lectura")
-                voice(active, cur, s, { !job.isActive })
+                voice(active, cur, s, { !job.isActive }, live = true)
             }
             if (pcm.isNotEmpty()) recordSynthesis((System.nanoTime() - t0) / 1e9, pcm.size.toDouble() / sampleRate)
             if (TtsConfig.diagnostics) {
@@ -687,7 +742,7 @@ class NeuralTtsEngine(
     private suspend fun groupFrom(cur: Utterance, s: VoiceSettings, next: suspend (Utterance) -> Utterance?): List<Utterance> {
         if (!groupable(cur) || cur.spokenText.length >= groupMaxChars) return listOf(cur)
         val ref = refFor(cur, s)
-        val params = paramsFor(cur, s, ref)
+        val params = paramsFor(cur, s, ref, live = true)
         if (withContext(synthDispatcher) { memory.containsKey(RawKey(ref.voiceId, params, cur.spokenText)) }) return listOf(cur)
         val out = arrayListOf(cur)
         var total = cur.spokenText.length
@@ -696,7 +751,7 @@ class NeuralTtsEngine(
             val n = next(last) ?: break
             if (!groupable(n) || n.range.start.chapter != cur.range.start.chapter) break
             val r = refFor(n, s)
-            if (r != ref || paramsFor(n, s, r) != params) break
+            if (r != ref || paramsFor(n, s, r, live = true) != params) break
             total += 1 + n.spokenText.length
             if (total > groupMaxChars) break
             out += n
@@ -724,7 +779,7 @@ class NeuralTtsEngine(
      */
     private fun synthesizeGroup(active: NeuralSynthesizer, group: List<Utterance>, s: VoiceSettings, isCancelled: () -> Boolean) {
         val ref = refFor(group.first(), s)
-        val params = paramsFor(group.first(), s, ref)
+        val params = paramsFor(group.first(), s, ref, live = true)
         val starts = IntArray(group.size)
         val text = StringBuilder()
         group.forEachIndexed { i, u ->
@@ -773,7 +828,7 @@ class NeuralTtsEngine(
         }
         try {
             var written = 0L
-            for (chunk in queue) {
+            suspend fun emit(chunk: Chunk) {
                 ahead.dequeued(chunk.paragraph)
                 val start = written
                 val voiceEnd = start + chunk.pcm.size
@@ -781,6 +836,39 @@ class NeuralTtsEngine(
                 written += writeAll(sink, chunk.pcm)
                 written += writeSilence(sink, chunk.silenceFrames)
             }
+            // Colchon previo (solo en equipos lentos): se juntan frases antes de abrir el sonido.
+            val rtf = synthesisRtf
+            // Grande solo la primera vez tras cargar el modelo; en saltos y reanudaciones, un colchon
+            // corto (si no, cada salto de frase costaria hasta 12 s de silencio en un movil lento).
+            val first = !prebufferDone
+            val targetMs = prebufferTargetMs(rtf, policy().bufferAheadMs).let { if (first) it else minOf(it, FOLLOWUP_PREBUFFER_MS) }
+            val needFrames = targetMs * sampleRate / 1000
+            if (needFrames > 0) {
+                prebufferDone = true
+                val held = ArrayList<Chunk>()
+                var frames = 0L
+                val t0 = System.nanoTime()
+                val deadline = t0 + PREBUFFER_MAX_WAIT_MS * 1_000_000L
+                // Sondeo con tryReceive (sin withTimeout sobre receive): un tiempo agotado justo al
+                // recibir podia perder un chunk y saltar una frase.
+                while (frames < needFrames && System.nanoTime() < deadline) {
+                    val r = queue.tryReceive()
+                    if (r.isSuccess) {
+                        val c = r.getOrThrow()
+                        held.add(c)
+                        frames += c.pcm.size + c.silenceFrames
+                    } else if (r.isClosed) {
+                        break
+                    } else {
+                        delay(PREBUFFER_POLL_MS)
+                    }
+                }
+                if (TtsConfig.diagnostics) {
+                    TtsConfig.diag("NEURAL prebuffer rtf=$rtf objetivo=${needFrames * 1000 / sampleRate}ms juntado=${frames * 1000 / sampleRate}ms espera=${(System.nanoTime() - t0) / 1_000_000}ms")
+                }
+                for (c in held) emit(c)
+            }
+            for (chunk in queue) emit(chunk)
             drain(sink, written)
             finished.set(true)
             ticker.cancel()
@@ -842,13 +930,20 @@ class NeuralTtsEngine(
         val current = synth
         if (current != null && loadedId == ref.voiceId) return current
         unload()
+        val t0 = System.nanoTime()
         val loaded = loader.load(ref, numThreads)
         synth = loaded
         loadedId = ref.voiceId
+        if (TtsConfig.diagnostics) {
+            // Tiempo de carga del modelo y de lo que condiciona la fluidez: sin esto no se podia saber
+            // si "tarda en cargar" (movil lento) era la carga, la sintesis o el buffer.
+            TtsConfig.diag("NEURAL carga modelo=${ref.voiceId} en ${(System.nanoTime() - t0) / 1_000_000}ms hilos=$numThreads pasos=${s.quality.steps} rtf=${synthesisRtf} nivel=${policy().level} cpus=${Runtime.getRuntime().availableProcessors()}")
+        }
         return loaded
     }
 
     private fun unload() {
+        prebufferDone = false
         memory.clear()
         memorySamples = 0
         synth?.release()
@@ -966,6 +1061,49 @@ class NeuralTtsEngine(
 
         /** Olvido de la media de velocidad de sintesis por frase (~las ultimas 10-20 frases). */
         const val RTF_DECAY = 0.9
+
+        /** Minimo de pasos en directo: por debajo la voz se degrada de forma audible. */
+        const val MIN_LIVE_STEPS = 4
+
+        /**
+         * Tope de pasos segun la velocidad de sintesis medida: sin medir o con holgura, sin tope; al
+         * limite (RTF cerca de 1), 6; por encima (no da abasto), 5. Supertonic conserva buena calidad
+         * con pocos pasos, asi que es mejor perder un poco de detalle que tener pausas.
+         */
+        internal fun stepsCapFor(rtf: Float?): Int = when {
+            rtf == null || rtf < 0.85f -> Int.MAX_VALUE
+            rtf < 1.1f -> 6
+            else -> 5
+        }
+
+        /** Peso (s de audio) de la velocidad guardada de una sesion anterior, al arrancar. */
+        const val SEED_AUDIO_SEC = 8.0
+
+        /** Cada cuanto se guarda la velocidad medida para la proxima sesion. */
+        const val RTF_SAVE_EVERY_MS = 30_000L
+
+        /** Espera maxima del buffer previo a sonar: pasado esto se empieza igualmente. */
+        const val PREBUFFER_MAX_WAIT_MS = 20_000L
+
+        /** Colchon tras la primera vez (saltos, reanudaciones): corto, para no dejar silencios largos. */
+        const val FOLLOWUP_PREBUFFER_MS = 3_000L
+        const val PREBUFFER_POLL_MS = 20L
+
+        /**
+         * Audio (ms) que se junta ANTES de empezar a sonar. Equipos rapidos o velocidad aun
+         * desconocida: 0 (suena con la primera frase, como siempre). Equipos que sintetizan casi a
+         * ritmo de reproduccion: un colchon, para que las frases siguientes lleguen a tiempo y no
+         * haya huecos entre ellas. Nunca mas del 80 % del margen de precarga (si no, el productor
+         * descansaria antes de llegar y se esperaria en vano).
+         */
+        internal fun prebufferTargetMs(rtf: Float?, bufferAheadMs: Long): Long {
+            val want = when {
+                rtf == null || rtf < 0.5f -> 0L
+                rtf < 0.85f -> 5_000L
+                else -> 12_000L
+            }
+            return minOf(want, bufferAheadMs * 8 / 10)
+        }
 
         /** Frases como mucho en un grupo (ver `groupMaxChars`). */
         const val GROUP_MAX_SIZE = 8

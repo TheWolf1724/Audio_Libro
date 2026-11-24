@@ -38,6 +38,7 @@ class SpanishNormalizer(
         private val mDate: Matcher = DATE.matcher(s).useTransparentBounds(true)
         private val mTime: Matcher = TIME.matcher(s).useTransparentBounds(true)
         private val mGrouped: Matcher = GROUPED.matcher(s).useTransparentBounds(true)
+        private val mPhone: Matcher = PHONE.matcher(s).useTransparentBounds(true)
         private val mPlain: Matcher = PLAIN.matcher(s).useTransparentBounds(true)
         private val mOrdinal: Matcher = ORDINAL.matcher(s).useTransparentBounds(true)
 
@@ -225,6 +226,7 @@ class SpanishNormalizer(
             if (currency == null) {
                 if (looking(mDate, i)) dateOrNull()?.let { return it }
                 if (looking(mTime, i)) timeOrNull(i)?.let { return it }
+                if (looking(mPhone, i)) phoneOrNull(start, mPhone.end())?.let { return it }
             }
             val numEnd: Int
             val intDigits: String
@@ -374,7 +376,9 @@ class SpanishNormalizer(
         private fun readDecimalOrInt(value: Long, frac: String?, sep: Char, g: Gender, apoc: Boolean): String {
             if (frac == null) return SpanishNumbers.cardinal(value, g, apoc)
             val intW = SpanishNumbers.cardinal(value, g, false)
-            val fracW = if (frac.length <= 3 && frac[0] != '0') SpanishNumbers.cardinal(frac.toLong()) else SpanishNumbers.digits(frac)
+            // Hasta 2 decimales se lee como cantidad ("3,14" -> "catorce"); con 3 o mas, cifra a cifra
+            // ("3,141" -> "uno cuatro uno"), que es la convencion al leer decimales largos.
+            val fracW = if (frac.length <= 2 && frac[0] != '0') SpanishNumbers.cardinal(frac.toLong()) else SpanishNumbers.digits(frac)
             return intW + (if (sep == ',') " coma " else " punto ") + fracW
         }
 
@@ -448,7 +452,7 @@ class SpanishNormalizer(
                 }
                 // Rango numerico inline "10-15" / "2-3 veces": el guion entre dos cifras se lee " a "
                 // ("diez a quince", "dos a tres veces"). El rango de anos ya se trato arriba.
-                if (i > 0 && isAsciiDigit(s[i - 1])) {
+                if (i > 0 && isAsciiDigit(s[i - 1]) && !inHyphenChain(i)) {
                     out.replace(" a ", i, i + 1)
                     return i + 1
                 }
@@ -481,6 +485,43 @@ class SpanishNormalizer(
                 }
             }
             return i + 1
+        }
+
+        /**
+         * Telefono espanol escrito con grupos ("612 345 678", "612 34 56 78", "91 234 56 78"): se lee
+         * cifra a cifra con una pausa corta entre grupos, en vez de como una cantidad enorme
+         * ("seiscientos doce millones..."). Null si lo que sigue es un %, moneda o similar (entonces
+         * si es una cantidad y lo lee el camino normal).
+         */
+        private fun phoneOrNull(start: Int, end: Int): Int? {
+            var k = end
+            if (k < n && s[k] == ' ') k++
+            if (k < n && s[k] in "%‰€$£¥") return null
+            val groups = s.substring(start, end).split(' ', '-')
+            // Un grupo "000" o una unidad/moneda detras indican una cantidad ("700 000 000 euros").
+            if (groups.any { it == "000" }) return null
+            var w = k
+            while (w < n && s[w].isLetter()) w++
+            if (w > k && s.substring(k, w).lowercase() in QUANTITY_UNITS) return null
+            // Seguido de una PALABRA ("600 300 200 votos"): solo es telefono si el contexto lo dice
+            // ("llama al", "telefono", "movil"...). Seguido de puntuacion o fin, se lee como telefono.
+            if (w > k) {
+                val before = s.substring(maxOf(0, start - 30), start).lowercase()
+                if (PHONE_CONTEXT.none { it in before }) return null
+            }
+            prevWord = null
+            out.replace(groups.joinToString(", ") { SpanishNumbers.digits(it) }, start, end)
+            return end
+        }
+
+        /** true si el guion en [i] forma parte de una cadena de cifras ("3-4-5", "123-456-789"): no es un rango. */
+        private fun inHyphenChain(i: Int): Boolean {
+            var l = i - 1
+            while (l >= 0 && isAsciiDigit(s[l])) l--
+            if (l >= 1 && s[l] == '-' && isAsciiDigit(s[l - 1])) return true
+            var r = i + 1
+            while (r < n && isAsciiDigit(s[r])) r++
+            return r + 1 < n && s[r] == '-' && isAsciiDigit(s[r + 1])
         }
 
         private fun isYear(p: Int): Boolean {
@@ -540,6 +581,21 @@ class SpanishNormalizer(
         private val DATE: Pattern = Pattern.compile("(\\d{1,2})([/.-])(\\d{1,2})\\2(\\d{4}|\\d{2})(?!\\d)")
         private val TIME: Pattern = Pattern.compile("(\\d{1,2}):(\\d{2})(?!\\d)(?: ?(h|hs|hrs)(?![\\p{L}\\d]))?")
         private val GROUPED: Pattern = Pattern.compile("\\d{1,3}(?:[.\\u00A0\\u202F]\\d{3})+(?:,\\d+)?(?![\\d])|\\d{1,3}(?: \\d{3})+(?!\\d|[.,]\\d)")
+        /** Palabras que, tras un numero agrupado, lo marcan como cantidad y no como telefono. */
+        private val QUANTITY_UNITS: Set<String> = hashSetOf(
+            "euros", "euro", "dólares", "dolares", "pesos", "pesetas", "libras", "habitantes", "personas",
+            "años", "anos", "km", "kilómetros", "kilometros", "metros", "kilos", "toneladas", "litros",
+        )
+
+        /** Pistas de que un numero agrupado que precede a una palabra es un telefono. */
+        private val PHONE_CONTEXT = listOf(
+            "tel", "llam", "movil", "móvil", "whatsapp", "contacto", "contacta", "fono", "numero", "número", "marca", "+34", "0034",
+        )
+
+        /** Telefonos de Espana con grupos: 3-3-3, 3-2-2-2 (moviles 6-9) y 2-3-2-2 (fijos 9x). */
+        private val PHONE: Pattern = Pattern.compile(
+            "(?<![\\d.,])(?:[6-9]\\d{2}[ -]\\d{3}[ -]\\d{3}|[6-9]\\d{2}[ -]\\d{2}[ -]\\d{2}[ -]\\d{2}|9\\d[ -]\\d{3}[ -]\\d{2}[ -]\\d{2})(?!\\d|[.,]\\d)",
+        )
         private val PLAIN: Pattern = Pattern.compile("\\d+(?:[.,]\\d+)?")
         private val ORDINAL: Pattern = Pattern.compile("(?:\\.?[ºª]|\\.(?:o|a|os|as|er|ra)|(?:er|ra|os|as))(?![\\p{L}\\d])")
 

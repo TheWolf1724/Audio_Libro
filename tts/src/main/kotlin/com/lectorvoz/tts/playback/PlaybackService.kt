@@ -69,6 +69,16 @@ object TtsConfig {
     /** Hilos de inferencia de la voz neuronal. */
     @Volatile var neuralThreads: Int = 2
 
+    /**
+     * Ultima velocidad de sintesis medida en este movil (segundos de calculo por segundo de audio),
+     * guardada por la app entre sesiones; nula si no hay. Semilla del motor neuronal para tratar un
+     * equipo lento como tal desde la primera frase.
+     */
+    @Volatile var persistedRtf: Float? = null
+
+    /** Donde la app guarda la velocidad medida ([persistedRtf]) para la proxima sesion. */
+    @Volatile var rtfSink: ((Float) -> Unit)? = null
+
     /** Limite de la cache de audio en disco (preparar mientras carga), en bytes. */
     @Volatile var audioCacheMaxBytes: Long = AudioDiskCache.DEFAULT_MAX_BYTES
 

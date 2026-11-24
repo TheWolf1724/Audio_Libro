@@ -294,7 +294,7 @@ class UpdateChecker(
                 conn.readTimeout = 10_000
                 conn.instanceFollowRedirects = true
                 conn.setRequestProperty("Accept", "application/vnd.github+json")
-                conn.setRequestProperty("User-Agent", "LectorVoz")
+                conn.setRequestProperty("User-Agent", "WolfReader")
                 if (conn.responseCode != HttpURLConnection.HTTP_OK) return@withContext null
                 // Respuesta acotada: una publicacion ocupa unos pocos KB.
                 val body = conn.inputStream.use { it.readAtMost(MAX_BODY) }

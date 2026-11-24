@@ -858,7 +858,7 @@ class ReadAloudController(
             s.engine, s.voiceId, s.dialogVoiceId, s.speed, s.quality, s.readingLanguage,
             s.punctuationPause, s.pauseClauseMs, s.pauseSentenceMs, s.pauseVerseMs,
             s.pauseParagraphMs, s.pauseSectionMs, s.pauseChapterMs, s.adaptivePace,
-            s.loudnessNormalize, s.voiceEnhance, s.nightMode,
+            s.loudnessNormalize, s.voiceEnhance, s.nightMode, s.questionIntonation,
         )
 
         /** Convierte un rango de `spokenText` a `displayText` con `spokenToDisplay`. */

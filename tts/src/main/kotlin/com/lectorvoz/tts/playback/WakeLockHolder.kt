@@ -19,7 +19,7 @@ import android.os.SystemClock
 class WakeLockHolder(context: Context) {
     private val lock: PowerManager.WakeLock =
         context.applicationContext.getSystemService(PowerManager::class.java)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "LectorVoz:voz")
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WolfReader:voz")
             .apply { setReferenceCounted(false) }
 
     private var acquiredAt = 0L

@@ -147,6 +147,12 @@ data class VoiceSettings(
     val voiceEnhance: Boolean = false,
     /** Modo nocturno: volumen comprimido, sin picos. */
     val nightMode: Boolean = false,
+    /**
+     * Sube el tono al final de las preguntas de si/no ("¿Vienes?") en la voz natural: Supertonic no
+     * admite control de tono, asi que se aplica una subida suave sobre la cola de la frase. No
+     * afecta a la voz del sistema (ya entona sola).
+     */
+    val questionIntonation: Boolean = true,
     /** Temporizador de apagado por defecto en minutos; nulo = sin temporizador. */
     val sleepTimerMinutes: Int? = null,
     /** Agitar el movil alarga el temporizador al final de la cuenta. */

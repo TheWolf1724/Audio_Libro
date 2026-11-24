@@ -45,7 +45,9 @@ class PdfContent(
         val old = this.config
         this.config = config
         if (renderer == null || old?.viewport?.density != config.viewport.density) {
-            // El anterior puede estar dibujando en el hilo de render: no se libera, lo recoge el GC.
+            // El anterior puede estar dibujando en el hilo de render: se RETIRA (libera su bitmap
+            // auxiliar al acabar el render en curso) en vez de esperar al GC.
+            renderer?.retire()
             renderer = PdfPageRenderer(config.viewport.density)
         }
         return old == null || old.viewport != config.viewport || old.scrollMode != config.scrollMode ||

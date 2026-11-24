@@ -421,14 +421,18 @@ class OcrManager(
     private suspend fun process(bookId: Long, focused: Boolean, pdfOf: suspend (Book) -> PdfBook?) {
         var book = library.get(bookId) ?: return
         if (book.format != BookFormat.PDF || !shouldProcess(book, focused)) return
-        // TODO(S2-2, futura "pre-OCR"): si el libro quedo marcado "textual" (y sus paginas como
-        // native) en una pasada anterior, al forzar OCR por libro el seguimiento de fondo lo sigue
-        // viendo como textual (ventana corta por delante) y salta las paginas native sin
-        // reconocerlas; la voz obtiene el OCR a demanda ([fallbackFor] con wait), con posible
-        // latencia entre paginas. Pendiente: al forzar OCR, ignorar o invalidar esas marcas para
-        // preleer por delante. No se implementa aqui.
-        val textual = withContext(Dispatchers.IO) { store.isTextual(bookId) }
+        var textual = withContext(Dispatchers.IO) { store.isTextual(bookId) }
         val native = withContext(Dispatchers.IO) { store.nativePages(bookId) }.toHashSet()
+        // OCR forzado por libro (decision explicita del usuario): las marcas "textual"/"native" de una
+        // pasada anterior (cuando el libro se leia con su capa de texto) ya no valen. Se ignoran para
+        // pre-reconocer por delante como en cualquier escaneado; si no, el seguimiento de fondo
+        // saltaba paginas y la voz esperaba al OCR a demanda, con pausas entre frases.
+        if (textual || native.isNotEmpty()) {
+            if (pdfOf(book)?.forceFallback == true) {
+                textual = false
+                native.clear()
+            }
+        }
         val stored = withContext(Dispatchers.IO) { store.recognizedPages(bookId) }.toHashSet()
         val newNative = ArrayList<Int>()
         var count = pageCounts[bookId]

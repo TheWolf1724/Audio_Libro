@@ -1,4 +1,7 @@
-# LectorVoz
+# WolfReader
+
+> Antes llamada LectorVoz. El identificador interno de la app (`com.lectorvoz.app`) no cambia, por
+> eso las actualizaciones siguen instalandose sobre la version anterior sin perder nada.
 
 **Lector de libros EPUB y PDF para Android que tambien te los lee en voz alta, con una voz
 natural que funciona sin conexion.** Pasa paginas como un libro de verdad y, cuando quieras,
@@ -49,7 +52,7 @@ auriculares. Gratis, sin anuncios y sin enviar nada a ningun servidor.
 
 ## Descarga e instalacion
 
-1. Descarga `LectorVoz-<version>.apk` de la seccion
+1. Descarga `WolfReader-<version>.apk` de la seccion
    [Releases](https://github.com/TheWolf1724/Audio_Libro/releases).
 2. Abrelo en el movil y permite la instalacion desde esa fuente si Android lo pide.
 
@@ -121,7 +124,7 @@ Documentacion tecnica: [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md) (modulos y
 
 ## Licencia
 
-El codigo de LectorVoz se publica bajo la licencia **MIT** (ver [`LICENSE`](LICENSE)).
+El codigo de WolfReader se publica bajo la licencia **MIT** (ver [`LICENSE`](LICENSE)).
 
 ### Licencias de terceros
 

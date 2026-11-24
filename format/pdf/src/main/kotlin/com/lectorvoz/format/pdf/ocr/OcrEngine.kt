@@ -291,6 +291,7 @@ class OcrEngine private constructor(private val context: Context) {
         try {
             it.begin()
             var first = true
+            var prevWord = ""
             do {
                 val word = it.getUTF8Text(TessBaseAPI.PageIteratorLevel.RIL_WORD)?.trim().orEmpty()
                 val conf = it.confidence(TessBaseAPI.PageIteratorLevel.RIL_WORD)
@@ -300,13 +301,10 @@ class OcrEngine private constructor(private val context: Context) {
                 // Ruido de ilustraciones y manchas: palabras de confianza muy baja fuera.
                 if (word.isEmpty() || conf < MIN_CONFIDENCE) continue
                 if (!first) {
-                    val sep = when {
-                        newPara -> "\n\n"
-                        newLine -> "\n"
-                        else -> " "
-                    }
+                    val sep = separatorBetween(prevWord, word, newPara, newLine)
                     for (c in sep) { sb.append(c); boxes.addEmpty() }
                 }
+                prevWord = word
                 first = false
                 val l = r.left / scale
                 val t = r.top / scale
@@ -334,10 +332,14 @@ class OcrEngine private constructor(private val context: Context) {
         return min(max(min(MAX_SCALE, cap), MIN_SCALE), cap)
     }
 
-    /** Bitmap de trabajo (una franja) reutilizado mientras el tamano no cambie. */
+    /**
+     * Bitmap de trabajo (una franja) reutilizado mientras el tamano no cambie. RGB_565 (2 B/px):
+     * solo se usa para pasar a gris de 8 bits, asi que la mitad de memoria no pierde nada util (el
+     * blanco sigue siendo 255 y la tinta de texto queda muy por debajo de los umbrales).
+     */
     private fun bitmapFor(w: Int, h: Int): Bitmap {
         bitmap?.let { if (it.width == w && it.height == h) return it; it.recycle() }
-        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).also { bitmap = it }
+        return Bitmap.createBitmap(w, h, Bitmap.Config.RGB_565).also { bitmap = it }
     }
 
     /**
@@ -450,7 +452,7 @@ class OcrEngine private constructor(private val context: Context) {
         private const val MAX_SCALE = 300f / 72f
         private const val MIN_SCALE = 150f / 72f
 
-        /** Lado largo maximo de la imagen (memoria acotada: ~13 MB en color + 3 MB en gris). */
+        /** Lado largo maximo de la imagen (memoria acotada: franja RGB_565 de ~2,6 MB + pagina en gris de ~6,8 MB). */
         private const val MAX_SIDE_PX = 2600f
         private const val BAND_ROWS = 64
         private const val RENDER_BAND_PX = 512
@@ -478,6 +480,26 @@ class OcrEngine private constructor(private val context: Context) {
             "en" -> "eng"
             else -> DEFAULT_LANGUAGE
         }
+
+        /**
+         * Separador entre dos palabras reconocidas de la pagina. Tesseract marca "inicio de parrafo"
+         * (RIL_PARA) tambien EN MITAD de una frase (columnas, cajas, sangrias raras); un "\n\n" ahi
+         * partia la frase en dos y la voz la cortaba ("corta a mitad la anterior"). Un salto de
+         * parrafo solo se respeta si la palabra anterior cierra frase o la siguiente no continua en
+         * minuscula; si no, se baja a salto de linea / espacio y el limpiador une la frase.
+         */
+        internal fun separatorBetween(prev: String, next: String, newPara: Boolean, newLine: Boolean): String {
+            if (newPara) {
+                val closes = prev.isEmpty() || prev.last() in SENTENCE_END
+                val continues = next.firstOrNull()?.isLowerCase() == true
+                if (closes || !continues) return "\n\n"
+                return if (newLine) "\n" else " "
+            }
+            return if (newLine) "\n" else " "
+        }
+
+        /** Signos con los que una palabra cierra frase (mismo criterio que PdfPageFlow.endsSentence). */
+        private const val SENTENCE_END = ".!?:»\"”…)"
 
         /**
          * Bordes en pixeles [x0, y0, x1, y1] del recorte de una [region] (en puntos) sobre una

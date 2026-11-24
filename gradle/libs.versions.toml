@@ -9,9 +9,10 @@ agp = "9.5.0"
 kotlin = "2.4.21"
 ksp = "2.3.12"
 
-# SDK de Android (compileSdk se declara con la DSL de AGP 9: release(37))
+# SDK de Android (compileSdk se declara con la DSL de AGP 9: release(37)). targetSdk 35 = ultimo
+# estable (37 es preview: heredaria cambios de comportamiento a medio cocinar); se compila contra 37.
 compileSdk = "37"
-targetSdk = "37"
+targetSdk = "35"
 minSdk = "26"
 jvmTarget = "17"
 

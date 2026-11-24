@@ -85,7 +85,7 @@ class ReadingDiagnostics(private val context: Context) {
     }
 
     private fun header(engineLabel: String, config: List<String>): String = buildString {
-        append("LectorVoz - diagnostico de lectura\n")
+        append("WolfReader - diagnostico de lectura\n")
         append("version=${BuildConfig.VERSION_NAME}\n")
         append("dispositivo=${Build.MANUFACTURER} ${Build.MODEL} (SDK ${Build.VERSION.SDK_INT})\n")
         append("motor=$engineLabel\n")

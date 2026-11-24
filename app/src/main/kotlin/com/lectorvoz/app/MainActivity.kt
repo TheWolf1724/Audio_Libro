@@ -16,6 +16,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -60,7 +61,8 @@ class MainActivity : ComponentActivity() {
             SideEffect { lastReaderSettings = reader }
             // null mientras se lee el ajuste (1 frame con el fondo del tema, sin parpadeo molesto);
             // false = primera apertura -> bienvenida; true = uso normal.
-            val onboarding: Flow<Boolean?> = graph.settings.app.map { it.onboardingDone }
+            // `remember`: un flujo nuevo en cada recomposicion reiniciaria collectAsState (parpadeo en blanco).
+            val onboarding: Flow<Boolean?> = remember { graph.settings.app.map { it.onboardingDone } }
             val onboardingDone by onboarding.collectAsStateWithLifecycle(null)
             LectorVozTheme(themeMode = reader.theme, highContrast = reader.highContrast) {
                 when (onboardingDone) {

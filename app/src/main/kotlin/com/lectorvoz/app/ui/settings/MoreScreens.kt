@@ -367,7 +367,7 @@ fun AboutScreen(
     // Al salir de la pantalla se olvida el resultado de la ultima comprobacion manual.
     DisposableEffect(Unit) { onDispose(onManualDismiss) }
     SettingsScaffold("Acerca de", onBack) {
-        Text("LectorVoz ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
+        Text("WolfReader ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
         Text(
             "Lector de EPUB y PDF con voz natural local. Sin anuncios, sin cuentas y sin conexion.",
             style = MaterialTheme.typography.bodyLarge,

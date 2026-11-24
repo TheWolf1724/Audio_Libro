@@ -91,8 +91,10 @@ class ReaderControllerTest {
         val before = view.currentKey!!
         assertThat(controller.busy.value).isNull()
         controller.setSettings(ReaderSettings(fontSizeSp = 30f, pageAnimation = PageAnimation.NONE))
-        // Mientras recoloca las paginas, la pantalla puede avisar de que esta en ello.
-        assertThat(controller.busy.value).isEqualTo(ReaderBusy.LAYOUT)
+        // Mientras recoloca las paginas, la pantalla puede avisar de que esta en ello (LAYOUT). Es un
+        // estado TRANSITORIO: si la recolocacion acaba antes de mirar, ya es null. No se asevera el
+        // instante (era una carrera y fallaba bajo carga); si importa que termina: waitUntil de abajo.
+        assertThat(controller.busy.value).isAnyOf(ReaderBusy.LAYOUT, null)
         waitUntil { view.currentKey != before && controller.cache[view.currentKey!!] != null }
         waitUntil { controller.busy.value == null }
         assertThat(controller.currentLocator.value).isEqualTo(start)

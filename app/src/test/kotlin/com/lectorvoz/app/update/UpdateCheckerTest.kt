@@ -103,15 +103,15 @@ class UpdateCheckerTest {
         val json = """{"tag_name":"v1.2.0","html_url":"https://github.com/TheWolf1724/Audio_Libro/releases/tag/v1.2.0",
             "body":"## Novedades\n\n- **OCR** para PDF escaneados\n- [Historial](https://x.invalid) de lecturas\n\n| tabla | x |",
             "assets":[{"name":"notas.txt","browser_download_url":"https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/notas.txt"},
-              {"name":"LectorVoz-1.2.0.apk","size":1234,"digest":"sha256:$sha",
-               "browser_download_url":"https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/LectorVoz-1.2.0.apk"}]}"""
+              {"name":"WolfReader-1.2.0.apk","size":1234,"digest":"sha256:$sha",
+               "browser_download_url":"https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/WolfReader-1.2.0.apk"}]}"""
         val r = UpdateChecker.parseRelease(json)!!
-        assertThat(r.apkUrl).endsWith("LectorVoz-1.2.0.apk")
+        assertThat(r.apkUrl).endsWith("WolfReader-1.2.0.apk")
         assertThat(r.apkSize).isEqualTo(1234)
         assertThat(r.apkSha256).isEqualTo(sha)
         assertThat(r.notes).isEqualTo("Novedades\n\u2022 OCR para PDF escaneados\n\u2022 Historial de lecturas")
         // Una APK alojada fuera del repositorio no se acepta.
-        val ajena = json.replace("https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/LectorVoz-1.2.0.apk", "https://ejemplo.invalid/LectorVoz.apk")
+        val ajena = json.replace("https://github.com/TheWolf1724/Audio_Libro/releases/download/v1.2.0/WolfReader-1.2.0.apk", "https://ejemplo.invalid/LectorVoz.apk")
         assertThat(UpdateChecker.parseRelease(ajena)!!.apkUrl).isNull()
         // Sin huella SHA-256 publicada no se instala desde la app (solo "Ver").
         assertThat(UpdateChecker.parseRelease(json.replace(",\"digest\":\"sha256:$sha\"", ""))!!.apkUrl).isNull()

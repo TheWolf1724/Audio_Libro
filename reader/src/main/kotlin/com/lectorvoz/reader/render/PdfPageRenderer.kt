@@ -57,7 +57,12 @@ data class PdfPageHighlights(
  * solo cuando ya no hay render en curso.
  */
 class PdfPageRenderer(private val density: Float) {
-    private var scratch: Bitmap? = null
+    @Volatile private var scratch: Bitmap? = null
+
+    /** Renders en curso y si este renderer ya se retiro (cambio de densidad): ver [retire]. */
+    private val gate = Any()
+    private var active = 0
+    private var retired = false
     private val bgPaint = Paint()
     private val recolorPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private var recolorKey = 0L
@@ -71,6 +76,30 @@ class PdfPageRenderer(private val density: Float) {
     private val src = Rect()
 
     suspend fun render(
+        book: PdfBook,
+        page: Int,
+        target: Bitmap,
+        placement: PdfPlacement,
+        colors: ReaderColors,
+        recolor: Boolean,
+        highlights: PdfPageHighlights,
+        footer: String?,
+    ) {
+        synchronized(gate) { active++ }
+        try {
+            renderInner(book, page, target, placement, colors, recolor, highlights, footer)
+        } finally {
+            // Si se retiro mientras dibujaba, el ultimo render en salir libera el bitmap auxiliar.
+            // Bajo el mismo candado que retire(): ningun render puede empezar a usar el bitmap
+            // mientras se libera.
+            synchronized(gate) {
+                active--
+                if (active == 0 && retired) release()
+            }
+        }
+    }
+
+    private suspend fun renderInner(
         book: PdfBook,
         page: Int,
         target: Bitmap,
@@ -185,6 +214,18 @@ class PdfPageRenderer(private val density: Float) {
             b.solid(colors.ttsWordIndicator, r.left, r.bottom, r.right, r.bottom + 2f * density)
         }
         return b.build()
+    }
+
+    /**
+     * Retira el renderer (cambio de densidad): libera el bitmap auxiliar del recoloreado ya, o en
+     * cuanto acabe el render en curso si lo hay. Seguro de llamar mientras se dibuja (a diferencia
+     * de [release]); asi los ~9 MB nativos no esperan al GC.
+     */
+    fun retire() {
+        synchronized(gate) {
+            retired = true
+            if (active == 0) release()
+        }
     }
 
     /** Libera el bitmap auxiliar del recoloreado. */

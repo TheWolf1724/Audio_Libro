@@ -232,7 +232,7 @@ class ScreensTest {
             }
         }
         val campos = fields(VoiceSettings::class.java)
-        assertThat(campos).hasSize(31)
+        assertThat(campos).hasSize(32)
         for (c in campos) rule.onNodeWithTag("voz-$c").assertExists()
         rule.onNodeWithTag("voz-probar").assertExists()
         rule.onNodeWithTag("voz-nightMode").performScrollTo().performClick()

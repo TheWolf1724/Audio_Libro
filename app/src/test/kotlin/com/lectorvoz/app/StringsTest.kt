@@ -12,6 +12,6 @@ class StringsTest {
     @Test
     fun nombreDeLaApp() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        assertThat(context.getString(R.string.app_name)).isEqualTo("LectorVoz")
+        assertThat(context.getString(R.string.app_name)).isEqualTo("WolfReader")
     }
 }

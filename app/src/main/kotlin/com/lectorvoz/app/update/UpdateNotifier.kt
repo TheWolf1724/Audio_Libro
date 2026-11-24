@@ -80,7 +80,7 @@ class UpdateNotifier(private val context: Context, private val state: StateFlow<
         return when (st) {
             is InstallState.Downloading -> {
                 val p = st.progress
-                b.setContentTitle("Descargando LectorVoz$v")
+                b.setContentTitle("Descargando WolfReader$v")
                     .setContentText(if (p != null) "${(p * 100).toInt()} %" else "Descargando...")
                     .setProgress(100, ((p ?: 0f) * 100).toInt(), p == null)
                     .setOngoing(true)
@@ -88,20 +88,20 @@ class UpdateNotifier(private val context: Context, private val state: StateFlow<
                     .addAction(0, "Cancelar", cancelIntent())
                     .build()
             }
-            InstallState.Installing -> b.setContentTitle("Instalando LectorVoz$v")
+            InstallState.Installing -> b.setContentTitle("Instalando WolfReader$v")
                 .setContentText("Descarga comprobada. Instalando...")
                 .setProgress(0, 0, true)
                 .setSilent(true)
                 // Al instalarse la version nueva el proceso muere sin quitarla: caduca sola.
                 .setTimeoutAfter(10 * 60_000L)
                 .build()
-            is InstallState.NeedsConfirmation -> b.setContentTitle("LectorVoz$v lista para instalar")
+            is InstallState.NeedsConfirmation -> b.setContentTitle("WolfReader$v lista para instalar")
                 .setContentText("Toca para confirmar la instalacion")
                 .setContentIntent(PendingIntent.getActivity(context, REQ_CONFIRM, st.intent, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
                 .setAutoCancel(true)
                 .setCategory(NotificationCompat.CATEGORY_STATUS)
                 .build()
-            is InstallState.Failed -> b.setContentTitle("No se pudo actualizar LectorVoz")
+            is InstallState.Failed -> b.setContentTitle("No se pudo actualizar WolfReader")
                 .setContentText(st.message)
                 .setStyle(NotificationCompat.BigTextStyle().bigText(st.message))
                 .setAutoCancel(true)
@@ -137,7 +137,7 @@ class UpdateNotifier(private val context: Context, private val state: StateFlow<
             if (nm.getNotificationChannel(CHANNEL) != null) return
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL, "Actualizaciones", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    description = "Descarga e instalacion de versiones nuevas de LectorVoz"
+                    description = "Descarga e instalacion de versiones nuevas de WolfReader"
                     setSound(null, null)
                 },
             )

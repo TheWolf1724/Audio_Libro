@@ -41,7 +41,7 @@ sealed interface InstallState {
     /** Entregada al instalador de Android (puede pedir una confirmacion). */
     data object Installing : InstallState
 
-    /** Falta permitir "instalar apps desconocidas" a LectorVoz (se abrio el ajuste). */
+    /** Falta permitir "instalar apps desconocidas" a WolfReader (se abrio el ajuste). */
     data object NeedsPermission : InstallState
 
     /**
@@ -57,7 +57,7 @@ sealed interface InstallState {
  * Descarga la APK de una version nueva, comprueba su integridad (tamano y SHA-256 que publica
  * GitHub) y se la entrega al instalador del sistema. Android exige que la APK este firmada con
  * la misma clave que la instalada (si no, la rechaza) y, la primera vez, que el usuario permita
- * a LectorVoz instalar apps y confirme; desde Android 12, las siguientes actualizaciones pueden
+ * a WolfReader instalar apps y confirme; desde Android 12, las siguientes actualizaciones pueden
  * instalarse sin confirmacion.
  */
 class UpdateInstaller(private val context: Context, private val scope: CoroutineScope) {
@@ -160,7 +160,7 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
         runCatching { activity.startActivity(st.intent) }.onFailure { mutable.value = InstallState.Failed("No se pudo abrir la confirmacion de Android") }
     }
 
-    /** Ajuste de Android para permitir a LectorVoz instalar la actualizacion. */
+    /** Ajuste de Android para permitir a WolfReader instalar la actualizacion. */
     private fun openInstallPermission() {
         val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + context.packageName))
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -183,7 +183,7 @@ class UpdateInstaller(private val context: Context, private val scope: Coroutine
             conn.connectTimeout = 15_000
             conn.readTimeout = 30_000
             conn.instanceFollowRedirects = true
-            conn.setRequestProperty("User-Agent", "LectorVoz")
+            conn.setRequestProperty("User-Agent", "WolfReader")
             // Pide solo lo que falta si hay un parcial; el servidor puede aceptarlo (206) o no (200).
             if (existing > 0L) conn.setRequestProperty("Range", "bytes=$existing-")
             val code = conn.responseCode

@@ -302,6 +302,7 @@ class DataStoreSettingsRepository(
         val loudness = booleanPreferencesKey("voz.normalizar")
         val enhance = booleanPreferencesKey("voz.realce")
         val night = booleanPreferencesKey("voz.nocturno")
+        val questionIntonation = booleanPreferencesKey("voz.entonacion_preguntas")
         val timer = intPreferencesKey("voz.temporizador")
         val shake = booleanPreferencesKey("voz.agitar")
         val battery = stringPreferencesKey("voz.bateria")
@@ -340,6 +341,7 @@ class DataStoreSettingsRepository(
                 loudnessNormalize = p[V.loudness] ?: d.loudnessNormalize,
                 voiceEnhance = p[V.enhance] ?: d.voiceEnhance,
                 nightMode = p[V.night] ?: d.nightMode,
+                questionIntonation = p[V.questionIntonation] ?: d.questionIntonation,
                 sleepTimerMinutes = p[V.timer]?.takeIf { it > 0 },
                 shakeToExtendTimer = p[V.shake] ?: d.shakeToExtendTimer,
                 lowBattery = p[V.battery].enumOr(d.lowBattery),
@@ -376,6 +378,7 @@ class DataStoreSettingsRepository(
         p[V.loudness] = s.loudnessNormalize
         p[V.enhance] = s.voiceEnhance
         p[V.night] = s.nightMode
+        p[V.questionIntonation] = s.questionIntonation
         p.setOrRemove(V.timer, s.sleepTimerMinutes)
         p[V.shake] = s.shakeToExtendTimer
         p[V.battery] = s.lowBattery.name

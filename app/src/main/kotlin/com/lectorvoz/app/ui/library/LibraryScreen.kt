@@ -536,7 +536,7 @@ private fun UpdateBanner(u: UpdateUi, onAction: (UpdateAction) -> Unit) {
                 InstallState.Installing -> Text("Instalando... (si Android lo pide, confirma la instalacion)", style = MaterialTheme.typography.bodySmall)
                 is InstallState.NeedsConfirmation -> Text("Descargada y comprobada. Android pide que confirmes la instalacion.", style = MaterialTheme.typography.bodySmall)
                 InstallState.NeedsPermission -> Text(
-                    "Permite a LectorVoz instalar aplicaciones en el ajuste que se ha abierto y vuelve a pulsar Instalar.",
+                    "Permite a WolfReader instalar aplicaciones en el ajuste que se ha abierto y vuelve a pulsar Instalar.",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 is InstallState.Failed -> Text(st.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)

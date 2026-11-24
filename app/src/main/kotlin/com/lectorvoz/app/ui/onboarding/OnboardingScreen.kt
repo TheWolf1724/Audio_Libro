@@ -36,7 +36,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
                 .padding(horizontal = 24.dp, vertical = 16.dp),
         ) {
             Text(
-                "Bienvenido a LectorVoz",
+                "Bienvenido a WolfReader",
                 style = MaterialTheme.typography.headlineSmall,
                 modifier = Modifier.semantics { heading() },
             )

@@ -37,6 +37,39 @@ class SpanishNormalizerTest {
     }
 
     @Test
+    fun decimalesLargosCifraACifra() {
+        // Hasta 2 decimales se lee como cantidad; con 3 o mas, cifra a cifra.
+        assertThat(say("Pi es 3,14")).isEqualTo("Pi es tres coma catorce")
+        assertThat(say("Pi es 3,141")).isEqualTo("Pi es tres coma uno cuatro uno")
+    }
+
+    @Test
+    fun rangosNumericosConGuion() {
+        assertThat(say("Paginas 10-15.")).isEqualTo("Paginas diez a quince.")
+        assertThat(say("Tardo 2-3 dias")).isEqualTo("Tardo dos a tres dias")
+        // Un numero negativo aislado sigue siendo "menos".
+        assertThat(say("Hace -5 grados")).isEqualTo("Hace menos cinco grados")
+    }
+
+    @Test
+    fun telefonosSeLeenCifraACifra() {
+        assertThat(say("Llama al 612 345 678.")).isEqualTo("Llama al seis uno dos, tres cuatro cinco, seis siete ocho.")
+        assertThat(say("Fijo 91 234 56 78")).isEqualTo("Fijo nueve uno, dos tres cuatro, cinco seis, siete ocho")
+        // Una cantidad con unidad no es un telefono.
+        assertThat(say("Cuesta 700 000 000 euros")).doesNotContain(",")
+        // Seguido de una palabra sin contexto de telefono: es una cantidad ("600 300 200 votos").
+        assertThat(say("Obtuvo 600 300 200 votos")).doesNotContain(",")
+        // Con contexto de telefono si, aunque siga una palabra.
+        assertThat(say("Llama al 612 345 678 para pedir cita")).contains("seis uno dos, tres cuatro cinco")
+    }
+
+    @Test
+    fun cadenasDeCifrasConGuionNoSonRangos() {
+        assertThat(say("Serie 3-4-5")).doesNotContain(" a ")
+        assertThat(say("Codigo 123-456-789")).doesNotContain(" a ")
+    }
+
+    @Test
     fun ordinales() {
         assertThat(say("Quedó 1.º y ella 2.ª")).isEqualTo("Quedó primero y ella segunda")
         assertThat(say("El 3er hombre")).isEqualTo("El tercer hombre")

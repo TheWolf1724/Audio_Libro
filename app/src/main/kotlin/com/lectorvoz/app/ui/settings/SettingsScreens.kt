@@ -223,6 +223,16 @@ fun VoiceSettingsContent(
         if (e == TtsEngineType.SYSTEM) onLoadSystemVoices()
         onChange { it.copy(engine = e, voiceId = null) }
     }, tag = "voz-engine")
+    if (v.engine == TtsEngineType.NEURAL) {
+        // Aviso honesto: la voz natural es pesada; en moviles modestos puede tener pausas o tardar en
+        // cargar. La app ya se adapta (mas colchon de audio), pero la voz del sistema es mas fluida.
+        Text(
+            "En moviles modestos la voz natural puede tener pausas o tardar en cargar; la voz del sistema es mas fluida.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp).testTag("voz-aviso-modesto"),
+        )
+    }
     val options = if (v.engine == TtsEngineType.NEURAL) neural else system
     ChoiceRow(
         "Voz y locutor",
@@ -282,6 +292,7 @@ fun VoiceSettingsContent(
     SwitchRow("Igualar volumen", v.loudnessNormalize, { x -> onChange { it.copy(loudnessNormalize = x) } }, tag = "voz-loudnessNormalize")
     SwitchRow("Realce de voz", v.voiceEnhance, { x -> onChange { it.copy(voiceEnhance = x) } }, summary = "Mas clara por el altavoz del movil", tag = "voz-voiceEnhance")
     SwitchRow("Modo nocturno", v.nightMode, { x -> onChange { it.copy(nightMode = x) } }, summary = "Volumen comprimido, sin picos", tag = "voz-nightMode")
+    SwitchRow("Entonacion de preguntas", v.questionIntonation, { x -> onChange { it.copy(questionIntonation = x) } }, summary = "Sube el tono al final de las preguntas (voz natural)", tag = "voz-questionIntonation")
 
     SectionHeader("Temporizador y controles")
     ChoiceRow(

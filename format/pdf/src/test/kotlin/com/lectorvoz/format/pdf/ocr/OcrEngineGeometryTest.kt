@@ -53,4 +53,28 @@ class OcrEngineGeometryTest {
         val cov = OcrEngine.coverageMask(floatArrayOf(4f, 4f, 2f, 2f), 10, 10, 1f)!!
         assertThat(cov.any { it }).isFalse()
     }
+
+    @Test
+    fun separatorBetween_parrafoQueCierraFraseSeRespeta() {
+        assertThat(OcrEngine.separatorBetween("casa.", "Luego", newPara = true, newLine = true)).isEqualTo("\n\n")
+    }
+
+    @Test
+    fun separatorBetween_parrafoEnMitadDeFraseNoParte() {
+        // Tesseract marca parrafo nuevo en mitad de una frase: no debe cortarla.
+        assertThat(OcrEngine.separatorBetween("el", "perro", newPara = true, newLine = true)).isEqualTo("\n")
+        assertThat(OcrEngine.separatorBetween("el", "perro", newPara = true, newLine = false)).isEqualTo(" ")
+    }
+
+    @Test
+    fun separatorBetween_parrafoSinCierreConMayusculaSeRespeta() {
+        // Titulo o elemento nuevo sin punto: empieza en mayuscula, sigue siendo parrafo.
+        assertThat(OcrEngine.separatorBetween("CAPITULO 1", "Era", newPara = true, newLine = true)).isEqualTo("\n\n")
+    }
+
+    @Test
+    fun separatorBetween_sinParrafo() {
+        assertThat(OcrEngine.separatorBetween("a", "b", newPara = false, newLine = true)).isEqualTo("\n")
+        assertThat(OcrEngine.separatorBetween("a", "b", newPara = false, newLine = false)).isEqualTo(" ")
+    }
 }
