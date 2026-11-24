@@ -75,7 +75,7 @@ object LetterSpacing {
         val isWord = wordGaps(gaps)
         diag?.invoke("interletrado: ${starts.size} fichas, huecos=" + gaps.joinToString(",") { "%.1f".format(java.util.Locale.ROOT, it) } + " palabras=" + isWord.count { it })
         // Sin ningun hueco de palabra: o es UNA palabra interletrada, o una frase sin forma de separarla.
-        if (isWord.none { it } && starts.size > MAX_SINGLE_WORD_TOKENS) return null
+        if (isWord.none { it } && (starts.size > MAX_SINGLE_WORD_TOKENS || singles != starts.size)) return null
         val joins = ArrayList<Int>()
         for (t in gaps.indices) {
             if (isWord[t]) continue

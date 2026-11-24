@@ -410,7 +410,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     /** Empieza a medir los capitulos (al tocar el deslizador de progreso). */
     fun prepareSeek() {
         if (lengthsJob != null || _state.value.book?.format != BookFormat.EPUB) return
-        lengthsJob = viewModelScope.launch {
+        val job = viewModelScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
             var complete = false
             try {
                 val b = auxBook() ?: return@launch
@@ -423,9 +423,11 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
                 }
             } finally {
                 // Si algo fallo, la siguiente vez que se toque el deslizador se reintenta.
-                if (!complete) lengthsJob = null
+                if (!complete && lengthsJob === kotlin.coroutines.coroutineContext[kotlinx.coroutines.Job]) lengthsJob = null
             }
         }
+        lengthsJob = job
+        job.start()
     }
 
     /** Salta a la fraccion [f] del libro (deslizador), por caracteres en EPUB (M12). */
@@ -667,7 +669,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         if (s > 0 && s < t.length && t[s].isLowSurrogate()) s--
         var e = (s + 160).coerceAtMost(t.length)
         if (e < t.length && e > 0 && t[e - 1].isHighSurrogate()) e++
-        return t.substring(s, e).replace('\uFFFC', ' ').replace(Regex("\\s+"), " ").trim().ifEmpty { null }
+        return t.substring(s, e).replace('\uFFFC', ' ').replace("\u200B", "").replace("\u00AD", "").replace(Regex("\\s+"), " ").trim().ifEmpty { null }
     }
 
     // ------------------------------------------------------------------ busqueda
