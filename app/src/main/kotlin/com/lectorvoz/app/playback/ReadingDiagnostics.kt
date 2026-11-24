@@ -96,6 +96,8 @@ class ReadingDiagnostics(private val context: Context) {
         append("  MOTOR       motor y voz elegidos (y cambios por bateria)\n")
         append("  OCR         reconocimiento de PDF escaneado a demanda\n")
         append("  MIXTO       recuperar palabras que faltan (texto nativo + OCR por regiones)\n")
+        append("  NEURAL      voz natural: carga del modelo, colchon previo (prebuffer), adaptacion de pasos, RTF\n")
+        append("  ARRANQUE    ms desde pulsar play hasta que suena la primera frase\n")
         append("----\n")
     }
 

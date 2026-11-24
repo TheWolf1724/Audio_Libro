@@ -13,14 +13,16 @@ class PrebufferTest {
 
     @Test
     fun equipoJusto_colchonModerado() {
-        assertThat(NeuralTtsEngine.prebufferTargetMs(0.7f, 30_000)).isEqualTo(5_000)
+        assertThat(NeuralTtsEngine.prebufferTargetMs(0.7f, 30_000)).isEqualTo(3_000)
     }
 
     @Test
     fun equipoLento_colchonGrandePeroAcotadoPorElMargenDePrecarga() {
-        assertThat(NeuralTtsEngine.prebufferTargetMs(1.2f, 30_000)).isEqualTo(12_000)
-        // Con margen LOW (15 s) el colchon no supera el 80 % (12 s) ni, con menos, lo que el productor llena.
-        assertThat(NeuralTtsEngine.prebufferTargetMs(1.2f, 10_000)).isEqualTo(8_000)
+        assertThat(NeuralTtsEngine.prebufferTargetMs(1.2f, 30_000)).isEqualTo(6_000)
+        // La espera total esta acotada: el usuario nunca espera mucho.
+        assertThat(NeuralTtsEngine.PREBUFFER_MAX_WAIT_MS).isAtMost(8_000)
+        // El colchon nunca supera el 80 % del margen de precarga (si no, el productor descansaria antes).
+        assertThat(NeuralTtsEngine.prebufferTargetMs(1.2f, 5_000)).isEqualTo(4_000)
     }
 
     @Test

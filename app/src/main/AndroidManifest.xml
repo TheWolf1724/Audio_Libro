@@ -15,6 +15,8 @@
     <!-- Pedir al usuario que exima la app del ahorro de bateria, para que el sistema no corte la
          lectura en voz alta con la pantalla apagada (dialogo directo desde Ajustes > Permisos). -->
     <!-- tools:ignore: la politica de Play Store sobre este permiso no aplica (la app se instala por APK). -->
+    <!-- Vibracion corta al guardar un marcador desde la notificacion (confirmacion con la pantalla apagada). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" tools:ignore="BatteryLife" />
 
     <application

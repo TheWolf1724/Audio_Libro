@@ -6,4 +6,5 @@
     <string name="tts_capitulo_siguiente">Capitulo siguiente</string>
     <string name="tts_temporizador">Temporizador de apagado</string>
     <string name="tts_marcar">Marcar</string>
+    <string name="tts_canal_voz">Reproduccion de voz</string>
 </resources>

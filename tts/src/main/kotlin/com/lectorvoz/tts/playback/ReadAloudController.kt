@@ -433,6 +433,9 @@ class ReadAloudController(
 
     // --- Interno ---
 
+    /** Instante (ns) en que se pidio sonar, para medir la espera hasta la primera frase (diagnostico). */
+    @Volatile private var prepStartedNs = 0L
+
     private fun startSpeaking() {
         val p = provider ?: return
         val previous = speakJob
@@ -443,6 +446,7 @@ class ReadAloudController(
         // cancelarlo y devolver el volumen a 1, o la nueva frase arrancaria casi muda (A2).
         cancelChapterFade()
         sleepTimer.resume()
+        prepStartedNs = System.nanoTime()
         hub.mutableState.update {
             it.copy(playWhenReady = true, isPreparing = true, ended = false, error = null, focusSuppressed = false)
         }
@@ -459,9 +463,10 @@ class ReadAloudController(
                 publishPosition(start)
                 val engine = prepareEngine()
                 engine.setVolume(volume())
-                hub.mutableState.update {
-                    it.copy(isPreparing = false, isPlaying = true, engine = engine.type)
-                }
+                // Sigue "preparando" hasta que SUENE la primera frase (ver Listener.onUtteranceStart):
+                // cargar el modelo, sintetizar la primera frase y juntar el colchon de audio pueden tardar
+                // unos segundos en un movil lento, y mostrar "reproduciendo" en silencio parecia un fallo.
+                hub.mutableState.update { it.copy(engine = engine.type) }
                 engine.speak(start, nextFn(p, mySession), Listener(mySession))
                 if (session == mySession) onSpeakFinished()
             } catch (e: CancellationException) {
@@ -780,6 +785,12 @@ class ReadAloudController(
                 val loc = utterance.range.start
                 TtsConfig.diag("START id=${utterance.id} cap=${loc.chapter} off=${loc.offset} '${TtsConfig.text40(utterance.displayText)}'")
             }
+            // Primera frase que suena: termina "preparando" y empieza "reproduciendo".
+            if (TtsConfig.diagnostics && hub.mutableState.value.isPreparing) {
+                // Cuanto espera el usuario desde play hasta oir la primera frase (carga + sintesis + colchon).
+                TtsConfig.diag("ARRANQUE hasta sonar=${(System.nanoTime() - prepStartedNs) / 1_000_000}ms motor=${hub.mutableState.value.engine}")
+            }
+            hub.mutableState.update { if (it.isPreparing) it.copy(isPreparing = false, isPlaying = true) else it }
             measure(utterance)
             publishPosition(utterance)
             hub.mutableEvents.tryEmit(PlaybackEvent.UtteranceStarted(utterance.id, utterance.range))

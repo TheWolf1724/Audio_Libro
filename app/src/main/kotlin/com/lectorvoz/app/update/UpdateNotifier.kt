@@ -38,16 +38,33 @@ class UpdateNotifier(private val context: Context, private val state: StateFlow<
     fun start(scope: CoroutineScope) {
         scope.launch {
             var shown: InstallState? = null
+            var lastProgressMs = 0L
             state.collect { st ->
                 if (st == shown) return@collect
                 shown = st
+                // El progreso cambia en cada 1 %: con buena conexion son muchos avisos por segundo y
+                // el sistema descarta los que superan su cuota, pudiendo perder justo el ULTIMO
+                // (instalando / confirmar / error) y dejar la notificacion en "97 %". Se limita el
+                // progreso a ~1 por segundo; cualquier otro estado se publica siempre.
+                if (st is InstallState.Downloading) {
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (st.progress != null && now - lastProgressMs < PROGRESS_MIN_INTERVAL_MS) return@collect
+                    lastProgressMs = now
+                }
                 show(st)
             }
         }
     }
 
-    /** Vuelve a mostrar el estado actual (p. ej. tras conceder el permiso de notificaciones). */
-    fun refresh() = show(state.value)
+    /**
+     * Vuelve a mostrar el estado actual (p. ej. tras conceder el permiso de notificaciones). Solo
+     * repinta lo EN CURSO (descargando/instalando): un aviso ya descartado (confirmar, error) no debe
+     * resucitar, y el intent de confirmacion pudo caducar.
+     */
+    fun refresh() {
+        val st = state.value
+        if (st is InstallState.Downloading || st == InstallState.Installing) show(st)
+    }
 
     private fun show(st: InstallState) {
         val nm = NotificationManagerCompat.from(context)
@@ -72,11 +89,16 @@ class UpdateNotifier(private val context: Context, private val state: StateFlow<
     internal fun build(st: InstallState): android.app.Notification? {
         ensureChannel(context)
         val v = version()?.let { " $it" }.orEmpty()
-        val b = NotificationCompat.Builder(context, CHANNEL)
+        // Progreso e instalacion: canal silencioso. "Confirmar" y "error" piden accion del usuario y
+        // van por un canal de importancia ALTA (aviso emergente/sonido); antes iban en silencio y la
+        // actualizacion parecia colgada.
+        val needsAttention = st is InstallState.NeedsConfirmation || st is InstallState.Failed
+        val b = NotificationCompat.Builder(context, if (needsAttention) CHANNEL_ACTION else CHANNEL)
             .setSmallIcon(R.drawable.ic_download)
             .setContentIntent(openApp())
-            .setOnlyAlertOnce(true)
+            .setOnlyAlertOnce(!needsAttention)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+        if (needsAttention) b.setPriority(NotificationCompat.PRIORITY_HIGH)
         return when (st) {
             is InstallState.Downloading -> {
                 val p = st.progress
@@ -92,8 +114,9 @@ class UpdateNotifier(private val context: Context, private val state: StateFlow<
                 .setContentText("Descarga comprobada. Instalando...")
                 .setProgress(0, 0, true)
                 .setSilent(true)
-                // Al instalarse la version nueva el proceso muere sin quitarla: caduca sola.
-                .setTimeoutAfter(10 * 60_000L)
+                // Al instalarse la version nueva el proceso muere sin quitarla: caduca sola (2 min;
+                // una instalacion normal tarda segundos).
+                .setTimeoutAfter(2 * 60_000L)
                 .build()
             is InstallState.NeedsConfirmation -> b.setContentTitle("WolfReader$v lista para instalar")
                 .setContentText("Toca para confirmar la instalacion")
@@ -127,6 +150,8 @@ class UpdateNotifier(private val context: Context, private val state: StateFlow<
         private const val TAG = "UpdateNotifier"
         const val ID = 4201
         const val CHANNEL = "actualizaciones"
+        const val CHANNEL_ACTION = "actualizaciones_accion"
+        private const val PROGRESS_MIN_INTERVAL_MS = 1_000L
         const val ACTION_CANCEL = "com.lectorvoz.app.ACTUALIZACION_CANCELAR"
         private const val REQ_OPEN = 41
         private const val REQ_CANCEL = 42
@@ -134,13 +159,21 @@ class UpdateNotifier(private val context: Context, private val state: StateFlow<
 
         fun ensureChannel(context: Context) {
             val nm = context.getSystemService(NotificationManager::class.java) ?: return
-            if (nm.getNotificationChannel(CHANNEL) != null) return
-            nm.createNotificationChannel(
-                NotificationChannel(CHANNEL, "Actualizaciones", NotificationManager.IMPORTANCE_DEFAULT).apply {
-                    description = "Descarga e instalacion de versiones nuevas de WolfReader"
-                    setSound(null, null)
-                },
-            )
+            if (nm.getNotificationChannel(CHANNEL) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(CHANNEL, "Actualizaciones", NotificationManager.IMPORTANCE_DEFAULT).apply {
+                        description = "Progreso de la descarga e instalacion de versiones nuevas de WolfReader"
+                        setSound(null, null)
+                    },
+                )
+            }
+            if (nm.getNotificationChannel(CHANNEL_ACTION) == null) {
+                nm.createNotificationChannel(
+                    NotificationChannel(CHANNEL_ACTION, "Actualizacion: accion necesaria", NotificationManager.IMPORTANCE_HIGH).apply {
+                        description = "Avisa cuando hay que confirmar la instalacion o si la actualizacion falla"
+                    },
+                )
+            }
         }
     }
 }

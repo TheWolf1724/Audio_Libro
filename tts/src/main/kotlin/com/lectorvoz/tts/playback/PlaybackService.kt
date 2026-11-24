@@ -17,6 +17,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
+import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
@@ -27,6 +28,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.SettableFuture
 import com.lectorvoz.core.model.TtsEngineType
 import com.lectorvoz.tts.R
+import com.lectorvoz.tts.SleepTimerMode
 import com.lectorvoz.tts.cache.AudioDiskCache
 import com.lectorvoz.tts.engine.SpeechEngine
 import com.lectorvoz.tts.engine.SystemTtsEngine
@@ -195,6 +197,22 @@ class PlaybackService : MediaSessionService() {
             .setSessionActivity(sessionActivity())
             .setMediaButtonPreferences(buttons())
             .build()
+        // Nombre del canal de la notificacion en espanol (por defecto Media3 lo llama "Default Channel").
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider.Builder(this).setChannelName(R.string.tts_canal_voz).build(),
+        )
+        // El boton del temporizador cicla 15/30/60/fin de capitulo/apagado sin dar pistas: su nombre
+        // refleja el estado actual ("Temporizador: 30 min"), asi se ve en que paso va.
+        scope.launch {
+            hub.state.map { it.sleepTimer }.distinctUntilChanged().collect { mode ->
+                val label = getString(R.string.tts_temporizador) + when (mode) {
+                    null -> ""
+                    is SleepTimerMode.Minutes -> ": ${mode.minutes} min"
+                    SleepTimerMode.EndOfChapter -> ": fin de capitulo"
+                }
+                session?.setMediaButtonPreferences(buttons(label))
+            }
+        }
         openPendingBook()
         scope.launch { hub.settings.drop(1).collect { controller.updateSettings(it) } }
         scope.launch {
@@ -284,7 +302,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     /** Botones: frase anterior / play-pausa (automatico) / frase siguiente + menu extra. */
-    private fun buttons(): List<CommandButton> = listOf(
+    private fun buttons(timerLabel: String = getString(R.string.tts_temporizador)): List<CommandButton> = listOf(
         CommandButton.Builder(CommandButton.ICON_PREVIOUS)
             .setPlayerCommand(Player.COMMAND_SEEK_TO_PREVIOUS)
             .setDisplayName(getString(R.string.tts_frase_anterior))
@@ -313,7 +331,7 @@ class PlaybackService : MediaSessionService() {
         CommandButton.Builder(CommandButton.ICON_UNDEFINED)
             .setCustomIconResId(R.drawable.tts_ic_temporizador)
             .setSessionCommand(TtsCommands.SLEEP_TIMER_CYCLE)
-            .setDisplayName(getString(R.string.tts_temporizador))
+            .setDisplayName(timerLabel)
             .setSlots(CommandButton.SLOT_OVERFLOW)
             .build(),
     )

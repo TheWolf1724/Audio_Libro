@@ -1083,10 +1083,10 @@ class NeuralTtsEngine(
         const val RTF_SAVE_EVERY_MS = 30_000L
 
         /** Espera maxima del buffer previo a sonar: pasado esto se empieza igualmente. */
-        const val PREBUFFER_MAX_WAIT_MS = 20_000L
+        const val PREBUFFER_MAX_WAIT_MS = 8_000L
 
         /** Colchon tras la primera vez (saltos, reanudaciones): corto, para no dejar silencios largos. */
-        const val FOLLOWUP_PREBUFFER_MS = 3_000L
+        const val FOLLOWUP_PREBUFFER_MS = 2_000L
         const val PREBUFFER_POLL_MS = 20L
 
         /**
@@ -1099,8 +1099,8 @@ class NeuralTtsEngine(
         internal fun prebufferTargetMs(rtf: Float?, bufferAheadMs: Long): Long {
             val want = when {
                 rtf == null || rtf < 0.5f -> 0L
-                rtf < 0.85f -> 5_000L
-                else -> 12_000L
+                rtf < 0.85f -> 3_000L
+                else -> 6_000L
             }
             return minOf(want, bufferAheadMs * 8 / 10)
         }

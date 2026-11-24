@@ -287,6 +287,12 @@ class AppGraph(
             null
         }
         bookmarks.add(id, loc, text ?: "Marcado desde la notificacion")
+        // Confirmacion: con la pantalla apagada no se veia nada y parecia que el boton "no iba".
+        runCatching {
+            context.getSystemService(android.os.Vibrator::class.java)
+                ?.vibrate(android.os.VibrationEffect.createOneShot(60, android.os.VibrationEffect.DEFAULT_AMPLITUDE))
+        }
+        android.widget.Toast.makeText(context, "Marcador guardado", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     /**
@@ -299,6 +305,12 @@ class AppGraph(
         if (playback.state.value.bookId == book.id) {
             speech.forget(book.id)
             playback.stop()
+            // Suelta el libro retirado cuando el servicio ya lo solto (bookId == null), sin depender
+            // del colector de [start]: StateFlow conflaciona y, si el estado pasa por el libro y por
+            // null mas deprisa de lo que el colector lee, no ve la transicion y el fichero se queda
+            // abierto. Con tope de espera por si el servicio no responde.
+            kotlinx.coroutines.withTimeoutOrNull(3_000) { playback.state.first { it.bookId == null } }
+            speech.releaseRetired()
         }
         library.delete(book.id)
         settings.clearOverrides(book.id)
@@ -401,6 +413,12 @@ class SpeechBooks(private val graph: AppGraph) {
         lease = null
         provider = null
         providerBook = null
+    }
+
+    /** Cierra el libro retirado por [forget] (el que ya no esta en uso); no toca el actual. */
+    suspend fun releaseRetired() = mutex.withLock {
+        retired?.release()
+        retired = null
     }
 
     /** Suelta el libro [bookId] si es el de la voz (al quitarlo de la biblioteca). */

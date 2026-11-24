@@ -146,7 +146,13 @@ class MainActivity : ComponentActivity() {
         if (launchedFromHistory(intent)) return
         when (intent.action) {
             ACTION_OPEN_PLAYING -> {
-                val id = (application as LectorVozApp).graph.playback.state.value.bookId ?: return
+                val id = (application as LectorVozApp).graph.playback.state.value.bookId
+                if (id == null) {
+                    // Notificacion de una sesion anterior (el proceso murio) o ya cerrada: no hay libro en
+                    // curso al que ir; antes la app se abria sin mas y parecia que el toque no hacia nada.
+                    Toast.makeText(this, "No hay ninguna lectura en curso", Toast.LENGTH_SHORT).show()
+                    return
+                }
                 navRequests.trySend(id)
             }
             ACTION_OPEN_BOOK -> intent.getLongExtra(EXTRA_BOOK, -1L).takeIf { it >= 0 }?.let { navRequests.trySend(it) }
