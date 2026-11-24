@@ -43,9 +43,24 @@ data class StatsSummary(
     val listenCharsPerMinute: Int? get() = if (listenMs >= 60_000) (listenChars * 60_000 / listenMs).toInt() else null
 }
 
+/** Estadisticas de un solo libro. */
+data class BookStats(
+    val readMs: Long = 0,
+    val listenMs: Long = 0,
+    val sessions: Int = 0,
+    /** Primera y ultima sesion (nulos sin actividad). */
+    val firstAt: Long? = null,
+    val lastAt: Long? = null,
+) {
+    val totalMs: Long get() = readMs + listenMs
+}
+
 /** Sesiones de lectura y escucha. */
 interface ReadingStatsRepository {
     val summary: Flow<StatsSummary>
+
+    /** Estadisticas del libro [bookId] (vacias por defecto). */
+    fun forBook(bookId: Long): Flow<BookStats> = kotlinx.coroutines.flow.flowOf(BookStats())
 
     /** Guarda una sesion; las de menos de [MIN_SESSION_MS] se descartan. */
     suspend fun record(bookId: Long, kind: SessionKind, startedAt: Long, durationMs: Long, chars: Long)
@@ -96,6 +111,16 @@ class RoomReadingStatsRepository(
         ) { a, b, c -> Triple(a, b, c) },
     ) { readMs, listenMs, readChars, listenChars, (finished, count, recent) ->
         StatsSummary(readMs, listenMs, readChars, listenChars, finished, count, days(recent.first, recent.second), streak(recent.first, recent.second))
+    }
+
+    override fun forBook(bookId: Long): Flow<BookStats> = sessions.observeForBook(bookId).map { list ->
+        BookStats(
+            readMs = list.filter { it.kind == SessionKind.READ.name }.sumOf { it.durationMs },
+            listenMs = list.filter { it.kind == SessionKind.LISTEN.name }.sumOf { it.durationMs },
+            sessions = list.size,
+            firstAt = list.firstOrNull()?.startedAt,
+            lastAt = list.lastOrNull()?.startedAt,
+        )
     }
 
     /** Dias seguidos con actividad ([STREAK_MIN_MS] como minimo), contando desde hoy o desde ayer. */

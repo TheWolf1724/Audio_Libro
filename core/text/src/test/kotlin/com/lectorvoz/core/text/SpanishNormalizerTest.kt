@@ -29,6 +29,13 @@ class SpanishNormalizerTest {
     }
 
     @Test
+    fun rangoConRayaEntreCifras() {
+        assertThat(say("1819–1820")).isEqualTo("mil ochocientos diecinueve a mil ochocientos veinte")
+        assertThat(say("10–15 veces")).isEqualTo("diez a quince veces")
+        assertThat(say("Dijo – 5 veces")).doesNotContain(" a ")
+    }
+
+    @Test
     fun decimales() {
         assertThat(say("Mide 1,5 metros.")).isEqualTo("Mide uno coma cinco metros.")
         assertThat(say("Pi es 3.14")).isEqualTo("Pi es tres punto catorce")

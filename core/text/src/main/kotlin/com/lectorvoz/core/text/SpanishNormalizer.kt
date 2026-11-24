@@ -441,6 +441,11 @@ class SpanishNormalizer(
                 if (j < n && s[j] == ' ') j++
                 if (j < n && isAsciiDigit(s[j])) return number(j, c, i)
             }
+            // Raya en rango de cifras pegadas ("1819–1820", "10–15"): se lee " a " como el guion.
+            if (c == '–' && i > 0 && i + 1 < n && isAsciiDigit(s[i - 1]) && isAsciiDigit(s[i + 1]) && !inHyphenChain(i)) {
+                out.replace(" a ", i, i + 1)
+                return i + 1
+            }
             if ((c == '-' || c == '−') && i + 1 < n && isAsciiDigit(s[i + 1])) {
                 if (i >= 4 && i + 5 <= n && isYear(i - 4) && isYear(i + 1)) {
                     out.replace(" a ", i, i + 1)

@@ -102,6 +102,7 @@ interface LibraryActions {
     fun move(c: BookCollection, book: Book, delta: Int)
     fun messageShown()
     fun cancelImport() {}
+    fun statsFor(bookId: Long): kotlinx.coroutines.flow.Flow<com.lectorvoz.core.data.stats.BookStats> = kotlinx.coroutines.flow.flowOf(com.lectorvoz.core.data.stats.BookStats())
 }
 
 /** Ruta de la biblioteca: une ViewModel, selector de ficheros y pantalla. */
@@ -145,6 +146,7 @@ fun LibraryRoute(
             override fun move(c: BookCollection, book: Book, delta: Int) { vm.moveInCollection(c, book, delta) }
             override fun messageShown() = vm.consumeMessage()
             override fun cancelImport() = vm.cancelImport()
+            override fun statsFor(bookId: Long) = vm.statsFor(bookId)
         }
     }
     LibraryScreen(
@@ -192,6 +194,7 @@ fun LibraryScreen(
     // cambiar el modo oscuro no los cierra ni pierde lo escrito.
     var menuBookId by rememberSaveable { mutableStateOf<Long?>(null) }
     var confirmDeleteId by rememberSaveable { mutableStateOf<Long?>(null) }
+    var statsBookId by rememberSaveable { mutableStateOf<Long?>(null) }
     var newCollectionForId by rememberSaveable { mutableStateOf<Long?>(null) }
     var newCollection by rememberSaveable { mutableStateOf(false) }
     val bookById: (Long?) -> Book? = { id ->
@@ -317,8 +320,10 @@ fun LibraryScreen(
             onDismiss = { menuBookId = null },
             onDelete = { menuBookId = null; confirmDeleteId = b.id },
             onNewCollection = { menuBookId = null; newCollectionForId = b.id; newCollection = true },
+            onStats = { menuBookId = null; statsBookId = b.id },
         )
     }
+    bookById(statsBookId)?.let { b -> BookStatsDialog(b, actions.statsFor(b.id)) { statsBookId = null } }
     bookById(confirmDeleteId)?.let { b ->
         AlertDialog(
             onDismissRequest = { confirmDeleteId = null },
@@ -584,6 +589,7 @@ private fun BookMenuSheet(
     onDismiss: () -> Unit,
     onDelete: () -> Unit,
     onNewCollection: () -> Unit,
+    onStats: () -> Unit,
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.padding(bottom = 24.dp)) {
@@ -602,6 +608,7 @@ private fun BookMenuSheet(
                 SheetItem("Subir en la serie") { actions.move(c, book, -1); onDismiss() }
                 SheetItem("Bajar en la serie") { actions.move(c, book, +1); onDismiss() }
             }
+            SheetItem("Estadisticas del libro", onStats)
             SheetItem("Nueva coleccion o serie con este libro", onNewCollection)
             SheetItem("Quitar de la biblioteca", onDelete)
         }
@@ -637,5 +644,30 @@ private fun NewCollectionDialog(onDismiss: () -> Unit, onCreate: (String, Boolea
         },
         confirmButton = { TextButton(onClick = { onCreate(name, series) }, enabled = name.isNotBlank()) { Text("Crear") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
+}
+
+/** Estadisticas de un libro: tiempo leido y escuchado, sesiones y progreso. */
+@Composable
+private fun BookStatsDialog(book: Book, flow: kotlinx.coroutines.flow.Flow<com.lectorvoz.core.data.stats.BookStats>, onDismiss: () -> Unit) {
+    val s by flow.collectAsStateWithLifecycle(com.lectorvoz.core.data.stats.BookStats())
+    val fmt = remember { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.forLanguageTag("es-ES")) }
+    fun dur(ms: Long): String { val m = ms / 60_000; return if (m >= 60) "${m / 60} h ${m % 60} min" else "$m min" }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Estadisticas") },
+        text = {
+            Column(Modifier.testTag("libro-estadisticas")) {
+                Text(book.title, style = MaterialTheme.typography.titleMedium)
+                Text("Progreso: ${(book.progress * 100).toInt()} %" + if (book.finished) " (terminado)" else "")
+                Text("Tiempo leyendo: ${dur(s.readMs)}")
+                Text("Tiempo escuchando: ${dur(s.listenMs)}")
+                Text("Sesiones: ${s.sessions}")
+                s.firstAt?.let { Text("Primera: ${fmt.format(java.util.Date(it))}") }
+                s.lastAt?.let { Text("Ultima: ${fmt.format(java.util.Date(it))}") }
+                if (s.sessions == 0) Text("Aun sin actividad registrada.", style = MaterialTheme.typography.bodySmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Cerrar") } },
     )
 }

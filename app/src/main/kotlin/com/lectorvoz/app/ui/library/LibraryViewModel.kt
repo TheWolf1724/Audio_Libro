@@ -74,7 +74,12 @@ class LibraryViewModel(
     private val onDelete: (suspend (Book) -> Unit)? = null,
     /** Hilo del filtrado y la ordenacion (con miles de libros no va en el hilo principal). */
     private val compute: CoroutineDispatcher = Dispatchers.Default,
+    /** Estadisticas por libro (opcional: pruebas). */
+    private val stats: com.lectorvoz.core.data.stats.ReadingStatsRepository? = null,
 ) : ViewModel() {
+    fun statsFor(bookId: Long): kotlinx.coroutines.flow.Flow<com.lectorvoz.core.data.stats.BookStats> =
+        stats?.forBook(bookId) ?: kotlinx.coroutines.flow.flowOf(com.lectorvoz.core.data.stats.BookStats())
+
     private val local = MutableStateFlow(LocalState())
 
     val state: StateFlow<LibraryUiState> = combine(
