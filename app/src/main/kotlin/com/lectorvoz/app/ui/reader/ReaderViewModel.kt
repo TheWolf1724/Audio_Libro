@@ -39,6 +39,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -68,6 +70,8 @@ data class ReaderUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val passwordPrompt: PasswordPrompt? = null,
+    /** Ritmo real de escucha del usuario (car/s) segun sus estadisticas, para estimar cuando la voz no suena. */
+    val learnedCps: Float? = null,
     val book: Book? = null,
     val settings: ReaderSettings = ReaderSettings(),
     val voice: VoiceSettings = VoiceSettings(),
@@ -91,7 +95,7 @@ data class ReaderUiState(
     val voiceOnThisBook: Boolean get() = book != null && playback.bookId == book.id
     val isPlaying: Boolean get() = voiceOnThisBook && playback.playWhenReady
     val remaining: Remaining
-        get() = remainingTime(pageInfo.chapterCharsRemaining, pageInfo.bookCharsRemaining, playback.charsPerSecond.takeIf { voiceOnThisBook }, voice.speed)
+        get() = remainingTime(pageInfo.chapterCharsRemaining, pageInfo.bookCharsRemaining, playback.charsPerSecond.takeIf { voiceOnThisBook }, voice.speed, learnedCps)
 }
 
 /**
@@ -230,6 +234,10 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
             previewSettings.debounce(PREVIEW_DEBOUNCE_MS).collect { s -> if (s != null) controller.setSettings(s) }
         }
         viewModelScope.launch { graph.settings.voiceFor(bookId).collect { v -> _state.update { it.copy(voice = v) } } }
+        viewModelScope.launch {
+            graph.stats.summary.map { s -> s.listenCharsPerMinute?.let { it / 60f } }.distinctUntilChanged()
+                .collect { cps -> _state.update { it.copy(learnedCps = cps) } }
+        }
         viewModelScope.launch { graph.settings.overrides(bookId).collect { o -> _state.update { it.copy(overrides = o) } } }
         viewModelScope.launch { graph.settings.forceOcr(bookId).collect { applyForceOcr(it) } }
         viewModelScope.launch { graph.bookmarks.observe(bookId).collect { b -> _state.update { it.copy(bookmarks = b) } } }

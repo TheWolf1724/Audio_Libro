@@ -30,6 +30,11 @@ data class StatsSummary(
     val sessions: Int = 0,
     /** Ultimos 7 dias, del mas antiguo al de hoy. */
     val lastDays: List<DayStats> = emptyList(),
+    /**
+     * Racha: dias seguidos con actividad (>= 1 min en total). Cuenta hasta hoy si hoy ya hay
+     * actividad, o hasta ayer si todavia no (la racha sigue viva hasta que acaba el dia).
+     */
+    val streakDays: Int = 0,
 ) {
     /** Ritmo de lectura visual en caracteres por minuto (nulo sin datos). */
     val readCharsPerMinute: Int? get() = if (readMs >= 60_000) (readChars * 60_000 / readMs).toInt() else null
@@ -86,10 +91,25 @@ class RoomReadingStatsRepository(
         combine(
             books.observeFinishedCount(),
             sessions.observeCount(),
-            today.flatMapLatest { t -> sessions.observeSince(addDays(t, -6)).map { t to it } },
+            // Una sola observacion de los ultimos dias sirve para el grafico (7) y la racha (hasta 120).
+            today.flatMapLatest { t -> sessions.observeSince(addDays(t, -STREAK_LOOKBACK_DAYS)).map { t to it } },
         ) { a, b, c -> Triple(a, b, c) },
     ) { readMs, listenMs, readChars, listenChars, (finished, count, recent) ->
-        StatsSummary(readMs, listenMs, readChars, listenChars, finished, count, days(recent.first, recent.second))
+        StatsSummary(readMs, listenMs, readChars, listenChars, finished, count, days(recent.first, recent.second), streak(recent.first, recent.second))
+    }
+
+    /** Dias seguidos con actividad ([STREAK_MIN_MS] como minimo), contando desde hoy o desde ayer. */
+    internal fun streak(today: Long, recent: List<ReadingSessionEntity>): Int {
+        val perDay = HashMap<Long, Long>()
+        for (s in recent) perDay.merge(dayStart(s.startedAt), s.durationMs, Long::plus)
+        fun active(day: Long) = (perDay[day] ?: 0L) >= STREAK_MIN_MS
+        var day = if (active(today)) today else addDays(today, -1)
+        var n = 0
+        while (n < STREAK_LOOKBACK_DAYS && active(day)) {
+            n++
+            day = addDays(day, -1)
+        }
+        return n
     }
 
     /** Siete dias de calendario (con cambio de hora: dias de 23 o 25 h). */
@@ -128,5 +148,7 @@ class RoomReadingStatsRepository(
 
     private companion object {
         const val DAY_MS = 24L * 60 * 60 * 1000
+        const val STREAK_LOOKBACK_DAYS = 120
+        const val STREAK_MIN_MS = 60_000L
     }
 }

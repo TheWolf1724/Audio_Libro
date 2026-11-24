@@ -178,7 +178,9 @@ private fun Check(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
 @Composable
 fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
     val s by vm.summary.collectAsStateWithLifecycle()
+    val goal by vm.goalMinutes.collectAsStateWithLifecycle()
     var confirm by rememberSaveable { mutableStateOf(false) }
+    var editGoal by rememberSaveable { mutableStateOf(false) }
     SettingsScaffold("Estadisticas", onBack) {
         SectionHeader("Total")
         StatLine("Tiempo leyendo", formatDuration(s.readMs))
@@ -192,6 +194,8 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
             SectionHeader("Hoy")
             StatLine("Leyendo", formatDuration(today.readMs))
             StatLine("Escuchando", formatDuration(today.listenMs))
+            StatLine("Racha", if (s.streakDays > 0) "${s.streakDays} ${if (s.streakDays == 1) "dia" else "dias"} seguidos" else "sin racha")
+            DailyGoal(goalMinutes = goal, todayMs = today.readMs + today.listenMs, onEdit = { editGoal = true })
         }
         if (s.lastDays.isNotEmpty()) {
             StatLine("Media diaria (7 dias)", formatDuration(s.lastDays.sumOf { it.readMs + it.listenMs } / s.lastDays.size))
@@ -221,6 +225,9 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
         }
         OutlinedButton(onClick = { confirm = true }, modifier = Modifier.padding(16.dp).heightIn(min = 48.dp)) { Text("Borrar estadisticas") }
     }
+    if (editGoal) {
+        GoalDialog(goal, onSet = { vm.setGoal(it); editGoal = false }, onDismiss = { editGoal = false })
+    }
     if (confirm) {
         AlertDialog(
             onDismissRequest = { confirm = false },
@@ -230,6 +237,51 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancelar") } },
         )
     }
+}
+
+/** Objetivo diario: barra de progreso de hoy y acceso a cambiarlo (0 = sin objetivo). */
+@Composable
+private fun DailyGoal(goalMinutes: Int, todayMs: Long, onEdit: () -> Unit) {
+    val todayMin = (todayMs / 60_000L).toInt()
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        if (goalMinutes > 0) {
+            val done = todayMin >= goalMinutes
+            Text(
+                if (done) "Objetivo de hoy cumplido: $todayMin de $goalMinutes min" else "Objetivo de hoy: $todayMin de $goalMinutes min",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (done) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { (todayMin.toFloat() / goalMinutes).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).semantics { contentDescription = "Progreso del objetivo diario" },
+            )
+        }
+        OutlinedButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp).testTag("objetivo-diario")) {
+            Text(if (goalMinutes > 0) "Cambiar objetivo diario" else "Fijar un objetivo diario")
+        }
+    }
+}
+
+/** Elegir el objetivo diario (minutos): pasos de 5 min, 0 lo desactiva. */
+@Composable
+private fun GoalDialog(current: Int, onSet: (Int) -> Unit, onDismiss: () -> Unit) {
+    var minutes by remember { mutableStateOf(if (current > 0) current else 30) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Objetivo diario") },
+        text = {
+            Column {
+                Text(if (minutes == 0) "Sin objetivo" else "$minutes minutos al dia (leyendo o escuchando)", style = MaterialTheme.typography.titleMedium)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = { minutes = (minutes - 5).coerceAtLeast(0) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("- 5") }
+                    TextButton(onClick = { minutes = (minutes + 5).coerceAtMost(24 * 60) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("+ 5") }
+                    TextButton(onClick = { minutes = 0 }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Sin objetivo") }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSet(minutes) }) { Text("Guardar") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
+    )
 }
 
 @Composable

@@ -1,5 +1,6 @@
 package com.lectorvoz.format.pdf.ocr
 
+import com.lectorvoz.core.model.treeSizeBytes
 import com.lectorvoz.format.pdf.RawPageText
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -100,7 +101,7 @@ class OcrStore(private val root: File) {
     /** Bytes ocupados por [bookId] (nulo: todos los libros). */
     fun sizeBytes(bookId: Long? = null): Long = synchronized(lock) {
         val d = if (bookId == null) root else dir(bookId)
-        d.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        d.treeSizeBytes()
     }
 
     /** Borra paginas a medio escribir (el proceso murio mientras se guardaban). */

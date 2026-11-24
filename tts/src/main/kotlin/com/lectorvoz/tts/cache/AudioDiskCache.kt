@@ -1,5 +1,6 @@
 package com.lectorvoz.tts.cache
 
+import com.lectorvoz.core.model.treeSizeBytes
 import com.lectorvoz.tts.neural.SynthesisParams
 import java.io.BufferedOutputStream
 import java.io.DataInputStream
@@ -131,13 +132,13 @@ class AudioDiskCache(
 
     private fun ensureTotal() {
         if (totalBytes >= 0) return
-        totalBytes = root.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        totalBytes = root.treeSizeBytes()
     }
 
     /** Desaloja capitulos permitidos por [allowed] (los menos usados primero) hasta ocupar [limit] o menos. */
     private fun evictUntil(limit: Long, allowed: (File) -> Boolean) {
         if (totalBytes <= limit) return
-        val chapters = root.walkTopDown().filter { it.isFile && it.name.endsWith(PCM) && allowed(it) }
+        val chapters = runCatching { root.walkTopDown().filter { it.isFile && it.name.endsWith(PCM) && allowed(it) }.toList() }.getOrDefault(emptyList())
             .sortedBy { it.lastModified() }.toList()
         for (pcm in chapters) {
             if (totalBytes <= limit) break

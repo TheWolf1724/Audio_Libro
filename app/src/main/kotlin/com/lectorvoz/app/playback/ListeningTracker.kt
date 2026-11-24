@@ -56,6 +56,9 @@ class ListeningTracker(
     private var segChars = 0L
     private var segPos: Locator? = null
 
+    /** Instante (monotonico) de la ultima posicion vista: da el tiempo que explica un avance. */
+    private var segPosAt = 0L
+
     /** Longitud en caracteres del capitulo de [segPos], si el servicio la conoce. */
     private var segChapterLen: Int? = null
 
@@ -85,7 +88,7 @@ class ListeningTracker(
         if (book == null) return
         val pos = s.position
         if (pos != null) {
-            countChars(pos, s.chapterLength)
+            countChars(pos, s.chapterLength, now)
             lastPosition = pos
         }
         // Estadisticas: solo mientras suena.
@@ -133,6 +136,7 @@ class ListeningTracker(
         segWall = wallClock()
         segChars = 0
         segPos = pos
+        segPosAt = now
         segChapterLen = chapterLen
     }
 
@@ -141,22 +145,30 @@ class ListeningTracker(
      * cruzar de capitulo cuenta el resto del capitulo previo (si se conoce su longitud) ademas
      * del offset en el nuevo, y un salto de varios capitulos no se pierde (antes sumaba 0).
      */
-    private fun countChars(pos: Locator, chapterLen: Int?) {
+    private fun countChars(pos: Locator, chapterLen: Int?, now: Long) {
         if (segBook == null) return
         val prev = segPos
+        val prevAt = segPosAt
         segPos = pos
+        segPosAt = now
         if (prev == null) {
             if (chapterLen != null) segChapterLen = chapterLen
             return
         }
+        // Un avance mayor que lo que se puede LEER en el tiempo transcurrido es un SALTO (deslizador,
+        // indice, "capitulo siguiente"), no escucha: no se cuenta como caracteres escuchados (inflaba la
+        // velocidad media y el tiempo restante). Tope generoso: 70 car/s (voz a 3x) y minimo 400 car.
+        val maxNatural = maxOf(MIN_NATURAL_CHARS, ((now - prevAt).coerceIn(0L, MAX_ELAPSED_MS) * MAX_CHARS_PER_SEC / 1000))
         when {
             pos.chapter == prev.chapter -> {
-                segChars += (pos.offset - prev.offset).coerceAtLeast(0).toLong()
+                val delta = (pos.offset - prev.offset).coerceAtLeast(0).toLong()
+                if (delta <= maxNatural) segChars += delta
                 if (chapterLen != null) segChapterLen = chapterLen
             }
             pos.chapter > prev.chapter -> {
                 val tail = segChapterLen?.let { (it - prev.offset).coerceAtLeast(0).toLong() } ?: 0L
-                segChars += tail + pos.offset.toLong()
+                val advanced = tail + pos.offset.toLong()
+                if (advanced <= maxNatural) segChars += advanced
                 // La longitud del nuevo capitulo aun no se conoce con certeza (el estado puede
                 // llegar con retraso): la fijan los siguientes estados del mismo capitulo.
                 segChapterLen = null
@@ -187,5 +199,14 @@ class ListeningTracker(
 
     private companion object {
         const val TAG = "ListeningTracker"
+
+        /** Avance minimo que siempre se considera lectura natural (una frase larga). */
+        const val MIN_NATURAL_CHARS = 400L
+
+        /** Velocidad maxima de lectura creible (voz a 3x ~45 car/s, con margen). */
+        const val MAX_CHARS_PER_SEC = 70L
+
+        /** El tiempo que cuenta para explicar un avance (una pausa larga no justifica un salto enorme). */
+        const val MAX_ELAPSED_MS = 60_000L
     }
 }

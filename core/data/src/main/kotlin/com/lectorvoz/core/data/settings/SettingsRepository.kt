@@ -100,6 +100,8 @@ data class AppPrefs(
     val historyShowProgress: Boolean = true,
     /** La pantalla de bienvenida (presentacion + permisos) ya se mostro: no repetirla. */
     val onboardingDone: Boolean = false,
+    /** Objetivo diario de lectura/escucha en minutos (0 = sin objetivo). */
+    val dailyGoalMinutes: Int = 0,
 )
 
 /** Ajustes persistentes de la app. Todos los valores salen ya saneados. */
@@ -406,6 +408,7 @@ class DataStoreSettingsRepository(
         val historyFinished = booleanPreferencesKey("app.historial.fin")
         val historyProgress = booleanPreferencesKey("app.historial.progreso")
         val onboardingDone = booleanPreferencesKey("app.bienvenida_hecha")
+        val dailyGoal = androidx.datastore.preferences.core.intPreferencesKey("app.objetivo_diario_min")
     }
 
     private fun readApp(p: Preferences): AppPrefs {
@@ -428,6 +431,7 @@ class DataStoreSettingsRepository(
             historyShowFinished = p[A.historyFinished] ?: d.historyShowFinished,
             historyShowProgress = p[A.historyProgress] ?: d.historyShowProgress,
             onboardingDone = p[A.onboardingDone] ?: d.onboardingDone,
+            dailyGoalMinutes = (p[A.dailyGoal] ?: d.dailyGoalMinutes).coerceIn(0, 24 * 60),
         )
     }
 
@@ -449,6 +453,7 @@ class DataStoreSettingsRepository(
         p[A.historyFinished] = s.historyShowFinished
         p[A.historyProgress] = s.historyShowProgress
         p[A.onboardingDone] = s.onboardingDone
+        p[A.dailyGoal] = s.dailyGoalMinutes.coerceIn(0, 24 * 60)
     }
 
     // ------------------------------------------------------------------ por libro

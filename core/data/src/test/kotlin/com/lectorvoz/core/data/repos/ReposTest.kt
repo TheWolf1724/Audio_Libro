@@ -119,4 +119,30 @@ class ReposTest {
         assertThat(s.lastDays).hasSize(7)
         assertThat(s.lastDays.last().readMs).isEqualTo(120_000)
     }
+
+    @Test
+    fun rachaDeDiasSeguidosCuentaHastaHoyOHastaAyer() = runTest {
+        val id = libro("racha")
+        val dia = 24L * 3600 * 1000
+        val now = 40L * dia + 12L * 3600 * 1000 // mediodia del dia 40 (UTC)
+        val repo = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = { TimeZone.getTimeZone("UTC") })
+        // Tres dias seguidos terminando AYER (hoy aun sin actividad): la racha sigue viva = 3.
+        for (d in 37..39) repo.record(id, SessionKind.LISTEN, d * dia + 10_000, 120_000, 100)
+        assertThat(repo.summary.first().streakDays).isEqualTo(3)
+        // Con actividad hoy suma uno mas.
+        repo.record(id, SessionKind.READ, now, 90_000, 100)
+        assertThat(repo.summary.first().streakDays).isEqualTo(4)
+    }
+
+    @Test
+    fun rachaSeRompeConUnDiaSinActividadOMenosDeUnMinuto() = runTest {
+        val id = libro("racha2")
+        val dia = 24L * 3600 * 1000
+        val now = 40L * dia + 12L * 3600 * 1000
+        val repo = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = { TimeZone.getTimeZone("UTC") })
+        repo.record(id, SessionKind.LISTEN, 36 * dia + 10_000, 120_000, 100) // hace 4 dias
+        // Hace 3 dias: solo 30 s (por debajo del minimo de actividad) y se descarta ademas como sesion corta.
+        repo.record(id, SessionKind.LISTEN, 39 * dia + 10_000, 120_000, 100) // ayer
+        assertThat(repo.summary.first().streakDays).isEqualTo(1) // solo ayer: el hueco rompe la racha
+    }
 }

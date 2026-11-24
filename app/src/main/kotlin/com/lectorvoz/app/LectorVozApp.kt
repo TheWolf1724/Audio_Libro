@@ -6,6 +6,7 @@ import android.os.StatFs
 import androidx.core.content.edit
 import android.os.StrictMode
 import androidx.media3.common.util.UnstableApi
+import com.lectorvoz.core.model.treeSizeBytes
 import com.lectorvoz.tts.playback.TtsConfig
 import android.util.Log
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -92,7 +93,7 @@ class LectorVozApp : Application() {
         val free = runCatching { StatFs(cacheDir.path).availableBytes }.getOrDefault(Long.MAX_VALUE)
         // El espacio libre ya descuenta lo que ocupa la propia cache de audio: se suma, si no el tope
         // se encogeria en cada arranque y recortaria lo ya preparado.
-        val own = runCatching { TtsConfig.audioCacheDir(this).walkTopDown().filter { it.isFile }.sumOf { it.length() } }.getOrDefault(0L)
+        val own = runCatching { TtsConfig.audioCacheDir(this).treeSizeBytes() }.getOrDefault(0L)
         return (free / 10 + own / 10).coerceIn(min, max)
     }
 

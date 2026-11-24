@@ -165,6 +165,24 @@ class Revision3AppTest {
     }
 
     @Test
+    fun estadisticaNoCuentaLosSaltosDelDeslizadorComoEscucha() = runTest(UnconfinedTestDispatcher()) {
+        val playback = FakePlaybackPort()
+        val library = FakeLibraryRepository(listOf(book(7)))
+        val stats = FakeStats()
+        var now = 0L
+        val tracker = ListeningTracker(this, playback, library, stats, progressOf = { _, _ -> null }, wallClock = { 1_000_000L + now }, monotonic = { now })
+        fun st(off: Int, playing: Boolean = true) =
+            VoiceUiState(bookId = 7, position = Locator(0, off), chapterLength = 90_000, playWhenReady = playing, isPlaying = playing)
+
+        tracker.onState(st(100))
+        now = 3_000; tracker.onState(st(250))        // +150 escuchados de verdad
+        now = 4_000; tracker.onState(st(60_000))     // salto de 59 750 car en 1 s: NO es escucha
+        now = 7_000; tracker.onState(st(60_200))     // +200 tras el salto
+        now = 8_000; tracker.onState(st(60_200, playing = false))
+        assertThat(stats.records.single().chars).isEqualTo(350)
+    }
+
+    @Test
     fun estadisticaCuentaAlSaltarVariosCapitulos() = runTest(UnconfinedTestDispatcher()) {
         val playback = FakePlaybackPort()
         val library = FakeLibraryRepository(listOf(book(7)))

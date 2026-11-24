@@ -166,8 +166,10 @@ data class Remaining(val chapterMs: Long?, val bookMs: Long?)
  * Tiempo restante de capitulo y libro: caracteres que faltan / velocidad efectiva. Si la voz
  * aun no ha medido su velocidad ([measuredCps] nulo) se estima con [BASE_CPS] x velocidad.
  */
-fun remainingTime(chapterChars: Int, bookChars: Long, measuredCps: Float?, speed: Float): Remaining {
-    val cps = measuredCps?.takeIf { it > 0f } ?: (BASE_CPS * speed.coerceAtLeast(0.1f))
+fun remainingTime(chapterChars: Int, bookChars: Long, measuredCps: Float?, speed: Float, learnedCps: Float? = null): Remaining {
+    // Prioridad: la velocidad medida ahora mismo; si la voz no suena, el ritmo REAL aprendido de las
+    // estadisticas de escucha del usuario (mas fiable que la estimacion fija); y, sin datos, BASE_CPS.
+    val cps = measuredCps?.takeIf { it > 0f } ?: learnedCps?.takeIf { it > 0f } ?: (BASE_CPS * speed.coerceAtLeast(0.1f))
     fun ms(chars: Long) = if (chars <= 0) 0L else (chars / cps * 1000f).roundToLong()
     return Remaining(ms(chapterChars.toLong()), ms(bookChars))
 }

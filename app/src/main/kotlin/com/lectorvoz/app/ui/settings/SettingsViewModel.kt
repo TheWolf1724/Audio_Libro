@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import com.lectorvoz.tts.neural.PreloadStatus
 import kotlinx.coroutines.flow.map
@@ -168,8 +169,14 @@ class DictionaryViewModel(
 }
 
 /** Estadisticas. */
-class StatsViewModel(private val stats: ReadingStatsRepository) : ViewModel() {
+class StatsViewModel(private val stats: ReadingStatsRepository, private val settings: com.lectorvoz.core.data.settings.SettingsRepository) : ViewModel() {
     val summary: StateFlow<StatsSummary> = stats.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsSummary())
+
+    /** Objetivo diario en minutos (0 = sin objetivo). */
+    val goalMinutes: StateFlow<Int> = settings.app.map { it.dailyGoalMinutes }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    fun setGoal(minutes: Int) = viewModelScope.launch { settings.updateApp { it.copy(dailyGoalMinutes = minutes.coerceIn(0, 24 * 60)) } }
     fun clear() = viewModelScope.launch { stats.clear() }
 }
 
