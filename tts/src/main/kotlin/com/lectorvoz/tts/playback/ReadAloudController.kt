@@ -177,6 +177,9 @@ class ReadAloudController(
             startLocator = Locator.START
             pausedAtMs = null
         }
+        // Foco recien concedido: un "duck" anterior ya no vale (al pausar se abandona el foco y
+        // no llega el GAIN que lo restauraba, y la voz sonaba al 20 %).
+        duck = 1f
         startSpeaking()
     }
 

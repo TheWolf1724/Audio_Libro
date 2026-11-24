@@ -13,6 +13,8 @@ import com.lectorvoz.tts.playback.TtsConfig
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -196,12 +198,14 @@ class SystemTtsEngine(
         appliedUserVoice = s.voiceId
     }
 
+    private val initLock = Mutex()
+
     private suspend fun ensureInit(): TextToSpeech {
         tts?.let { return it }
         // Construir el motor y enumerar las voces es lo mas caro y bloqueante; va en Default para no
         // tocar el hilo principal (riesgo de jank/ANR). TextToSpeech es thread-safe; su uso posterior
         // desde el hilo de lectura es correcto. Los campos tocados son @Volatile (visibilidad).
-        return withContext(Dispatchers.Default) {
+        return initLock.withLock { withContext(Dispatchers.Default) {
             tts?.let { return@withContext it }
             val ready = CompletableDeferred<Int>()
             val created = TextToSpeech(appContext, { status -> ready.complete(status) }, enginePackage)
@@ -220,7 +224,7 @@ class SystemTtsEngine(
             tts = created
             appliedLang = null
             created
-        }
+        } }
     }
 
     private sealed interface Event {

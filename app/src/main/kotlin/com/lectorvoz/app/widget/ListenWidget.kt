@@ -295,8 +295,8 @@ class ListenWidgetUpdater(
         if (path == null) return null
         if (path == coverKey) return coverBitmap
         val bmp = withContext(Dispatchers.IO) { decode(File(path)) }
-        coverKey = path
-        coverBitmap = bmp
+        // Una portada que aun no existe no se recuerda: se reintenta en el siguiente repintado.
+        if (bmp != null) { coverKey = path; coverBitmap = bmp }
         return bmp
     }
 

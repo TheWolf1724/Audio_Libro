@@ -58,6 +58,16 @@ class UpdateChecker(
     val manual: StateFlow<ManualResult> = mutableManual
 
     private var running = false
+    private var manualWaiting = false
+
+    private fun manualResult(ok: Boolean) = when {
+        !ok -> ManualResult.FAILED
+        // Hay version nueva aunque el aviso este pospuesto: la comprobacion manual no debe decir "al dia".
+        newerKnown() -> ManualResult.NEW_AVAILABLE
+        else -> ManualResult.UP_TO_DATE
+    }
+
+    private fun newerKnown(): Boolean = prefs.getString(K_VERSION, null)?.let { isNewer(it, installed) } == true
 
     /** Comprueba si toca (24 h desde la ultima vez; un reintento corto si fallo). Llamar desde el hilo principal. */
     fun checkIfDue(enabled: Boolean) {
@@ -74,7 +84,12 @@ class UpdateChecker(
         }
         running = true
         scope.launch {
-            try { refresh(now) } finally { running = false }
+            var ok = false
+            try { ok = refresh(now) } finally {
+                running = false
+                // Si el usuario pidio comprobar mientras esta seguia en vuelo, se le responde ya.
+                if (manualWaiting) { manualWaiting = false; mutableManual.value = manualResult(ok) }
+            }
         }
     }
 
@@ -83,17 +98,17 @@ class UpdateChecker(
      * resultado en [manual] para avisar al usuario.
      */
     fun checkNow() {
-        if (running) return
+        if (running) {
+            mutableManual.value = ManualResult.CHECKING
+            manualWaiting = true
+            return
+        }
         running = true
         mutableManual.value = ManualResult.CHECKING
         scope.launch {
             try {
                 val ok = refresh(clock())
-                mutableManual.value = when {
-                    !ok -> ManualResult.FAILED
-                    mutable.value != null -> ManualResult.NEW_AVAILABLE
-                    else -> ManualResult.UP_TO_DATE
-                }
+                mutableManual.value = manualResult(ok)
             } catch (e: CancellationException) {
                 mutableManual.value = ManualResult.NONE
                 throw e

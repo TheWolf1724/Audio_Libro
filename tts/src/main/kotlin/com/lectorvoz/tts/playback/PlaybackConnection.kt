@@ -74,6 +74,9 @@ class PlaybackConnection(
                 } catch (e: ExecutionException) {
                     future = null // un intento fallido no se cachea
                     cont.resumeWithException(e.cause ?: e)
+                } catch (e: java.util.concurrent.CancellationException) {
+                    future = null // cancelado (close() durante la conexion)
+                    cont.cancel(e)
                 }
             }, ContextCompat.getMainExecutor(appContext))
         }
