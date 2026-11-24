@@ -573,6 +573,26 @@ class Revision3AppTest {
         assertThat(g.at(Locator(1, 0))!!.displayText).isEqualTo("p2")
     }
 
+    @Test
+    fun proveedorAgrupadoDaProgresoConocidoYCreciente() = runTest {
+        fun utt(ch: Int) = Utterance(ch.toLong() shl 40, LocatorRange(Locator(ch, 0), Locator(ch, 5)), "p$ch", "p$ch", IntArray(2) { it })
+        val inner = object : UtteranceProvider {
+            override val chapterCount = 3
+            override suspend fun at(locator: Locator) = utt(locator.chapter)
+            override suspend fun next(current: Utterance) = ((current.id ushr 40).toInt() + 1).takeIf { it < 3 }?.let(::utt)
+            override suspend fun previous(current: Utterance) = null
+            override suspend fun chapterLength(chapter: Int): Int? = 5
+        }
+        val g = GroupedProvider(inner, listOf(0..1, 2..2))
+        val total = g.chapterLength(0)!!
+        assertThat(total).isGreaterThan(0)
+        val a = g.at(Locator(0, 0))!!
+        val b = g.next(a)!!
+        assertThat(a.range.endExclusive.offset).isEqualTo(total / 2) // primera de dos paginas
+        assertThat(b.range.endExclusive.offset).isEqualTo(total)
+        assertThat(g.chapterLength(5)).isNull()
+    }
+
     // ------------------------------------------------------------------ velocidad desde Media3
 
     @Test

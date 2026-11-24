@@ -641,8 +641,10 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
 
     private suspend fun excerptAt(loc: Locator): String? {
         val t = chapterText(loc.chapter) ?: return null
-        val s = loc.offset.coerceIn(0, t.length)
-        return t.substring(s, (s + 160).coerceAtMost(t.length)).replace('\n', ' ').trim().ifEmpty { null }
+        var s = loc.offset.coerceIn(0, t.length)
+        // Empieza en una palabra entera (el desplazamiento puede caer a mitad de una).
+        while (s > 0 && s < t.length && t[s - 1].isLetterOrDigit() && t[s].isLetterOrDigit()) s--
+        return t.substring(s, (s + 160).coerceAtMost(t.length)).replace('\uFFFC', ' ').replace(Regex("\\s+"), " ").trim().ifEmpty { null }
     }
 
     // ------------------------------------------------------------------ busqueda

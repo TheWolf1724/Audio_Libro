@@ -118,9 +118,18 @@ class LibraryViewModel(
      * demas (el lote no se aborta), y el contador "importando" se baja SIEMPRE (el spinner no se
      * queda colgado), tambien si la corrutina se cancela a mitad.
      */
+    private val importJobs = HashSet<kotlinx.coroutines.Job>()
+
+    /** Cancela las importaciones en curso (los libros ya importados se quedan). */
+    fun cancelImport() {
+        val jobs = importJobs.toList()
+        jobs.forEach { it.cancel() }
+        if (jobs.isNotEmpty()) local.update { it.copy(message = "Importacion cancelada") }
+    }
+
     fun import(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        viewModelScope.launch {
+        val job = viewModelScope.launch {
             local.update { it.copy(importing = it.importing + uris.size) }
             val copy = settings.app.first().copyOnImport
             var ok = 0
@@ -152,6 +161,8 @@ class LibraryViewModel(
                 throw e
             }
         }
+        importJobs += job
+        job.invokeOnCompletion { importJobs.remove(job) }
     }
 
     fun delete(book: Book) = viewModelScope.launch {

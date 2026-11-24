@@ -101,6 +101,7 @@ interface LibraryActions {
     fun removeFrom(c: BookCollection, book: Book)
     fun move(c: BookCollection, book: Book, delta: Int)
     fun messageShown()
+    fun cancelImport() {}
 }
 
 /** Ruta de la biblioteca: une ViewModel, selector de ficheros y pantalla. */
@@ -143,6 +144,7 @@ fun LibraryRoute(
             override fun removeFrom(c: BookCollection, book: Book) { vm.removeFromCollection(c, book) }
             override fun move(c: BookCollection, book: Book, delta: Int) { vm.moveInCollection(c, book, delta) }
             override fun messageShown() = vm.consumeMessage()
+            override fun cancelImport() = vm.cancelImport()
         }
     }
     LibraryScreen(
@@ -251,11 +253,14 @@ fun LibraryScreen(
         Column(Modifier.fillMaxSize().padding(padding)) {
             if (state.importing > 0) {
                 LinearProgressIndicator(Modifier.fillMaxWidth().testTag("importando").semantics { contentDescription = "Importando ${state.importing} libros" })
-                Text(
-                    if (state.importing == 1) "Importando el libro a la biblioteca..." else "Importando ${state.importing} libros a la biblioteca...",
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
+                Row(Modifier.fillMaxWidth().padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (state.importing == 1) "Importando el libro a la biblioteca..." else "Importando ${state.importing} libros a la biblioteca...",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f).padding(vertical = 4.dp),
+                    )
+                    TextButton(onClick = actions::cancelImport, modifier = Modifier.heightIn(min = 48.dp).testTag("importar-cancelar")) { Text("Cancelar") }
+                }
             }
             if (state.loading) {
                 Box(Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {

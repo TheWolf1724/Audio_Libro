@@ -390,6 +390,11 @@ private fun ExportJobCard(job: ExportJobState, onCancel: () -> Unit, onClear: ()
         )
         if (job.running) {
             val p = job.progress
+            if (p != null) Text(
+                if (p >= 0.995f) "Finalizando el fichero..." else "${(p * 100).toInt()} %",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.testTag("exportar-porcentaje"),
+            )
             if (p != null) LinearProgressIndicator(progress = { p }, modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp))
             else LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
             OutlinedButton(onClick = onCancel, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancelar") }

@@ -62,7 +62,7 @@ object ExportNotifier {
             val pct = ((st.progress ?: 0f) * 100).toInt().coerceIn(0, 100)
             val part = if (st.wholeBook && st.parts > 1) "Parte ${st.part + 1} de ${st.parts}  -  " else ""
             b.setContentTitle("Exportando audio: ${st.title}")
-                .setContentText(if (st.progress != null) "$part$pct %" else "${part}Preparando...")
+                .setContentText(if (st.progress == null) "${part}Preparando..." else if (pct >= 100) "${part}Finalizando el fichero..." else "$part$pct %")
                 .setProgress(100, pct, st.progress == null)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)

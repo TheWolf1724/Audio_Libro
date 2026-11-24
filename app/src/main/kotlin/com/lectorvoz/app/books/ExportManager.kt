@@ -354,13 +354,25 @@ class GroupedProvider(
 
     private fun groupOf(chapter: Int): Int = groups.indexOfFirst { chapter in it }
 
-    private fun wrap(u: Utterance?): Utterance? {
+    /**
+     * Reubica [u] en su grupo. Los desplazamientos pasan a una escala propia de la parte ([SCALE] = parte entera)
+     * para que el progreso del exportador avance tambien con partes de varios capitulos o paginas.
+     */
+    private suspend fun wrap(u: Utterance?): Utterance? {
         u ?: return null
-        val g = groupOf(u.range.start.chapter)
+        val ch = u.range.start.chapter
+        val g = groupOf(ch)
         if (g < 0) return null
         synchronized(originals) { originals[u.id] = u }
-        return u.copy(range = LocatorRange(Locator(g, u.range.start.offset), Locator(g, u.range.endExclusive.offset)))
+        val n = groups[g].let { it.last - it.first + 1 }.coerceAtLeast(1)
+        val idx = ch - groups[g].first
+        val len = inner.chapterLength(ch)?.takeIf { it > 0 }
+        fun scaled(off: Int): Int =
+            if (len == null) 0 else (((idx + (off.toFloat() / len).coerceIn(0f, 1f)) / n) * SCALE).toInt().coerceIn(0, SCALE)
+        return u.copy(range = LocatorRange(Locator(g, scaled(u.range.start.offset)), Locator(g, scaled(u.range.endExclusive.offset))))
     }
+
+    override suspend fun chapterLength(chapter: Int): Int? = if (chapter in groups.indices) SCALE else null
 
     private fun original(u: Utterance): Utterance? = synchronized(originals) { originals[u.id] }
 
@@ -374,4 +386,8 @@ class GroupedProvider(
     override suspend fun previous(current: Utterance): Utterance? = original(current)?.let { wrap(inner.previous(it)) }
 
     override suspend fun textAt(locator: Locator): String? = at(locator)?.displayText
+
+    private companion object {
+        const val SCALE = 1_000_000
+    }
 }
