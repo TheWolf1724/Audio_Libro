@@ -7,6 +7,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,7 +38,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -50,6 +58,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.coerceIn
 import androidx.compose.ui.unit.dp
 import com.lectorvoz.app.books.CoverLoader
 import kotlin.math.roundToInt
@@ -217,7 +226,7 @@ fun NavRow(title: String, summary: String?, @DrawableRes icon: Int?, onClick: ()
 
 /** Portada desde disco con [CoverLoader]; sin portada, una tapa con el titulo. */
 @Composable
-fun BookCover(path: String?, title: String, loader: CoverLoader, width: Dp, modifier: Modifier = Modifier) {
+fun BookCover(path: String?, title: String, loader: CoverLoader, width: Dp, modifier: Modifier = Modifier, finished: Boolean = false) {
     val px = with(LocalDensity.current) { width.roundToPx() }
     val bmp: Bitmap? by produceState(initialValue = path?.let { loader.cached(it, px) }, path, px) {
         if (value == null && path != null) value = loader.load(path, px)
@@ -241,7 +250,51 @@ fun BookCover(path: String?, title: String, loader: CoverLoader, width: Dp, modi
                 modifier = Modifier.padding(8.dp),
             )
         }
+        if (finished) FinishedRibbon(width)
     }
+}
+
+/**
+ * Cinta de "terminado": un marcador que cuelga de la esquina superior de la portada (cuerpo con
+ * muesca en V abajo) con una marca de verificacion. Escala con el ancho de la portada y no cambia la
+ * semantica (la descripcion de la tarjeta ya dice "terminado"; la portada es decorativa).
+ */
+@Composable
+private fun BoxScope.FinishedRibbon(coverWidth: Dp) {
+    val w = (coverWidth * 0.24f).coerceIn(14.dp, 30.dp)
+    val h = w * 1.75f
+    val color = MaterialTheme.colorScheme.primary
+    val onColor = MaterialTheme.colorScheme.onPrimary
+    // drawWithCache: los trazados se construyen UNA vez por tamano (no en cada fotograma al hacer
+    // scroll por la biblioteca), sin asignaciones en el dibujado.
+    Box(
+        Modifier.align(Alignment.TopEnd).padding(end = w * 0.4f).size(w, h).testTag("cinta-terminado")
+            .drawWithCache {
+                val cw = size.width
+                val ch = size.height
+                val body = Path().apply {
+                    moveTo(0f, 0f)
+                    lineTo(cw, 0f)
+                    lineTo(cw, ch)
+                    lineTo(cw / 2f, ch * 0.78f) // muesca del marcador
+                    lineTo(0f, ch)
+                    close()
+                }
+                val tick = Path().apply {
+                    moveTo(cw * 0.24f, ch * 0.36f)
+                    lineTo(cw * 0.43f, ch * 0.50f)
+                    lineTo(cw * 0.76f, ch * 0.20f)
+                }
+                val edge = Stroke(width = 1.dp.toPx())
+                val tickStyle = Stroke(width = cw * 0.11f, cap = StrokeCap.Round, join = StrokeJoin.Round)
+                onDrawBehind {
+                    drawPath(body, color)
+                    // Fino borde oscuro para que se distinga sobre portadas del mismo color.
+                    drawPath(body, Color.Black.copy(alpha = 0.28f), style = edge)
+                    drawPath(tick, onColor, style = tickStyle)
+                }
+            },
+    )
 }
 
 /** Boton de texto con objetivo minimo de 48 dp. */

@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithTag
@@ -105,6 +106,15 @@ class ScreensTest {
         rule.onNodeWithTag("libro-2").assertIsDisplayed().performSemanticsAction(SemanticsActions.OnClick)
         rule.onNodeWithText("2 libros importados").assertIsDisplayed()
         assertThat(actions.calls).contains("open:2")
+    }
+
+    /** Un libro terminado lleva una cinta de marcador en la portada; los demas no. */
+    @Test
+    fun soloLosLibrosTerminadosLlevanLaCintaEnLaPortada() {
+        val libros = listOf(book(1, "Uno", finished = true), book(2, "Dos"))
+        val actions = RecordingActions()
+        rule.setContent { MaterialTheme { LibraryScreen(LibraryUiState(loading = false, books = libros, totalCount = 2), covers, actions) } }
+        rule.onAllNodesWithTag("cinta-terminado", useUnmergedTree = true).assertCountEquals(1)
     }
 
     @Test

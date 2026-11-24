@@ -64,6 +64,14 @@ class SpanishNormalizerTest {
     }
 
     @Test
+    fun letrasUnidasPorEspacioDeAnchoCeroSeLeenComoPalabra() {
+        // Titulo interletrado reparado (LetterSpacing): las letras van unidas por U+200B.
+        val j = "\u200B"
+        val titulo = "P${j}a${j}r${j}a  l${j}o${j}s  q${j}u${j}e  s${j}u${j}e${j}ñ${j}a${j}n"
+        assertThat(say(titulo).replace(Regex(" +"), " ").lowercase()).isEqualTo("para los que sueñan")
+    }
+
+    @Test
     fun cadenasDeCifrasConGuionNoSonRangos() {
         assertThat(say("Serie 3-4-5")).doesNotContain(" a ")
         assertThat(say("Codigo 123-456-789")).doesNotContain(" a ")

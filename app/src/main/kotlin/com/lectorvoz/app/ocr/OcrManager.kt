@@ -12,6 +12,7 @@ import com.lectorvoz.core.data.library.Book
 import com.lectorvoz.core.data.library.LibraryRepository
 import com.lectorvoz.core.model.BookFormat
 import com.lectorvoz.core.text.GlyphClass
+import com.lectorvoz.core.text.LetterSpacing
 import com.lectorvoz.core.text.MissingTextDetector
 import com.lectorvoz.core.text.PageTextMerger
 import com.lectorvoz.format.pdf.MixedTextNotReady
@@ -254,8 +255,16 @@ class OcrManager(
     }
 
     private fun mergeOrNull(nativeText: String, nativeBoxes: FloatArray, lines: List<PageTextMerger.OcrLine>): RawPageText? {
-        if (lines.isEmpty()) return null
-        val merged = PageTextMerger.merge(nativeText, nativeBoxes, lines)
+        if (lines.isEmpty()) {
+            // Sin OCR que fusionar, pero el texto nativo puede traer titulos interletrados
+            // ("P a r a  l o s ...") que la voz deletrearia: se unen las letras de cada palabra.
+            val fixed = LetterSpacing.fix(nativeText, nativeBoxes)
+            if (fixed == nativeText) return null
+            if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO interletrado corregido: '${TtsConfig.text40(nativeText)}' -> '${TtsConfig.text40(fixed.replace("\u200B", ""))}'")
+            return RawPageText(fixed, nativeBoxes)
+        }
+        val merged0 = PageTextMerger.merge(nativeText, nativeBoxes, lines)
+        val merged = PageTextMerger.Merged(LetterSpacing.fix(merged0.text, merged0.boxes), merged0.boxes)
         if (TtsConfig.diagnostics) {
             // Donde aterriza cada linea OCR en el texto fusionado (para ver si queda en su sitio o al
             // principio): offset de su texto en el resultado y los 20 chars nativos anteriores.

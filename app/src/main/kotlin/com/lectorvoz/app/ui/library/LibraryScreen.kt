@@ -452,7 +452,7 @@ private fun GridBook(b: Book, covers: CoverLoader, onClick: () -> Unit, onLong: 
             .combinedClickable(onClick = onClick, onLongClick = onLong, onClickLabel = "Abrir", onLongClickLabel = "Opciones")
             .semantics(mergeDescendants = true) { contentDescription = describe(b) },
     ) {
-        BookCover(b.coverPath, b.title, covers, 120.dp, Modifier.fillMaxWidth().aspectRatio(2f / 3f))
+        BookCover(b.coverPath, b.title, covers, 120.dp, Modifier.fillMaxWidth().aspectRatio(2f / 3f), finished = b.finished)
         if (b.progress > 0f) {
             LinearProgressIndicator(progress = { b.progress }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
         }
@@ -471,7 +471,7 @@ private fun ListBook(b: Book, covers: CoverLoader, onClick: () -> Unit, onLong: 
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BookCover(b.coverPath, b.title, covers, 56.dp, Modifier.width(56.dp).aspectRatio(2f / 3f))
+        BookCover(b.coverPath, b.title, covers, 56.dp, Modifier.width(56.dp).aspectRatio(2f / 3f), finished = b.finished)
         Column(Modifier.weight(1f).padding(start = 16.dp)) {
             Text(b.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
             b.author?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1) }
@@ -492,7 +492,7 @@ private fun ContinueCard(b: Book, covers: CoverLoader, onClick: () -> Unit) {
             .semantics(mergeDescendants = true) { contentDescription = "Seguir leyendo: " + describe(b) },
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            BookCover(b.coverPath, b.title, covers, 64.dp, Modifier.width(64.dp).aspectRatio(2f / 3f))
+            BookCover(b.coverPath, b.title, covers, 64.dp, Modifier.width(64.dp).aspectRatio(2f / 3f), finished = b.finished)
             Column(Modifier.weight(1f).padding(start = 16.dp)) {
                 Text("Seguir leyendo", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
                 Text(b.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
