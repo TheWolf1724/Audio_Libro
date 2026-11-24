@@ -266,9 +266,12 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
                     // La reubicacion se guarda: no se repite en cada apertura.
                     withContext(NonCancellable) {
                         for (r in judged.values) {
-                            if (!r.orphan && (r.fixed.start != r.raw.start || r.fixed.end != r.raw.end)) {
-                                graph.annotations.update(r.raw, r.raw.color, r.raw.note, r.fixed.start, r.fixed.end, r.raw.quote)
-                            }
+                            // Una cita truncada (MAX_QUOTE) daria un tramo acortado: no se persiste.
+                            if (r.orphan || r.raw.quote.length >= 1000) continue
+                            if (r.fixed.start == r.raw.start && r.fixed.end == r.raw.end) continue
+                            // Solo si la fila sigue como se comprobo (el usuario pudo editarla entretanto).
+                            val cur = graph.annotations.observe(bookId).first().firstOrNull { it.id == r.raw.id } ?: continue
+                            if (sameAnchor(cur, r.raw)) graph.annotations.update(cur, cur.color, cur.note, r.fixed.start, r.fixed.end, cur.quote)
                         }
                     }
                 }

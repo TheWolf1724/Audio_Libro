@@ -210,6 +210,19 @@ fun ReaderScreen(
                 modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(16.dp),
             ) { AppIcon(if (state.isPlaying) R.drawable.ic_pause else R.drawable.ic_play_arrow, if (state.isPlaying) "Pausa" else "Reproducir") }
         }
+        if (state.reassigning != null) {
+            Surface(
+                modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp, start = 16.dp, end = 16.dp).testTag("reasignando"),
+                shape = MaterialTheme.shapes.medium,
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                tonalElevation = 3.dp,
+            ) {
+                Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Reasignando: manten pulsada una frase", style = MaterialTheme.typography.bodyMedium)
+                    TextButton(onClick = { vm.reassignAnnotation(null) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancelar") }
+                }
+            }
+        }
         SnackbarHost(snackbar, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 120.dp))
     }
 
