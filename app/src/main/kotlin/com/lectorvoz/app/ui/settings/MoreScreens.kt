@@ -302,7 +302,11 @@ private fun StatLine(label: String, value: String) {
 fun ExportScreen(vm: ExportViewModel, onBack: () -> Unit, onPickBook: (Book) -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val books by vm.books.collectAsStateWithLifecycle()
-    val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("audio/wav")) { uri ->
+    // Un lanzador por tipo: el tipo MIME del documento se fija al crear el contrato.
+    val createWav = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(com.lectorvoz.tts.export.ExportFormat.WAV.mime)) { uri ->
+        if (uri != null) vm.export(uri)
+    }
+    val createM4a = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(com.lectorvoz.tts.export.ExportFormat.M4A.mime)) { uri ->
         if (uri != null) vm.export(uri)
     }
     val folder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
@@ -335,16 +339,23 @@ fun ExportScreen(vm: ExportViewModel, onBack: () -> Unit, onPickBook: (Book) -> 
         if (s.parts.isNotEmpty()) {
             ChoiceRow("Parte", s.parts.indices.toList(), s.part, { s.parts.getOrNull(it) ?: "${it + 1}" }, vm::setPart, tag = "exportar-capitulo")
         }
+        ChoiceRow(
+            "Formato", com.lectorvoz.tts.export.ExportFormat.entries, s.format, { it.label }, vm::setFormat, tag = "exportar-formato",
+        )
         s.error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(16.dp)) }
         Text(
-            "Se crea audio WAV (unos 5 MB por minuto) con la voz y los ajustes actuales. Puede tardar; " +
-                "puedes salir de esta pantalla mientras tanto. El libro completo se guarda como un fichero por parte en la carpeta que elijas.",
+            "Se crea el audio con la voz y los ajustes actuales. Puede tardar horas en un libro largo; " +
+                "puedes salir de esta pantalla (hay una notificacion con el progreso). El libro completo se guarda como un fichero por parte " +
+                "en la carpeta que elijas; si se interrumpe, al volver a pulsar continua por donde iba.",
             style = MaterialTheme.typography.bodySmall,
             modifier = Modifier.padding(16.dp),
         )
         val enabled = s.parts.isNotEmpty() && !s.running
         Button(
-            onClick = { create.launch("${book.title} - ${s.parts.getOrNull(s.part) ?: (s.part + 1)}.wav".replace('/', '-')) },
+            onClick = {
+                val name = "${book.title} - ${s.parts.getOrNull(s.part) ?: (s.part + 1)}.${s.format.extension}".replace('/', '-')
+                if (s.format == com.lectorvoz.tts.export.ExportFormat.M4A) createM4a.launch(name) else createWav.launch(name)
+            },
             enabled = enabled,
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).heightIn(min = 48.dp).testTag("exportar-boton"),
         ) { Text("Exportar esta parte") }

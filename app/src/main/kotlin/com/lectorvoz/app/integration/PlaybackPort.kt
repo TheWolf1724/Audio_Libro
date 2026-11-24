@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.compose.runtime.Immutable
 import com.lectorvoz.core.model.Locator
 import com.lectorvoz.core.model.PlaybackEvent
+import com.lectorvoz.tts.export.ExportFormat
 import com.lectorvoz.core.model.TtsEngineType
 import com.lectorvoz.core.model.VoiceSettings
 import kotlinx.coroutines.flow.Flow
@@ -115,6 +116,6 @@ interface PlaybackPort {
      */
     suspend fun preview(settings: VoiceSettings, text: String): String?
 
-    /** Exporta el capitulo [chapter] a WAV en [uri]. Cancelable. */
-    suspend fun exportChapter(uri: Uri, source: SpeechSource, chapter: Int, settings: VoiceSettings, onProgress: (Float?) -> Unit): ExportOutcome
+    /** Exporta el capitulo [chapter] a [uri] en [format] (WAV o M4A comprimido). Cancelable. */
+    suspend fun exportChapter(uri: Uri, source: SpeechSource, chapter: Int, settings: VoiceSettings, format: ExportFormat, onProgress: (Float?) -> Unit): ExportOutcome
 }

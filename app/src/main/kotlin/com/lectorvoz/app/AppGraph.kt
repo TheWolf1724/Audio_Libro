@@ -1,6 +1,7 @@
 package com.lectorvoz.app
 
 import android.content.Context
+import android.content.Intent
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.preferencesDataStore
@@ -181,6 +182,13 @@ class AppGraph(
         // Limpia sesiones de instalacion huerfanas de ejecuciones anteriores (antes de cualquier
         // instalacion nueva de esta sesion, asi que no toca ninguna en curso).
         appScope.launch(Dispatchers.IO) { runCatching { installer.cleanupStaleSessions() } }
+        // Al empezar una exportacion de audio se arranca su servicio en primer plano (progreso en la
+        // notificacion y la app no se congela con la pantalla apagada); el servicio se para solo.
+        appScope.launch {
+            exports.state.map { it?.running == true }.distinctUntilChanged().collect { running ->
+                if (running) runCatching { androidx.core.content.ContextCompat.startForegroundService(context, Intent(context, com.lectorvoz.app.books.ExportService::class.java)) }
+            }
+        }
         // Copias y portadas sin fila (p. ej. tras recrearse la base de datos): fuera, pasado un margen.
         appScope.launch(Dispatchers.IO) { runCatching { library.sweepOrphanFiles() } }
         appScope.launch {

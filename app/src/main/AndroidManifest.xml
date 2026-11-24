@@ -98,6 +98,15 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- Exportar audio: servicio en primer plano con progreso (puede durar horas). -->
+        <receiver
+            android:name=".books.ExportActionReceiver"
+            android:exported="false" />
+        <service
+            android:name=".books.ExportService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
         <!-- Compartir el fichero de diagnostico de lectura (solo esa carpeta privada). -->
         <provider
             android:name="androidx.core.content.FileProvider"

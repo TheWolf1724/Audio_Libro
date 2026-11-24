@@ -445,7 +445,10 @@ class Revision3AppTest {
     private class RecordingFiles : ExportFiles {
         val created = ArrayList<String>()
         val deleted = ArrayList<Uri>()
-        override fun create(tree: Uri, name: String): Uri { created += name; return Uri.parse("content://destino/${created.size}") }
+        /** Nombres que ya estan hechos en la carpeta (para probar la reanudacion). */
+        val existing = HashSet<String>()
+        override fun create(tree: Uri, name: String, mime: String): Uri { created += name; return Uri.parse("content://destino/${created.size}") }
+        override fun existsComplete(tree: Uri, name: String): Boolean = name in existing
         override fun delete(uri: Uri) { deleted += uri }
     }
 
@@ -478,6 +481,19 @@ class Revision3AppTest {
         assertThat(files.created).containsExactly("01 - Primero.wav", "02 - Segundo.wav").inOrder()
         assertThat(playback.exported.map { it.second }).containsExactly(0, 1).inOrder()
         assertThat(m.state.value!!.result).contains("2 ficheros")
+    }
+
+    @Test
+    fun exportarLibroReanudaSaltandoLasPartesYaHechas() = runTest(UnconfinedTestDispatcher()) {
+        val playback = FakePlaybackPort()
+        val files = RecordingFiles().apply { existing += "01 - Primero.m4a" }
+        val m = ExportManager(backgroundScope, playback, SharedBooks(BookOpener(context)), FakeSettingsRepository(), FakePronunciation(), files)
+        m.exportBook(epubBook(), Uri.parse("content://carpeta"), com.lectorvoz.tts.export.ExportFormat.M4A)
+        waitUntil { m.state.value?.running == false }
+        // La primera parte ya estaba: solo se crea y exporta la segunda, en M4A.
+        assertThat(files.created).containsExactly("02 - Segundo.m4a")
+        assertThat(playback.exported.map { it.second }).containsExactly(1)
+        assertThat(m.state.value!!.result).contains("1 ya estaban hechas")
     }
 
     @Test

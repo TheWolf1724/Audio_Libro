@@ -19,6 +19,7 @@ import com.lectorvoz.tts.SleepTimerMode
 import com.lectorvoz.tts.UtteranceProvider
 import com.lectorvoz.tts.engine.SpeechEngineException
 import com.lectorvoz.tts.export.AudioExporter
+import com.lectorvoz.tts.export.ExportFormat
 import com.lectorvoz.tts.export.ExportProgress
 import com.lectorvoz.tts.export.ExportResult
 import kotlinx.coroutines.flow.Flow
@@ -134,11 +135,12 @@ class PlaybackConnection(
         provider: UtteranceProvider,
         chapter: Int,
         settings: VoiceSettings,
+        format: ExportFormat = ExportFormat.WAV,
         onProgress: (ExportProgress) -> Unit = {},
     ): ExportResult {
         connect()
         val renderer = hub.renderer ?: throw SpeechEngineException("Servicio de voz no disponible")
-        return AudioExporter(renderer).exportChapterWav(appContext, uri, provider, chapter, settings, onProgress)
+        return AudioExporter(renderer).exportChapterWav(appContext, uri, provider, chapter, settings, format, onProgress)
     }
 
     private fun send(command: SessionCommand, args: Bundle) {

@@ -36,11 +36,15 @@ data class ExportResult(val frames: Long, val sampleRate: Int, val bytes: Long) 
  * corrutina; el destino solo se escribe al final (primero a un temporal en [tempDir]),
  * asi que una exportacion cancelada no deja un fichero a medias en el destino.
  *
- * M4A/AAC no se implementa: WAV es sencillo y robusto (aprox. 5 MB por minuto a 44,1 kHz).
+ * Formatos: WAV (sencillo y robusto, ~5 MB por minuto a 44,1 kHz) y M4A/AAC comprimido (~0,5 MB por
+ * minuto, [AacEncoder]); el M4A se codifica desde el mismo temporal PCM, asi que sigue sin tocar el destino
+ * hasta que esta completo.
  */
 class AudioExporter(
     private val renderer: UtteranceRenderer,
     private val io: CoroutineDispatcher = Dispatchers.IO,
+    /** Codificador del formato comprimido (inyectable: el real usa MediaCodec). */
+    private val encoder: PcmEncoder = AacEncoder,
 ) {
     /** Exporta el capitulo [chapter] a [out] (no lo cierra). */
     suspend fun exportChapterWav(
@@ -63,6 +67,7 @@ class AudioExporter(
         tempDir: File,
         onProgress: (ExportProgress) -> Unit,
         closeAfter: Boolean,
+        format: ExportFormat = ExportFormat.WAV,
         open: () -> OutputStream,
     ): ExportResult {
         val length = provider.chapterLength(chapter)
@@ -87,6 +92,12 @@ class AudioExporter(
                 }
             }
             if (sampleRate == 0) sampleRate = DEFAULT_RATE
+            if (format == ExportFormat.M4A) {
+                // Sin audio no hay nada que codificar (el contenedor MP4 vacio no es valido): el destino
+                // no se toca y el resultado dura 0 (quien llama lo trata como parte vacia).
+                if (frames == 0L) return ExportResult(0, sampleRate, 0)
+                return encodeToDestination(tmp, tempDir, frames, sampleRate, closeAfter, open)
+            }
             val bytes = withContext(io) {
                 val out = open()
                 try {
@@ -105,6 +116,36 @@ class AudioExporter(
         }
     }
 
+    /** Codifica el PCM temporal a M4A en otro temporal y lo copia al destino (que solo se abre al final). */
+    private suspend fun encodeToDestination(
+        pcm: File,
+        tempDir: File,
+        frames: Long,
+        sampleRate: Int,
+        closeAfter: Boolean,
+        open: () -> OutputStream,
+    ): ExportResult {
+        val job = coroutineContext[kotlinx.coroutines.Job]
+        val m4a = withContext(io) { File.createTempFile("export", ".m4a", tempDir) }
+        try {
+            val bytes = withContext(io) {
+                // check() lanza si se cancela la exportacion: asi la codificacion (minutos en un libro largo) se corta.
+                encoder.encode(pcm, sampleRate, m4a) { job?.ensureActive() }
+                val out = open()
+                try {
+                    m4a.inputStream().use { it.copyTo(out, 256 * 1024) }
+                    out.flush()
+                } finally {
+                    if (closeAfter) out.close()
+                }
+                m4a.length()
+            }
+            return ExportResult(frames, sampleRate, bytes)
+        } finally {
+            m4a.delete()
+        }
+    }
+
     /** Exporta a un Uri elegido por el usuario (SAF); [context] para el ContentResolver. */
     suspend fun exportChapterWav(
         context: Context,
@@ -112,11 +153,12 @@ class AudioExporter(
         provider: UtteranceProvider,
         chapter: Int,
         settings: VoiceSettings,
+        format: ExportFormat = ExportFormat.WAV,
         onProgress: (ExportProgress) -> Unit = {},
     ): ExportResult {
         val resolver = context.applicationContext.contentResolver
         // El destino se abre (y trunca) solo cuando el audio ya esta completo en el temporal.
-        return exportChapterWavTo(provider, chapter, settings, context.cacheDir, onProgress, closeAfter = true) {
+        return exportChapterWavTo(provider, chapter, settings, context.cacheDir, onProgress, closeAfter = true, format = format) {
             resolver.openOutputStream(uri, "wt") ?: throw FileNotFoundException("No se pudo abrir $uri")
         }
     }

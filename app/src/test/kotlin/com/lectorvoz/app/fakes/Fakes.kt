@@ -164,7 +164,7 @@ class FakePlaybackPort : PlaybackPort {
     /** Si no es nulo, exportar espera a que se complete (para probar cancelaciones). */
     var exportGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
     val exported = ArrayList<Pair<Uri, Int>>()
-    override suspend fun exportChapter(uri: Uri, source: SpeechSource, chapter: Int, settings: VoiceSettings, onProgress: (Float?) -> Unit): ExportOutcome {
+    override suspend fun exportChapter(uri: Uri, source: SpeechSource, chapter: Int, settings: VoiceSettings, format: com.lectorvoz.tts.export.ExportFormat, onProgress: (Float?) -> Unit): ExportOutcome {
         exported += uri to chapter
         exportGate?.await()
         onProgress(1f)

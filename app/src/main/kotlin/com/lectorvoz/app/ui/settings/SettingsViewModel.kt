@@ -188,6 +188,8 @@ data class ExportUiState(
     val part: Int = 0,
     val job: ExportJobState? = null,
     val error: String? = null,
+    /** Formato del audio: M4A comprimido por defecto (~10 veces mas pequeno que WAV). */
+    val format: com.lectorvoz.tts.export.ExportFormat = com.lectorvoz.tts.export.ExportFormat.M4A,
 ) {
     /** Hay una exportacion en marcha (de este u otro libro). */
     val running: Boolean get() = job?.running == true
@@ -222,16 +224,18 @@ class ExportViewModel(private val graph: AppGraph, private val bookId: Long?) : 
 
     fun setPart(i: Int) = local.update { it.copy(part = i) }
 
+    fun setFormat(f: com.lectorvoz.tts.export.ExportFormat) = local.update { it.copy(format = f) }
+
     /** Exporta la parte elegida a [uri] (ACTION_CREATE_DOCUMENT). */
     fun export(uri: Uri) {
         val b = local.value.book ?: return
-        graph.exports.exportPart(b, local.value.part, uri)
+        graph.exports.exportPart(b, local.value.part, uri, local.value.format)
     }
 
     /** Exporta el libro entero a la carpeta [tree] (ACTION_OPEN_DOCUMENT_TREE). */
     fun exportBook(tree: Uri) {
         val b = local.value.book ?: return
-        graph.exports.exportBook(b, tree)
+        graph.exports.exportBook(b, tree, local.value.format)
     }
 
     fun cancel() = graph.exports.cancel()

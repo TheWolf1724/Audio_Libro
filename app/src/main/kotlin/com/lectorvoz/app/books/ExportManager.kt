@@ -19,6 +19,7 @@ import com.lectorvoz.core.model.TocEntry
 import com.lectorvoz.core.model.Utterance
 import com.lectorvoz.core.model.VoiceSettings
 import com.lectorvoz.tts.UtteranceProvider
+import com.lectorvoz.tts.export.ExportFormat
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -52,8 +53,11 @@ data class ExportJobState(
 
 /** Ficheros de destino en el almacenamiento elegido por el usuario (SAF). */
 interface ExportFiles {
-    /** Crea "[name]" (audio/wav) en la carpeta [tree] (de OpenDocumentTree). */
-    fun create(tree: Uri, name: String): Uri?
+    /** Crea "[name]" (de tipo [mime]) en la carpeta [tree] (de OpenDocumentTree). */
+    fun create(tree: Uri, name: String, mime: String = "audio/wav"): Uri?
+
+    /** true si en [tree] ya hay un fichero [name] con contenido (parte ya exportada: se reanuda sin repetirla). */
+    fun existsComplete(tree: Uri, name: String): Boolean = false
 
     /** Borra un documento creado (exportacion cancelada, fallida o vacia). */
     fun delete(uri: Uri)
@@ -61,9 +65,26 @@ interface ExportFiles {
 
 /** [ExportFiles] con `DocumentsContract`. */
 class SafExportFiles(private val context: Context) : ExportFiles {
-    override fun create(tree: Uri, name: String): Uri? {
+    override fun create(tree: Uri, name: String, mime: String): Uri? {
         val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-        return DocumentsContract.createDocument(context.contentResolver, parent, "audio/wav", name)
+        return DocumentsContract.createDocument(context.contentResolver, parent, mime, name)
+    }
+
+    override fun existsComplete(tree: Uri, name: String): Boolean = try {
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+        context.contentResolver.query(
+            children,
+            arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_SIZE),
+            null, null, null,
+        )?.use { c ->
+            var found = false
+            while (c.moveToNext()) {
+                if (c.getString(0) == name && c.getLong(1) > 0L) { found = true; break }
+            }
+            found
+        } ?: false
+    } catch (e: Exception) {
+        false
     }
 
     override fun delete(uri: Uri) {
@@ -113,31 +134,38 @@ class ExportManager(
         }
     }
 
-    /** Exporta la parte [part] de [book] a [uri] (ACTION_CREATE_DOCUMENT). */
-    fun exportPart(book: Book, part: Int, uri: Uri) = runJob(book, wholeBook = false) { provider, parts, voice ->
+    /** Exporta la parte [part] de [book] a [uri] (ACTION_CREATE_DOCUMENT) en [format]. */
+    fun exportPart(book: Book, part: Int, uri: Uri, format: ExportFormat = ExportFormat.WAV) = runJob(book, wholeBook = false) { provider, parts, voice ->
         val p = parts.getOrNull(part) ?: return@runJob "Parte no valida"
         _state.update { it?.copy(parts = 1, part = 0) }
-        when (val r = exportOne(provider, part, uri, voice) { f -> _state.update { it?.copy(progress = f) } }) {
+        when (val r = exportOne(provider, part, uri, voice, format) { f -> _state.update { it?.copy(progress = f) } }) {
             is ExportOutcome.Done -> "Exportado \"${p.title}\": ${duration(r.durationMs)}, ${r.bytes / (1024 * 1024)} MB"
             is ExportOutcome.Failed -> "Error: ${r.message}"
         }
     }
 
-    /** Exporta todo [book] a la carpeta [tree] (OpenDocumentTree), un WAV por parte. */
-    fun exportBook(book: Book, tree: Uri) = runJob(book, wholeBook = true) { provider, parts, voice ->
+    /**
+     * Exporta todo [book] a la carpeta [tree] (OpenDocumentTree), un fichero por parte en [format].
+     * REANUDABLE: las partes que ya estan en la carpeta (con contenido) se saltan, asi que tras una
+     * cancelacion, un fallo o el limite de tiempo de Android basta con volver a pulsar para seguir.
+     */
+    fun exportBook(book: Book, tree: Uri, format: ExportFormat = ExportFormat.WAV) = runJob(book, wholeBook = true) { provider, parts, voice ->
         _state.update { it?.copy(parts = parts.size) }
         var done = 0
+        var skipped = 0
         var totalMs = 0L
         for ((i, p) in parts.withIndex()) {
             _state.update { it?.copy(part = i, progress = i.toFloat() / parts.size) }
-            val name = "%02d - %s.wav".format(i + 1, p.title).replace('/', '-')
-            val uri = files.create(tree, name) ?: return@runJob "Error: no se pudo crear $name"
-            when (val r = exportOne(provider, i, uri, voice) { f -> _state.update { it?.copy(progress = (i + (f ?: 0f)) / parts.size) } }) {
+            val name = "%02d - %s.${format.extension}".format(i + 1, p.title).replace('/', '-')
+            if (files.existsComplete(tree, name)) { skipped++; continue }
+            val uri = files.create(tree, name, format.mime) ?: return@runJob "Error: no se pudo crear $name"
+            when (val r = exportOne(provider, i, uri, voice, format) { f -> _state.update { it?.copy(progress = (i + (f ?: 0f)) / parts.size) } }) {
                 is ExportOutcome.Done -> if (r.durationMs <= 0L) files.delete(uri) else { done++; totalMs += r.durationMs }
                 is ExportOutcome.Failed -> return@runJob "Error en \"${p.title}\": ${r.message}. Exportadas $done partes."
             }
         }
-        "Libro exportado: $done ficheros, ${duration(totalMs)}"
+        val reanudadas = if (skipped > 0) " ($skipped ya estaban hechas)" else ""
+        "Libro exportado: ${done + skipped} ficheros$reanudadas, ${duration(totalMs)} nuevos"
     }
 
     /** Cancela la exportacion en curso. */
@@ -145,15 +173,27 @@ class ExportManager(
         job?.cancel()
     }
 
+    /**
+     * Android corta los servicios de datos tras unas horas (Android 15+): se detiene la exportacion con un
+     * aviso claro. Las partes ya exportadas se conservan; volver a pulsar "Exportar el libro" continua.
+     */
+    fun pauseForTimeout() {
+        if (job?.isActive != true) return
+        pauseReason = "Pausada: Android limita el tiempo de las tareas largas. Vuelve a pulsar \"Exportar el libro completo\" para continuar (se saltan las partes ya hechas)."
+        job?.cancel()
+    }
+
+    @Volatile private var pauseReason: String? = null
+
     /** Olvida el resultado de la ultima exportacion. */
     fun clearResult() {
         if (_state.value?.running != true) _state.value = null
     }
 
-    private suspend fun exportOne(provider: UtteranceProvider, part: Int, uri: Uri, voice: VoiceSettings, onProgress: (Float?) -> Unit): ExportOutcome {
+    private suspend fun exportOne(provider: UtteranceProvider, part: Int, uri: Uri, voice: VoiceSettings, format: ExportFormat, onProgress: (Float?) -> Unit): ExportOutcome {
         var ok = false
         try {
-            val r = playback.exportChapter(uri, provider as SpeechSource, part, voice, onProgress)
+            val r = playback.exportChapter(uri, provider as SpeechSource, part, voice, format, onProgress)
             ok = r is ExportOutcome.Done
             return r
         } finally {
@@ -177,7 +217,9 @@ class ExportManager(
                     lease.release()
                 }
             } catch (e: CancellationException) {
-                _state.update { it?.copy(running = false, progress = null, result = "Exportacion cancelada") }
+                val why = pauseReason ?: "Exportacion cancelada"
+                pauseReason = null
+                _state.update { it?.copy(running = false, progress = null, result = why) }
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Exportacion fallida", e)

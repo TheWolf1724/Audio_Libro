@@ -111,4 +111,64 @@ class AudioExporterTest {
         assertThat(opened).isEqualTo(1)
         assertThat(out.size()).isEqualTo(44 + 600)
     }
+
+    /** Codificador falso: escribe un contenido reconocible y recuerda lo que recibio. */
+    private class FakeEncoder : PcmEncoder {
+        var pcmBytes = -1L
+        var rate = 0
+        override fun encode(pcm: java.io.File, sampleRate: Int, out: java.io.File, check: () -> Unit) {
+            check()
+            pcmBytes = pcm.length()
+            rate = sampleRate
+            out.writeBytes("M4A-FALSO".toByteArray())
+        }
+    }
+
+    @Test
+    fun exportaEnM4aCodificandoElPcmYCopiandoAlDestino() = runTest {
+        val enc = FakeEncoder()
+        val out = ByteArrayOutputStream()
+        val result = AudioExporter(FakeRenderer(), StandardTestDispatcher(testScheduler), enc)
+            .exportChapterWavTo(book, 1, VoiceSettings(), tmp.root, {}, closeAfter = false, format = ExportFormat.M4A) { out }
+        // Al codificador le llega el PCM completo (300 muestras x 2 bytes) y la frecuencia correcta.
+        assertThat(enc.pcmBytes).isEqualTo(600L)
+        assertThat(enc.rate).isEqualTo(8000)
+        // Al destino llega lo codificado, sin cabecera WAV.
+        assertThat(String(out.toByteArray())).isEqualTo("M4A-FALSO")
+        assertThat(result.bytes).isEqualTo(9L)
+        assertThat(result.frames).isEqualTo(300L)
+        // No quedan temporales.
+        assertThat(tmp.root.listFiles()!!.toList()).isEmpty()
+    }
+
+    @Test
+    fun m4aSinAudioNoTocaElDestino() = runTest {
+        val vacio = FakeUtteranceProvider(listOf(emptyList()))
+        val enc = FakeEncoder()
+        var opened = false
+        val r = AudioExporter(FakeRenderer(), StandardTestDispatcher(testScheduler), enc)
+            .exportChapterWavTo(vacio, 0, VoiceSettings(), tmp.root, {}, closeAfter = false, format = ExportFormat.M4A) {
+                opened = true
+                ByteArrayOutputStream()
+            }
+        assertThat(opened).isFalse()
+        assertThat(r.frames).isEqualTo(0L)
+        assertThat(enc.pcmBytes).isEqualTo(-1L)
+    }
+
+    @Test
+    fun m4aFallaDeCodificarNoDejaTemporalesNiTocaElDestino() = runTest {
+        val enc = PcmEncoder { _, _, _, _ -> throw java.io.IOException("sin codificador") }
+        var opened = false
+        val ex = runCatching {
+            AudioExporter(FakeRenderer(), StandardTestDispatcher(testScheduler), enc)
+                .exportChapterWavTo(book, 1, VoiceSettings(), tmp.root, {}, closeAfter = false, format = ExportFormat.M4A) {
+                    opened = true
+                    ByteArrayOutputStream()
+                }
+        }.exceptionOrNull()
+        assertThat(ex).isInstanceOf(java.io.IOException::class.java)
+        assertThat(opened).isFalse()
+        assertThat(tmp.root.listFiles()!!.toList()).isEmpty()
+    }
 }

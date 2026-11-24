@@ -6,6 +6,7 @@ import android.util.Log
 import androidx.media3.common.util.UnstableApi
 import com.lectorvoz.core.model.Locator
 import com.lectorvoz.core.model.PlaybackEvent
+import com.lectorvoz.tts.export.ExportFormat
 import com.lectorvoz.core.model.VoiceSettings
 import com.lectorvoz.tts.neural.PreloadStatus
 import com.lectorvoz.tts.BookInfo
@@ -164,11 +165,12 @@ class PlaybackFacade(
         source: SpeechSource,
         chapter: Int,
         settings: VoiceSettings,
+        format: ExportFormat,
         onProgress: (Float?) -> Unit,
     ): ExportOutcome {
         val provider = source as? UtteranceProvider ?: return ExportOutcome.Failed("Fuente de voz no compatible")
         return try {
-            val r = live().exportChapter(uri, provider, chapter, settings) { onProgress(it.fraction) }
+            val r = live().exportChapter(uri, provider, chapter, settings, format) { onProgress(it.fraction) }
             ExportOutcome.Done(r.durationMs, r.bytes)
         } catch (e: CancellationException) {
             throw e
