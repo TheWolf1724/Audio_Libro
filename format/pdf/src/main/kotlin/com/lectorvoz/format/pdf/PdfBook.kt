@@ -205,7 +205,10 @@ class PdfBook internal constructor(
                 synchronized(textCache) { textCache[index] } ?: run {
                     val raw = backend.pageText(index)
                     val size = sizes[index] ?: backend.pageSizePoints(index).also { sizes[index] = it }
-                    PdfPageText(index, raw.text, raw.boxes, size)
+                    // Titulos/epigrafes con las letras separadas ("P a r a  l o s"): se unen las
+                    // letras de cada palabra (misma longitud) para que la voz no las deletree.
+                    val fixed = com.lectorvoz.core.text.LetterSpacing.fix(raw.text, raw.boxes) { if (PdfDiag.on) PdfDiag.log("idx=$index $it") }
+                    PdfPageText(index, fixed, raw.boxes, size)
                 }
             }
             // Pagina escaneada: el texto lo da el OCR (fuera del hilo de pdfium, que lo usa
@@ -429,7 +432,7 @@ class PdfBook internal constructor(
                 val meta = runCatching { backend.meta() }.getOrNull()
                 val metadata = BookMetadata(
                     title = meta?.title ?: fallbackTitle,
-                    authors = meta?.author?.split(';', ',', '&')?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
+                    authors = meta?.author?.let(::splitAuthors)?.map { it.trim() }?.filter { it.isNotEmpty() }.orEmpty(),
                     description = meta?.subject,
                 )
                 val toc = runCatching { backend.bookmarks() }.getOrDefault(emptyList()).map { it.toToc() }
@@ -483,3 +486,13 @@ fun interface MixedTextProvider {
  * sin cachear, y se reintenta la recuperacion en la siguiente peticion. Ver [PdfBook.textProvisional].
  */
 class MixedTextNotReady : Exception()
+
+/** "A; B" o "A & B" son varios autores; "Apellido, Nombre" (una sola coma) es UNO. */
+internal fun splitAuthors(raw: String): List<String> {
+    val parts = raw.split(';', '&')
+    if (parts.size > 1) return parts
+    val commas = raw.split(',')
+    val allWords = commas.all { it.trim().contains(' ') }
+    // Con 2+ comas ("A, B, C") o trozos de varias palabras ("Ana Ruiz, Juan Gil") son varios autores.
+    return if (commas.size > 2 || (commas.size == 2 && allWords)) commas else listOf(raw)
+}

@@ -118,7 +118,18 @@ interface SettingsRepository {
 
     /** Ajustes de lectura efectivos para [bookId] (globales + propios del libro). */
     fun readerFor(bookId: Long): Flow<ReaderSettings> =
-        combine(reader, overrides(bookId)) { g, o -> o.applyTo(g) }.distinctUntilChanged()
+        combine(reader, overrides(bookId), app) { g, o, a -> enforceAccessibility(o.applyTo(g), a) }.distinctUntilChanged()
+
+    /** Los ajustes de accesibilidad activos mandan sobre los valores propios del libro. */
+    private fun enforceAccessibility(r: ReaderSettings, a: AppPrefs): ReaderSettings {
+        var out = r
+        if (a.dyslexiaFont) out = out.copy(fontFamily = "opendyslexic")
+        if (a.largeText && out.fontSizeSp < 24f) out = out.copy(fontSizeSp = 24f)
+        if (a.reduceMotion && (out.pageAnimation == PageAnimation.CURL || out.pageAnimation == PageAnimation.SLIDE || out.pageAnimation == PageAnimation.COVER)) {
+            out = out.copy(pageAnimation = PageAnimation.FADE, pageAnimationMillis = minOf(out.pageAnimationMillis, 150))
+        }
+        return SettingsRanges.sanitize(out)
+    }
 
     /** Ajustes de voz efectivos para [bookId]. */
     fun voiceFor(bookId: Long): Flow<VoiceSettings> =

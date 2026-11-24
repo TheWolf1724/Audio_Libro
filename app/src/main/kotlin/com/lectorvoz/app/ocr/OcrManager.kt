@@ -256,17 +256,19 @@ class OcrManager(
         mergeOrNull(native.rawText, fullBoxes, lines)
     }
 
+    private fun spacingDiag(): ((String) -> Unit)? = if (TtsConfig.diagnostics) { m -> TtsConfig.diag("MIXTO $m") } else null
+
     private fun mergeOrNull(nativeText: String, nativeBoxes: FloatArray, lines: List<PageTextMerger.OcrLine>): RawPageText? {
         if (lines.isEmpty()) {
             // Sin OCR que fusionar, pero el texto nativo puede traer titulos interletrados
             // ("P a r a  l o s ...") que la voz deletrearia: se unen las letras de cada palabra.
-            val fixed = LetterSpacing.fix(nativeText, nativeBoxes)
+            val fixed = LetterSpacing.fix(nativeText, nativeBoxes, spacingDiag())
             if (fixed == nativeText) return null
             if (TtsConfig.diagnostics) TtsConfig.diag("MIXTO interletrado corregido: '${TtsConfig.text40(nativeText)}' -> '${TtsConfig.text40(fixed.replace("\u200B", ""))}'")
             return RawPageText(fixed, nativeBoxes)
         }
         val merged0 = PageTextMerger.merge(nativeText, nativeBoxes, lines)
-        val merged = PageTextMerger.Merged(LetterSpacing.fix(merged0.text, merged0.boxes), merged0.boxes)
+        val merged = PageTextMerger.Merged(LetterSpacing.fix(merged0.text, merged0.boxes, spacingDiag()), merged0.boxes)
         if (TtsConfig.diagnostics) {
             // Donde aterriza cada linea OCR en el texto fusionado (para ver si queda en su sitio o al
             // principio): offset de su texto en el resultado y los 20 chars nativos anteriores.

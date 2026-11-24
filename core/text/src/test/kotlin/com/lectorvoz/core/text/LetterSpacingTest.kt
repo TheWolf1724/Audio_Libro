@@ -41,6 +41,13 @@ class LetterSpacingTest {
     }
 
     @Test
+    fun huecoDePalabraSoloUnPocoMayorQueElDeLetra() {
+        val (t, b) = interletrado(listOf("Para", "los", "que", "suenan", "con", "mundos"), gapLetra = 6f, gapPalabra = 9f, sep = 2)
+        val limpio = LetterSpacing.fix(t, b).replace(J.toString(), "").replace(Regex(" +"), " ")
+        assertThat(limpio).isEqualTo("Para los que suenan con mundos")
+    }
+
+    @Test
     fun unaSolaPalabraInterletrada() {
         val (t, b) = interletrado(listOf("PRIMERA"), gapLetra = 3f, gapPalabra = 3f)
         assertThat(LetterSpacing.fix(t, b).replace(J.toString(), "")).isEqualTo("PRIMERA")

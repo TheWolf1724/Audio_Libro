@@ -208,7 +208,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     /** Prueba [password] en el PDF protegido y vuelve a abrirlo (la clave solo vive en memoria). */
     fun submitPassword(password: String) {
         graph.passwords.set(bookId, password)
-        _state.update { it.copy(loading = true, passwordPrompt = null) }
+        _state.update { it.copy(loading = true, passwordPrompt = null, error = null) }
         open()
     }
 
@@ -411,11 +411,19 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     fun prepareSeek() {
         if (lengthsJob != null || _state.value.book?.format != BookFormat.EPUB) return
         lengthsJob = viewModelScope.launch {
-            val b = auxBook() ?: return@launch
-            for (ch in 0 until b.content.chapterCount) {
-                if (synchronized(chapterLengths) { ch in chapterLengths }) continue
-                val len = chapterText(ch)?.length ?: continue
-                synchronized(chapterLengths) { chapterLengths[ch] = len }
+            var complete = false
+            try {
+                val b = auxBook() ?: return@launch
+                complete = true
+                for (ch in 0 until b.content.chapterCount) {
+                    if (synchronized(chapterLengths) { ch in chapterLengths }) continue
+                    val len = chapterText(ch)?.length
+                    if (len == null) { complete = false; continue }
+                    synchronized(chapterLengths) { chapterLengths[ch] = len }
+                }
+            } finally {
+                // Si algo fallo, la siguiente vez que se toque el deslizador se reintenta.
+                if (!complete) lengthsJob = null
             }
         }
     }

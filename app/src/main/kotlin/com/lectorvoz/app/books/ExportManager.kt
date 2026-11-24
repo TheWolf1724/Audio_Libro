@@ -97,7 +97,7 @@ class SafExportFiles(private val context: Context) : ExportFiles {
     }
 
     override fun markDone(tree: Uri, name: String) {
-        prefs.edit().remove(key(tree, name)).apply()
+        prefs.edit().remove(key(tree, name)).commit()
     }
 
     private fun findDocument(tree: Uri, name: String, own: Boolean): Uri? = try {

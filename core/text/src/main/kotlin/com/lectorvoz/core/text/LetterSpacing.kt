@@ -22,7 +22,7 @@ object LetterSpacing {
      * [text] con las letras de cada palabra interletrada unidas, o el mismo [text] si no hay nada
      * que reparar o no hay cajas fiables. [boxes] = 4 floats por caracter (left, top, right, bottom).
      */
-    fun fix(text: String, boxes: FloatArray): String {
+    fun fix(text: String, boxes: FloatArray, diag: ((String) -> Unit)? = null): String {
         val n = text.length
         if (n < 9 || boxes.size != n * 4) return text
         var out: CharArray? = null
@@ -48,7 +48,7 @@ object LetterSpacing {
             }
             val last = if (ends.isEmpty()) e0 else ends.last()
             if (starts.size >= MIN_TOKENS) {
-                val fixed = repair(text, boxes, starts, ends)
+                val fixed = repair(text, boxes, starts, ends, diag)
                 if (fixed != null) {
                     if (out == null) out = text.toCharArray()
                     for (idx in fixed) out[idx] = JOINER
@@ -60,22 +60,20 @@ object LetterSpacing {
     }
 
     /** Indices de los espacios a convertir en [JOINER], o null si el tramo no es interletrado/fiable. */
-    private fun repair(text: String, boxes: FloatArray, starts: List<Int>, ends: List<Int>): List<Int>? {
+    private fun repair(text: String, boxes: FloatArray, starts: List<Int>, ends: List<Int>, diag: ((String) -> Unit)?): List<Int>? {
         val singles = starts.indices.count { ends[it] - starts[it] == 1 }
-        if (singles * 10 < starts.size * 6) return null
+        if (singles * 10 < starts.size * 6) { diag?.invoke("interletrado: tramo de ${starts.size} fichas descartado (pocas letras sueltas: $singles)"); return null }
         val gaps = FloatArray(starts.size - 1)
         for (t in 0 until starts.size - 1) {
             val a = ends[t] - 1 // ultima letra del token
             val b = starts[t + 1] // primera letra del siguiente
             val ra = boxes[a * 4 + 2]
             val lb = boxes[b * 4]
-            if (boxes[a * 4 + 2] <= boxes[a * 4] || boxes[b * 4 + 2] <= boxes[b * 4]) return null // sin geometria
+            if (boxes[a * 4 + 2] <= boxes[a * 4] || boxes[b * 4 + 2] <= boxes[b * 4]) { diag?.invoke("interletrado: tramo de ${starts.size} fichas sin geometria en la ficha $t"); return null }
             gaps[t] = lb - ra
         }
-        val sorted = gaps.sortedArray()
-        val median = sorted[sorted.size / 2]
-        val threshold = maxOf(median * 1.6f, median + 1f)
-        val isWord = BooleanArray(gaps.size) { gaps[it] > threshold }
+        val isWord = wordGaps(gaps)
+        diag?.invoke("interletrado: ${starts.size} fichas, huecos=" + gaps.joinToString(",") { "%.1f".format(java.util.Locale.ROOT, it) } + " palabras=" + isWord.count { it })
         // Sin ningun hueco de palabra: o es UNA palabra interletrada, o una frase sin forma de separarla.
         if (isWord.none { it } && starts.size > MAX_SINGLE_WORD_TOKENS) return null
         val joins = ArrayList<Int>()
@@ -84,6 +82,30 @@ object LetterSpacing {
             for (idx in ends[t] until starts[t + 1]) joins.add(idx)
         }
         return joins
+    }
+
+    /**
+     * Que huecos separan palabras: se busca el SALTO natural mayor entre los huecos ordenados (el
+     * grupo estrecho = entre letras, el ancho = entre palabras). Antes un umbral fijo (1,6 x mediana)
+     * dejaba pasar tipografias donde el hueco de palabra es solo algo mayor que el de letra y
+     * se unia TODA la frase en una palabra ("Paralosquesueñan...").
+     */
+    private fun wordGaps(gaps: FloatArray): BooleanArray {
+        val none = BooleanArray(gaps.size)
+        if (gaps.size < 2) return none
+        val sorted = gaps.sortedArray()
+        var bestRatio = 1f
+        var cut = -1
+        for (k in 0 until sorted.size - 1) {
+            val lo = sorted[k].coerceAtLeast(0.01f)
+            val ratio = (sorted[k + 1] + 0.5f) / (lo + 0.5f)
+            // El grupo ancho (palabras) es minoritario: como mucho el 45 % de los huecos.
+            if (sorted.size - 1 - k > sorted.size * 45 / 100) continue
+            if (ratio > bestRatio) { bestRatio = ratio; cut = k }
+        }
+        if (cut < 0 || bestRatio < 1.2f) return none
+        val threshold = (sorted[cut] + sorted[cut + 1]) / 2f
+        return BooleanArray(gaps.size) { gaps[it] > threshold }
     }
 
     private fun tokenEnd(text: String, from: Int): Int {

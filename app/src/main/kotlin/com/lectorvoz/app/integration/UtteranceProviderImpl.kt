@@ -172,7 +172,10 @@ class UtteranceProviderImpl(
         // No guardar un capitulo PROVISIONAL (el OCR del mixto aun no estaba listo): se reconstruye
         // en la siguiente peticion, cuando el modelo este y la fusion traiga el texto recuperado.
         val provisional = content.provisional(index)
-        mutex.withLock { if (generation == gen && !provisional) cache[index] = list }
+        mutex.withLock {
+            if (generation == gen) { if (!provisional) cache[index] = list }
+            else synchronized(lengths) { lengths.remove(index) } // texto de antes de invalidar
+        }
         return list
     }
 

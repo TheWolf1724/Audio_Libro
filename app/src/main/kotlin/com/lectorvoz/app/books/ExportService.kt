@@ -117,7 +117,7 @@ class ExportService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val graph = (application as LectorVozApp).graph
         // Reutilizada tras pararse (stopSelf y nuevo arranque antes del onDestroy): colector nuevo.
-        if (!scope.isActive) { scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate); watching = false }
+        if (!scope.isActive) { scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate); watching = false; lastShown = null }
         val n = ExportNotifier.build(this, graph.exports.state.value)
             ?: ExportNotifier.build(this, ExportJobState(bookId = 0, title = "Audio"))!!
         try {
@@ -168,7 +168,9 @@ class ExportService : Service() {
 
     /** Android exige parar el servicio a los pocos segundos: se hace ya (la exportacion se desenrolla despues). */
     private fun timedOut() {
-        val st = (application as LectorVozApp).graph.exports.pauseForTimeout()
+        val exports = (application as LectorVozApp).graph.exports
+        // Si el trabajo ya acabo, se conserva su notificacion de resultado.
+        val st = exports.pauseForTimeout() ?: exports.state.value?.takeIf { !it.running }
         finish(st)
     }
 }
