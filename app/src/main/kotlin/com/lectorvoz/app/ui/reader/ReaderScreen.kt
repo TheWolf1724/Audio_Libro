@@ -219,6 +219,36 @@ fun ReaderScreen(
     state.textAction?.let { action ->
         TextActionDialog(action, vm)
     }
+    state.passwordPrompt?.let { prompt ->
+        PasswordDialog(prompt.wrong, onSubmit = vm::submitPassword, onCancel = vm::cancelPassword)
+    }
+}
+
+/** Pide la contrasena de un PDF protegido. Solo se guarda en memoria mientras la app siga abierta. */
+@Composable
+private fun PasswordDialog(wrong: Boolean, onSubmit: (String) -> Unit, onCancel: () -> Unit) {
+    var password by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onCancel,
+        title = { Text("PDF protegido") },
+        text = {
+            Column {
+                Text(if (wrong) "La contrasena no es correcta. Prueba de nuevo." else "Escribe la contrasena para abrir este PDF. Solo se recuerda mientras la app siga abierta.")
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Contrasena") },
+                    singleLine = true,
+                    isError = wrong,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                    modifier = Modifier.fillMaxWidth().testTag("pdf-contrasena"),
+                )
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSubmit(password) }, enabled = password.isNotEmpty()) { Text("Abrir") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Cancelar") } },
+    )
 }
 
 @Composable

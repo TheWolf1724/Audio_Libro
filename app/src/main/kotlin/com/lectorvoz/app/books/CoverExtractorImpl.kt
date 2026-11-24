@@ -10,6 +10,7 @@ import com.lectorvoz.core.data.library.ExtractedInfo
 import com.lectorvoz.core.model.BookFormat
 import com.lectorvoz.format.epub.EpubBook
 import com.lectorvoz.format.pdf.PdfBook
+import com.lectorvoz.format.pdf.PdfException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -55,7 +56,13 @@ class CoverExtractorImpl(
     }
 
     private suspend fun pdf(file: File, coverOut: File): ExtractedInfo {
-        val book = PdfBook.open(context, file)
+        // PDF protegido con contrasena: se importa igualmente (sin portada ni metadatos, con el titulo del
+        // fichero); la clave se pide al abrirlo. Antes se rechazaba como "libro danado".
+        val book = try {
+            PdfBook.open(context, file)
+        } catch (e: PdfException.PasswordRequired) {
+            return ExtractedInfo(null, emptyList(), null, false)
+        }
         try {
             val written = try {
                 if (book.pageCount > 0) renderFirstPage(book, coverOut) else false

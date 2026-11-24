@@ -61,9 +61,13 @@ data class SearchState(
 
 /** Estado del lector (inmutable). */
 @Immutable
+/** El PDF esta protegido: se pide la contrasena ([wrong] = la anterior no valio). */
+data class PasswordPrompt(val wrong: Boolean)
+
 data class ReaderUiState(
     val loading: Boolean = true,
     val error: String? = null,
+    val passwordPrompt: PasswordPrompt? = null,
     val book: Book? = null,
     val settings: ReaderSettings = ReaderSettings(),
     val voice: VoiceSettings = VoiceSettings(),
@@ -174,10 +178,27 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
             if (voicePos != null) highlightVoicePosition()
         } catch (e: CancellationException) {
             throw e
+        } catch (e: com.lectorvoz.format.pdf.PdfException.PasswordRequired) {
+            _state.update { it.copy(loading = false, passwordPrompt = PasswordPrompt(wrong = false)) }
+        } catch (e: com.lectorvoz.format.pdf.PdfException.WrongPassword) {
+            graph.passwords.forget(bookId)
+            _state.update { it.copy(loading = false, passwordPrompt = PasswordPrompt(wrong = true)) }
         } catch (e: Exception) {
             _state.update { it.copy(loading = false, error = "No se puede abrir el libro: ${e.message ?: "error desconocido"}") }
         }
         _state.update { it.copy(nextInSeries = graph.collections.nextInSeries(bookId)) }
+    }
+
+    /** Prueba [password] en el PDF protegido y vuelve a abrirlo (la clave solo vive en memoria). */
+    fun submitPassword(password: String) {
+        graph.passwords.set(bookId, password)
+        _state.update { it.copy(loading = true, passwordPrompt = null) }
+        open()
+    }
+
+    /** Se descarta el dialogo de contrasena: el libro no se abre. */
+    fun cancelPassword() {
+        _state.update { it.copy(passwordPrompt = null, error = "Este PDF esta protegido con contrasena.") }
     }
 
     /** Resalta la frase que esta leyendo la voz y va a su pagina. */
@@ -422,9 +443,8 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
                 val text = chapterText(ch) ?: continue
                 if (b.content.format == BookFormat.EPUB) synchronized(chapterLengths) { chapterLengths[ch] = text.length }
                 val found = withContext(Dispatchers.Default) {
-                    findAll(text, query, MAX_RESULTS - hits.size).map { s ->
-                        val e = s + query.trim().length
-                        SearchHit(LocatorRange(Locator(ch, s), Locator(ch, e)), excerpt(text, s, e))
+                    findMatches(text, query, MAX_RESULTS - hits.size).map { m ->
+                        SearchHit(LocatorRange(Locator(ch, m.start), Locator(ch, m.end)), excerpt(text, m.start, m.end))
                     }
                 }
                 hits += found

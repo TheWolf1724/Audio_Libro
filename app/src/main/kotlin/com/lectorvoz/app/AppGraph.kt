@@ -7,6 +7,7 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.media3.common.util.UnstableApi
 import com.lectorvoz.app.books.AppFontProvider
 import com.lectorvoz.app.books.BookOpener
+import com.lectorvoz.app.books.SessionPasswords
 import com.lectorvoz.app.books.CoverExtractorImpl
 import com.lectorvoz.app.books.CoverLoader
 import com.lectorvoz.app.books.OpenedBook
@@ -97,6 +98,8 @@ class AppGraph(
     val covers: CoverLoader = CoverLoader(),
     val fonts: FontProvider = AppFontProvider(context),
     val opener: BookOpener = BookOpener(context),
+    /** Contrasenas de PDF protegidos, solo en memoria (ver [SessionPasswords]). */
+    val passwords: SessionPasswords = SessionPasswords(),
     exportFiles: ExportFiles = SafExportFiles(context),
     /** Consulta de la ultima version (sin red por defecto: las pruebas no salen a Internet). */
     updateFetch: suspend () -> AppRelease? = { null },
@@ -128,6 +131,7 @@ class AppGraph(
         opener.pdfTextFallback = { b -> ocr.fallbackFor(b) }
         opener.pdfForceOcr = { b -> settings.forceOcr(b.id).first() }
         opener.pdfMixedProvider = { b -> ocr.mixedFor(b) }
+        opener.pdfPassword = { b -> passwords.get(b.id) }
     }
 
     /** Libro abierto para la voz (independiente del lector: sigue sonando al salir). */

@@ -23,18 +23,77 @@ fun flattenToc(toc: List<TocEntry>, depth: Int = 0, out: MutableList<TocItem> = 
 @Immutable
 data class SearchHit(val range: LocatorRange, val excerpt: String)
 
-/** Busca [query] en [text] (sin distinguir mayusculas ni tildes); devuelve inicios. */
-fun findAll(text: String, query: String, max: Int = 200): List<Int> {
-    val q = fold(query.trim())
+/** Coincidencia de una busqueda: [start, end) en el texto ORIGINAL. */
+data class Match(val start: Int, val end: Int)
+
+/**
+ * Busca [query] en [text] sin distinguir mayusculas ni tildes y TOLERANDO el maquetado del texto:
+ * saltos de linea y espacios repetidos valen como un solo espacio ("de la\nMancha" se encuentra con
+ * "de la Mancha") y las palabras partidas con guion al final de linea ("Man-\ncha") se leen unidas.
+ * Los rangos devueltos son del texto original, aunque la coincidencia cruce uno de esos saltos.
+ */
+fun findMatches(text: String, query: String, max: Int = 200): List<Match> {
+    val q = normalizeForSearch(query.trim()).text
     if (q.isEmpty()) return emptyList()
-    val t = foldSameLength(text)
-    val out = ArrayList<Int>()
-    var i = t.indexOf(q)
+    val t = normalizeForSearch(text)
+    val out = ArrayList<Match>()
+    var i = t.text.indexOf(q)
     while (i >= 0 && out.size < max) {
-        out += i
-        i = t.indexOf(q, i + q.length)
+        val lastNorm = i + q.length - 1
+        out += Match(t.start[i], t.end[lastNorm])
+        i = t.text.indexOf(q, i + q.length)
     }
     return out
+}
+
+/** Busca [query] en [text] (sin distinguir mayusculas ni tildes); devuelve inicios. */
+fun findAll(text: String, query: String, max: Int = 200): List<Int> = findMatches(text, query, max).map { it.start }
+
+/** Texto plegado para buscar, con el rango original (inicio/fin) de cada caracter plegado. */
+private class SearchText(val text: String, val start: IntArray, val end: IntArray)
+
+private fun normalizeForSearch(s: String): SearchText {
+    val sb = StringBuilder(s.length)
+    val start = IntArray(s.length)
+    val end = IntArray(s.length)
+    var n = 0
+    var i = 0
+    fun emit(c: Char, from: Int, to: Int) {
+        sb.append(c); start[n] = from; end[n] = to; n++
+    }
+    while (i < s.length) {
+        val c = s[i]
+        when {
+            // Guion blando y espacio de ancho cero: invisibles.
+            c == '\u00AD' || c == '\u200B' -> i++
+            c.isWhitespace() -> {
+                // Una racha de blancos (incluidos saltos de linea) cuenta como UN espacio.
+                var j = i
+                while (j < s.length && (s[j].isWhitespace() || s[j] == '\u200B' || s[j] == '\u00AD')) j++
+                if (n > 0 && sb[n - 1] != ' ') emit(' ', i, j)
+                i = j
+            }
+            c == '-' && i > 0 && s[i - 1].isLetter() && hyphenBreak(s, i) -> {
+                // "Man-\ncha": el guion y el salto desaparecen y la palabra queda unida.
+                var j = i + 1
+                while (j < s.length && s[j].isWhitespace()) j++
+                i = j
+            }
+            else -> { emit(foldChar(c), i, i + 1); i++ }
+        }
+    }
+    return SearchText(sb.toString(), start.copyOf(n), end.copyOf(n))
+}
+
+/** El guion en [i] esta al final de linea y la linea siguiente sigue en minuscula (palabra partida). */
+private fun hyphenBreak(s: String, i: Int): Boolean {
+    var j = i + 1
+    var sawBreak = false
+    while (j < s.length && s[j].isWhitespace()) {
+        if (s[j] == '\n' || s[j] == '\r') sawBreak = true
+        j++
+    }
+    return sawBreak && j < s.length && s[j].isLowerCase()
 }
 
 /** Minusculas y sin tildes conservando la longitud (para que los indices sigan valiendo). */

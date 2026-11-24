@@ -51,15 +51,24 @@ class LectorVozApp : Application() {
                 .setAction(MainActivity.ACTION_OPEN_PLAYING)
                 .addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
-        TtsConfig.audioCacheMaxBytes = audioCacheBudget()
         // Hilos de inferencia segun la gama del movil (2 en modestos, hasta 4 en potentes).
         val mem = android.app.ActivityManager.MemoryInfo()
         (getSystemService(ACTIVITY_SERVICE) as? android.app.ActivityManager)?.getMemoryInfo(mem)
         TtsConfig.neuralThreads = com.lectorvoz.tts.neural.NeuralThreads.choose(Runtime.getRuntime().availableProcessors(), mem.totalMem)
-        // Velocidad de sintesis de la voz natural medida en sesiones anteriores de este movil.
-        val rtfPrefs = getSharedPreferences("tts_rendimiento", MODE_PRIVATE)
-        TtsConfig.persistedRtf = rtfPrefs.getFloat("rtf", -1f).takeIf { it > 0f }
-        TtsConfig.rtfSink = { rtf -> rtfPrefs.edit { putFloat("rtf", rtf) } }
+        TtsConfig.rtfSink = { rtf -> getSharedPreferences("tts_rendimiento", MODE_PRIVATE).edit { putFloat("rtf", rtf) } }
+        // Lo que toca disco (leer lo guardado y medir la cache de audio) va en un hilo de fondo: el
+        // arranque en frio no debe esperar a recorrer cientos de ficheros. Hasta que termina, la cache
+        // usa su tope por defecto y el motor neuronal arranca sin la velocidad guardada (solo una semilla).
+        Thread({
+            runCatching {
+                // Velocidad de sintesis de la voz natural medida en sesiones anteriores de este movil.
+                TtsConfig.persistedRtf = getSharedPreferences("tts_rendimiento", MODE_PRIVATE).getFloat("rtf", -1f).takeIf { it > 0f }
+                val budget = audioCacheBudget()
+                TtsConfig.audioCacheMaxBytes = budget
+                // Actualiza el tope de la instancia compartida si el servicio ya la creo.
+                com.lectorvoz.tts.cache.AudioDiskCache.forRoot(TtsConfig.audioCacheDir(this), budget)
+            }
+        }, "arranque-fondo").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
         // "Play" con el proceso recien creado (auricular, notificacion, coche): ultimo libro.
         TtsConfig.resumeBook = { _ -> graph.resumeRequest() }
         // Con la app en pantalla (biblioteca con el minirreproductor) el modelo no se suelta al

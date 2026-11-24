@@ -61,6 +61,9 @@ open class BookOpener(private val context: Context) {
     /** Proveedor del modo MIXTO (recuperar palabras que faltan); nulo = sin mixto. */
     @Volatile var pdfMixedProvider: ((Book) -> com.lectorvoz.format.pdf.MixedTextProvider?)? = null
 
+    /** Contrasena de sesion de un PDF protegido (nula = sin ella). */
+    @Volatile var pdfPassword: ((Book) -> String?)? = null
+
     /** Un cerrojo por libro: dos aperturas a la vez no escriben la misma copia temporal. */
     private val copyLocks = ConcurrentHashMap<String, Mutex>()
 
@@ -77,7 +80,8 @@ open class BookOpener(private val context: Context) {
             when (book.format) {
                 BookFormat.EPUB -> openEpub(book, epubFile!!)
                 BookFormat.PDF -> {
-                    val pdf = book.localFile?.let { PdfBook.open(context, it) } ?: PdfBook.open(context, book.uri.toUri())
+                    val pw = pdfPassword?.invoke(book)
+                    val pdf = book.localFile?.let { PdfBook.open(context, it, pw) } ?: PdfBook.open(context, book.uri.toUri(), pw)
                     try {
                         pdf.textFallback = pdfTextFallback?.invoke(book)
                         pdf.forceFallback = pdfForceOcr?.invoke(book) ?: false

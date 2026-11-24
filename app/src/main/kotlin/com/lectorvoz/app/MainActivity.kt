@@ -9,6 +9,7 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.core.content.edit
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -58,7 +59,7 @@ class MainActivity : ComponentActivity() {
         val initial = initialReaderSettings(graph)
         setContent {
             val reader by graph.settings.reader.collectAsStateWithLifecycle(initial)
-            SideEffect { lastReaderSettings = reader }
+            SideEffect { lastReaderSettings = reader; rememberThemeHint(reader) }
             // null mientras se lee el ajuste (1 frame con el fondo del tema, sin parpadeo molesto);
             // false = primera apertura -> bienvenida; true = uso normal.
             // `remember`: un flujo nuevo en cada recomposicion reiniciaria collectAsState (parpadeo en blanco).
@@ -200,10 +201,32 @@ class MainActivity : ComponentActivity() {
      * ultimos vistos en este proceso (girar, cambiar el modo oscuro) o, en frio, una lectura
      * corta y acotada del almacen; si tarda, los de por defecto.
      */
-    private fun initialReaderSettings(graph: AppGraph): ReaderSettings =
-        lastReaderSettings ?: runCatching {
+    private fun initialReaderSettings(graph: AppGraph): ReaderSettings {
+        lastReaderSettings?.let { return it }
+        // En frio: el tema del ultimo uso, de un fichero minimo y sincrono (unos ms), en vez de
+        // bloquear el hilo de UI hasta 150 ms esperando al DataStore. El resto de ajustes llegan
+        // enseguida por el flujo reactivo.
+        val prefs = getSharedPreferences(HINT_PREFS, MODE_PRIVATE)
+        val themeName = prefs.getString(HINT_THEME, null)
+        val theme = themeName?.let { n -> com.lectorvoz.core.model.ThemeMode.entries.firstOrNull { it.name == n } }
+        if (theme != null) {
+            return ReaderSettings(theme = theme, highContrast = prefs.getBoolean(HINT_CONTRAST, false)).also { lastReaderSettings = it }
+        }
+        // Primera vez con esta version (sin pista guardada): una unica lectura acotada, como antes.
+        return runCatching {
             runBlocking { withTimeoutOrNull(INITIAL_SETTINGS_TIMEOUT_MS) { graph.settings.reader.first() } }
         }.getOrNull()?.also { lastReaderSettings = it } ?: ReaderSettings()
+    }
+
+    /** Guarda el tema para pintar el primer fotograma del proximo arranque sin esperar al DataStore. */
+    private fun rememberThemeHint(r: ReaderSettings) {
+        if (hintSaved == r.theme to r.highContrast) return
+        hintSaved = r.theme to r.highContrast
+        getSharedPreferences(HINT_PREFS, MODE_PRIVATE).edit {
+            putString(HINT_THEME, r.theme.name)
+            putBoolean(HINT_CONTRAST, r.highContrast)
+        }
+    }
 
     companion object {
         /** Ultimos ajustes de lectura pintados en este proceso. */
@@ -214,6 +237,13 @@ class MainActivity : ComponentActivity() {
         // limita para no arriesgar jank/ANR con disco lento; si expira, se pinta con los de por
         // defecto y los reales entran despues por el flujo reactivo (sin parpadeo perceptible).
         private const val INITIAL_SETTINGS_TIMEOUT_MS = 150L
+        private const val HINT_PREFS = "arranque"
+        private const val HINT_THEME = "tema"
+        private const val HINT_CONTRAST = "contraste"
+
+        /** Ultimo tema guardado como pista de arranque (evita reescribir el fichero en cada recomposicion). */
+        @Volatile
+        private var hintSaved: Pair<com.lectorvoz.core.model.ThemeMode, Boolean>? = null
 
         /** El sistema la relanzo desde Recientes con el intent original. */
         fun launchedFromHistory(intent: Intent): Boolean =
