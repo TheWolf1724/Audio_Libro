@@ -651,9 +651,9 @@ private fun ColorChips(selected: Int, onPick: (Int) -> Unit) {
 
 @Composable
 private fun TextActionDialog(action: TextAction, vm: ReaderViewModel) {
-    var fixing by remember { mutableStateOf(false) }
-    var replacement by remember { mutableStateOf("") }
-    var forBook by remember { mutableStateOf(true) }
+    var fixing by rememberSaveable { mutableStateOf(false) }
+    var replacement by rememberSaveable { mutableStateOf("") }
+    var forBook by rememberSaveable { mutableStateOf(true) }
     var noting by rememberSaveable { mutableStateOf(false) }
     var noteText by rememberSaveable { mutableStateOf("") }
     if (noting && action.annotation != null) {

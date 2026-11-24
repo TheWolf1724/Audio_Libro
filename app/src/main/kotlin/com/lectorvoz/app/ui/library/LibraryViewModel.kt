@@ -241,7 +241,8 @@ class LibraryViewModel(
                     LibraryFilter.Favorites -> b.favorite
                     LibraryFilter.Unfinished -> !b.finished
                     LibraryFilter.Finished -> b.finished
-                    is LibraryFilter.Collection -> inCol?.contains(b.id) == true
+                    // Coleccion borrada desde otro sitio: se muestra todo en vez de una biblioteca vacia.
+                    is LibraryFilter.Collection -> col == null || inCol?.contains(b.id) == true
                 }
                 passFilter && (q.isEmpty() || fold(b.title).contains(q) || b.authors.any { fold(it).contains(q) })
             }

@@ -141,7 +141,7 @@ class AudioDiskCache(
     /** Desaloja capitulos permitidos por [allowed] (los menos usados primero) hasta ocupar [limit] o menos. */
     private fun evictUntil(limit: Long, allowed: (File) -> Boolean) {
         if (totalBytes <= limit) return
-        val chapters = runCatching { root.walkTopDown().filter { it.isFile && it.name.endsWith(PCM) && allowed(it) }.toList() }.getOrDefault(emptyList())
+        val chapters = runCatching { root.walkTopDown().onFail { _, _ -> }.filter { it.isFile && it.name.endsWith(PCM) && allowed(it) }.toList() }.getOrDefault(emptyList())
             .sortedBy { it.lastModified() }.toList()
         for (pcm in chapters) {
             if (totalBytes <= limit) break

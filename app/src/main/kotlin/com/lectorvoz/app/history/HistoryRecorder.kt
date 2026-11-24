@@ -78,8 +78,14 @@ class HistoryRecorder(
 
     /** Une dos lecturas (la propuesta aceptada o la union a mano desde el historial). */
     fun merge(entry: HistoryEntry, into: HistoryEntry) = scope.launch {
-        coversLock.withLock { history.merge(entry.id, into.id) }
-        fillCovers()
+        try {
+            coversLock.withLock { history.merge(entry.id, into.id) }
+            fillCovers()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "No se pudo unir el historial", e)
+        }
     }
 
     override suspend fun finished(book: Book, finished: Boolean) {
@@ -138,7 +144,7 @@ class HistoryRecorder(
     }
 
     /** Borra todo el historial (Ajustes). */
-    fun clear() = scope.launch { history.clear() }
+    fun clear() = scope.launch { try { history.clear() } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { Log.w(TAG, "No se pudo borrar el historial", e) } }
 
     companion object {
         private const val TAG = "HistoryRecorder"

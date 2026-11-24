@@ -59,11 +59,14 @@ class PronunciationDictionary(rules: List<PronunciationRule>) {
     fun apply(text: String): MappedText {
         var current = MappedText.identity(text)
         for ((pattern, rule) in compiled) {
-            val m = pattern.matcher(current.text)
-            if (!m.find()) continue
             val src = current.text
+            // Una regla de usuario con backtracking exponencial no puede colgar la lectura: tiene un plazo.
+            val m = pattern.matcher(DeadlineText(src, System.nanoTime() + RULE_TIMEOUT_NS))
+            val found = try { m.find() } catch (e: RuleTimeout) { false }
+            if (!found) continue
             val b = MappedTextBuilderRaw(src.length + 16)
             var last = 0
+            var timedOut = false
             do {
                 val s = m.start()
                 val e = m.end()
@@ -74,7 +77,8 @@ class PronunciationDictionary(rules: List<PronunciationRule>) {
                 val z = current.toSource[e - 1] + 1
                 b.spread(repl, a, z)
                 last = e
-            } while (m.find())
+            } while (try { m.find() } catch (e: RuleTimeout) { timedOut = true; false })
+            if (timedOut) continue // regla descartada: el resultado parcial no se usa
             for (k in last until src.length) b.push(src[k], current.toSource[k])
             current = b.build()
         }
@@ -140,4 +144,20 @@ class PronunciationDictionary(rules: List<PronunciationRule>) {
         /** Diccionario sin reglas. */
         val EMPTY = PronunciationDictionary(emptyList())
     }
+}
+
+private const val RULE_TIMEOUT_NS = 300_000_000L
+
+private class RuleTimeout : RuntimeException(null, null, false, false)
+
+/** Texto que lanza [RuleTimeout] si el motor de expresiones tarda demasiado en recorrerlo. */
+private class DeadlineText(private val s: String, private val deadline: Long) : CharSequence {
+    private var reads = 0
+    override val length: Int get() = s.length
+    override fun get(index: Int): Char {
+        if (++reads and 0x3FF == 0 && System.nanoTime() > deadline) throw RuleTimeout()
+        return s[index]
+    }
+    override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = s.substring(startIndex, endIndex)
+    override fun toString(): String = s
 }

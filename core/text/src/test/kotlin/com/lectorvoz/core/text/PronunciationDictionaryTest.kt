@@ -13,6 +13,18 @@ class PronunciationDictionaryTest {
     }
 
     @Test
+    fun reglaCatastroficaSeDescartaSinColgarse() {
+        val text = "a".repeat(60) + "c y Tolkien"
+        val d = PronunciationDictionary(
+            listOf(PronunciationRule("(a+)+b", "x", isRegex = true), PronunciationRule("Tolkien", "Tolkin")),
+        )
+        val t0 = System.nanoTime()
+        val r = d.apply(text)
+        assertThat((System.nanoTime() - t0) / 1_000_000).isLessThan(5_000)
+        assertThat(r.text).endsWith("c y Tolkin") // la regla mala se ignora, la buena se aplica
+    }
+
+    @Test
     fun reglaSensibleAMayusculas() {
         val d = PronunciationDictionary(listOf(PronunciationRule("US", "uve ese", caseSensitive = true)))
         assertThat(d.apply("US y us").text).isEqualTo("uve ese y us")

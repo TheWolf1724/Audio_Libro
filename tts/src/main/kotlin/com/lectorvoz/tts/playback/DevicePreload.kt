@@ -30,7 +30,7 @@ class DevicePreload(context: Context, private val hub: PlaybackHub? = null) {
         lowRam = am?.isLowRamDevice == true
     }
 
-    @Volatile private var checkedAt = Long.MIN_VALUE
+    @Volatile private var checkedAt = -RECHECK_MS
     @Volatile private var powerSave = false
     @Volatile private var thermal = -1
     @Volatile private var last: PreloadPolicy? = null

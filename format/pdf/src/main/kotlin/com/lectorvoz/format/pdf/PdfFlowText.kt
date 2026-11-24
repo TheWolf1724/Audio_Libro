@@ -31,7 +31,7 @@ class PdfFlowText(
 
     /** Fin (exclusivo) en pdfium de un rango que acaba en [endExclusive] del texto fluido. */
     fun sourceEnd(endExclusive: Int): Int {
-        if (endExclusive <= 0) return sourceStart(0)
+        if (endExclusive <= 0 || map.isEmpty()) return sourceStart(0)
         return map[(endExclusive - 1).coerceAtMost(map.size - 1)] + 1
     }
 

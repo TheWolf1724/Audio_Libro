@@ -92,7 +92,7 @@ internal object PackageParser {
             } catch (e: EpubException.UnsafePath) {
                 continue
             }
-            val props = item.attr("properties").split(' ').filter { it.isNotBlank() }.toSet()
+            val props = item.attr("properties").split(Regex("\\s+")).filter { it.isNotBlank() }.toSet()
             manifest.putIfAbsent(id, ManifestItem(id, path, item.attr("media-type").trim().lowercase(), props))
         }
         val spineEl = pkg.byLocalName("spine").firstOrNull()
@@ -120,7 +120,7 @@ internal object PackageParser {
         }
         // Portada: EPUB3 properties="cover-image"; EPUB2 <meta name="cover" content="id">.
         val cover = manifest.values.firstOrNull { "cover-image" in it.properties }
-            ?: md.byLocalName("meta").firstOrNull { it.attr("name") == "cover" }?.attr("content")?.trim()?.let { c ->
+            ?: md.byLocalName("meta").firstOrNull { it.attr("name") == "cover" }?.attr("content")?.trim()?.takeIf { it.isNotEmpty() }?.let { c ->
                 manifest[c] ?: manifest.values.firstOrNull { it.path.endsWith(c) && it.mediaType.startsWith("image/") }
             }
             ?: manifest.values.firstOrNull {
