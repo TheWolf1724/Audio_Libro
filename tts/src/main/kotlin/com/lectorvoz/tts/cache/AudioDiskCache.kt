@@ -113,6 +113,9 @@ class AudioDiskCache(
     /** Bytes ocupados en disco. */
     fun sizeBytes(): Long = synchronized(lock) { ensureTotal(); totalBytes }
 
+    /** Bytes de audio guardados de [bookId] (para la pantalla de almacenamiento). */
+    fun bookSizeBytes(bookId: String): Long = synchronized(lock) { File(root, hashHex(bookId)).treeSizeBytes() }
+
     /** Borra el audio guardado del libro [bookId] (terminado o quitado de la biblioteca). */
     fun removeBook(bookId: String) = synchronized(lock) {
         val dir = File(root, hashHex(bookId))

@@ -39,4 +39,13 @@ class SearchTest {
         val j = "​"
         assertThat(findMatches("P${j}a${j}r${j}a los", "para los")).hasSize(1)
     }
+
+    @Test
+    fun soloLosSaltosLejanosOfrecenVolver() {
+        val aqui = com.lectorvoz.core.model.Locator(3, 100)
+        // Mismo capitulo y cerca: no es un salto. Otro capitulo o muy lejos: si.
+        assertThat(isFarJump(aqui, com.lectorvoz.core.model.Locator(3, 900))).isFalse()
+        assertThat(isFarJump(aqui, com.lectorvoz.core.model.Locator(3, 5_000))).isTrue()
+        assertThat(isFarJump(aqui, com.lectorvoz.core.model.Locator(4, 100))).isTrue()
+    }
 }

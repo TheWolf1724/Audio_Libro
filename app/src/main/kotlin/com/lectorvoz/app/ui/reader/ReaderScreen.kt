@@ -151,6 +151,15 @@ fun ReaderScreen(
         vm.consumeMessage()
     }
 
+    // Tras un salto (deslizador, indice, busqueda, marcador) se ofrece volver a donde se estaba.
+    val jumpOffer = state.jumpOffer
+    LaunchedEffect(jumpOffer) {
+        if (jumpOffer > 0) {
+            val r = snackbar.showSnackbar("Has saltado a otra parte del libro", actionLabel = "Volver", duration = androidx.compose.material3.SnackbarDuration.Long)
+            if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) vm.jumpBack()
+        }
+    }
+
     Box(
         Modifier.fillMaxSize().background(com.lectorvoz.app.ui.theme.LocalReadingColors.current.background)
             .pointerInput(Unit) {

@@ -70,6 +70,8 @@ data class ReaderUiState(
     val loading: Boolean = true,
     val error: String? = null,
     val passwordPrompt: PasswordPrompt? = null,
+    /** Sube con cada salto explicito (deslizador, indice, busqueda, marcador): la pantalla ofrece "Volver". */
+    val jumpOffer: Int = 0,
     /** Ritmo real de escucha del usuario (car/s) segun sus estadisticas, para estimar cuando la voz no suena. */
     val learnedCps: Float? = null,
     val book: Book? = null,
@@ -348,8 +350,27 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
      * cuestion de segundos (el deslizador parecia roto durante la escucha).
      */
     private fun navigateTo(loc: Locator) {
+        // Salto explicito: se recuerda de donde se venia para poder volver (snackbar "Volver").
+        val from = controller.currentLocator.value
+        if (isFarJump(from, loc)) {
+            synchronized(jumpStack) {
+                if (jumpStack.lastOrNull() != from) jumpStack.addLast(from)
+                while (jumpStack.size > MAX_JUMP_STACK) jumpStack.removeFirst()
+            }
+            _state.update { it.copy(jumpOffer = it.jumpOffer + 1) }
+        }
         controller.goTo(loc)
         if (_state.value.voiceOnThisBook) graph.playback.seekTo(loc)
+    }
+
+    /** Posiciones de las que se salto (la ultima arriba): "volver a donde estaba". */
+    private val jumpStack = ArrayDeque<Locator>()
+
+    /** Vuelve a la posicion de la que se salto por ultima vez (sin registrar un salto nuevo). */
+    fun jumpBack() {
+        val to = synchronized(jumpStack) { jumpStack.removeLastOrNull() } ?: return
+        controller.goTo(to)
+        if (_state.value.voiceOnThisBook) graph.playback.seekTo(to)
     }
 
     /** Empieza a medir los capitulos (al tocar el deslizador de progreso). */
@@ -647,6 +668,9 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     }
 
     companion object {
+        /** Saltos que se recuerdan para "Volver". */
+        private const val MAX_JUMP_STACK = 8
+
         const val MAX_RESULTS = 300
 
         /** Retardo de la vista previa de los deslizadores de apariencia. */

@@ -33,6 +33,9 @@ import com.lectorvoz.app.ui.settings.DictionaryViewModel
 import com.lectorvoz.app.ui.settings.ExportScreen
 import com.lectorvoz.app.ui.settings.ExportViewModel
 import com.lectorvoz.app.ui.settings.PermissionsScreen
+import com.lectorvoz.app.ui.settings.StorageInspector
+import com.lectorvoz.app.ui.settings.StorageScreen
+import com.lectorvoz.app.ui.settings.StorageViewModel
 import com.lectorvoz.app.ui.settings.ReadingSettingsContent
 import com.lectorvoz.app.ui.settings.SettingsHome
 import com.lectorvoz.app.ui.settings.SettingsRoutes
@@ -104,6 +107,10 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
         }
         composable(Routes.SETTINGS) { SettingsHome(onNavigate = { nav.navigate(it) }, onBack = back) }
         composable(SettingsRoutes.PERMISSIONS) { PermissionsScreen(onBack = back) }
+        composable(SettingsRoutes.STORAGE) {
+            val vm: StorageViewModel = viewModel(factory = viewModelFactory { initializer { StorageViewModel(StorageInspector(graph.context, graph.library, graph.ocr)) } })
+            StorageScreen(vm, back)
+        }
         composable(SettingsRoutes.READING) {
             val vm = settingsVm(graph)
             val s by vm.state.collectAsStateWithLifecycle()

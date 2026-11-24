@@ -570,6 +570,15 @@ class OcrManager(
         scope.launch(Dispatchers.IO) { mutableStatus.value = mutableStatus.value.copy(storedBytes = store.sizeBytes()) }
     }
 
+    /** Bytes del texto reconocido guardado de [bookId] (pantalla de almacenamiento). */
+    suspend fun storedBytes(bookId: Long): Long = withContext(Dispatchers.IO) { store.sizeBytes(bookId) }
+
+    /** Borra el texto reconocido guardado de [bookId] (se volvera a reconocer si hace falta). */
+    suspend fun clearBook(bookId: Long) {
+        withContext(Dispatchers.IO) { store.deleteBook(bookId) }
+        refreshSize()
+    }
+
     /** Borra todo el texto reconocido guardado (Ajustes). */
     fun clearAll() {
         scope.launch(Dispatchers.IO) {

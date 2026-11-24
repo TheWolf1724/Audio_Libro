@@ -96,6 +96,7 @@ object SettingsRoutes {
     const val ABOUT = "ajustes/acerca"
     const val HISTORY = "ajustes/historial"
     const val PERMISSIONS = "ajustes/permisos"
+    const val STORAGE = "ajustes/almacenamiento"
 }
 
 /** Menu principal de ajustes. */
@@ -109,6 +110,7 @@ fun SettingsHome(onNavigate: (String) -> Unit, onBack: () -> Unit) {
         NavRow("Historial de lecturas", "Lo que has leido, con fechas de inicio y fin", R.drawable.ic_history, { onNavigate(SettingsRoutes.HISTORY) })
         NavRow("Estadisticas", "Tiempo leido y escuchado", R.drawable.ic_insights, { onNavigate(SettingsRoutes.STATS) })
         NavRow("Exportar audio", "Guardar un capitulo o el libro entero en audio", R.drawable.ic_download, { onNavigate(SettingsRoutes.EXPORT) })
+        NavRow("Almacenamiento", "Espacio que ocupa cada libro y como liberarlo", R.drawable.ic_storage, { onNavigate(SettingsRoutes.STORAGE) })
         NavRow("Permisos", "Notificaciones, instalar actualizaciones y bateria", R.drawable.ic_info, { onNavigate(SettingsRoutes.PERMISSIONS) })
         NavRow("Acerca de", "Version y licencias", R.drawable.ic_info, { onNavigate(SettingsRoutes.ABOUT) })
     }

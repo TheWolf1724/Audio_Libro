@@ -19,6 +19,13 @@ fun flattenToc(toc: List<TocEntry>, depth: Int = 0, out: MutableList<TocItem> = 
     return out
 }
 
+/**
+ * true si ir de [from] a [to] es un SALTO (otra pagina/capitulo, o muy lejos en el mismo): merece
+ * ofrecer "Volver". Pasar de pagina o moverse unas lineas no lo es.
+ */
+fun isFarJump(from: Locator, to: Locator, nearChars: Int = 1_500): Boolean =
+    from.chapter != to.chapter || kotlin.math.abs(from.offset - to.offset) > nearChars
+
 /** Resultado de busqueda en el libro. */
 @Immutable
 data class SearchHit(val range: LocatorRange, val excerpt: String)
