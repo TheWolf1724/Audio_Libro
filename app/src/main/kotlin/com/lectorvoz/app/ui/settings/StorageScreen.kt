@@ -18,7 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -156,7 +156,7 @@ private enum class Pending { AUDIO_ALL, OCR_ALL }
 fun StorageScreen(vm: StorageViewModel, onBack: () -> Unit) {
     val s by vm.state.collectAsStateWithLifecycle()
     val r = s.report
-    var pending by remember { mutableStateOf<Pending?>(null) }
+    var pending by rememberSaveable { mutableStateOf<Pending?>(null) }
     LaunchedEffect(Unit) { vm.refresh() }
     SettingsScaffold("Almacenamiento", onBack) {
         SectionHeader("Resumen")

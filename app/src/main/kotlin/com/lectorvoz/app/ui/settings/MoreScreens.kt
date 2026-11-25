@@ -534,7 +534,7 @@ fun AboutScreen(
             summary = "Guarda que frases lee la voz, para diagnosticar saltos. Activalo, reproduce la pagina y comparte el fichero.",
             tag = "app-diagnostico-lectura",
         )
-        var confirmShare by remember { mutableStateOf(false) }
+        var confirmShare by rememberSaveable { mutableStateOf(false) }
         Button(
             onClick = {
                 if (diagnosticsFile() == null) {
