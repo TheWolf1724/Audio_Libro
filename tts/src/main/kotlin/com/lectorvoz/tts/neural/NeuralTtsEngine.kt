@@ -844,7 +844,6 @@ class NeuralTtsEngine(
             val targetMs = prebufferTargetMs(rtf, policy().bufferAheadMs).let { if (first) it else minOf(it, FOLLOWUP_PREBUFFER_MS) }
             val needFrames = targetMs * sampleRate / 1000
             if (needFrames > 0) {
-                prebufferDone = true
                 val held = ArrayList<Chunk>()
                 var frames = 0L
                 val t0 = System.nanoTime()
@@ -863,6 +862,8 @@ class NeuralTtsEngine(
                         delay(PREBUFFER_POLL_MS)
                     }
                 }
+                // Solo se da por hecho si el colchon se junto sin cancelar (un salto durante el primero lo repite).
+                prebufferDone = true
                 if (TtsConfig.diagnostics) {
                     TtsConfig.diag("NEURAL prebuffer rtf=$rtf objetivo=${needFrames * 1000 / sampleRate}ms juntado=${frames * 1000 / sampleRate}ms espera=${(System.nanoTime() - t0) / 1_000_000}ms")
                 }

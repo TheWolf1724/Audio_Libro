@@ -323,7 +323,10 @@ fun LibraryScreen(
             onStats = { menuBookId = null; statsBookId = b.id },
         )
     }
-    bookById(statsBookId)?.let { b -> BookStatsDialog(b, actions.statsFor(b.id)) { statsBookId = null } }
+    bookById(statsBookId)?.let { b ->
+        val statsFlow = remember(b.id) { actions.statsFor(b.id) }
+        BookStatsDialog(b, statsFlow) { statsBookId = null }
+    }
     bookById(confirmDeleteId)?.let { b ->
         AlertDialog(
             onDismissRequest = { confirmDeleteId = null },
@@ -652,14 +655,14 @@ private fun NewCollectionDialog(onDismiss: () -> Unit, onCreate: (String, Boolea
 private fun BookStatsDialog(book: Book, flow: kotlinx.coroutines.flow.Flow<com.lectorvoz.core.data.stats.BookStats>, onDismiss: () -> Unit) {
     val s by flow.collectAsStateWithLifecycle(com.lectorvoz.core.data.stats.BookStats())
     val fmt = remember { java.text.SimpleDateFormat("d MMM yyyy", java.util.Locale.forLanguageTag("es-ES")) }
-    fun dur(ms: Long): String { val m = ms / 60_000; return if (m >= 60) "${m / 60} h ${m % 60} min" else "$m min" }
+    fun dur(ms: Long): String { val m = ms / 60_000; return if (m >= 60) "${m / 60} h ${m % 60} min" else if (m == 0L && ms > 0L) "menos de 1 min" else "$m min" }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Estadisticas") },
         text = {
             Column(Modifier.testTag("libro-estadisticas")) {
                 Text(book.title, style = MaterialTheme.typography.titleMedium)
-                Text("Progreso: ${(book.progress * 100).toInt()} %" + if (book.finished) " (terminado)" else "")
+                Text("Progreso: ${(book.progress * 100).roundToInt()} %" + if (book.finished) " (terminado)" else "")
                 Text("Tiempo leyendo: ${dur(s.readMs)}")
                 Text("Tiempo escuchando: ${dur(s.listenMs)}")
                 Text("Sesiones: ${s.sessions}")

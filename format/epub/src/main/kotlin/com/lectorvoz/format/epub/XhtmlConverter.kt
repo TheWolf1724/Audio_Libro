@@ -264,6 +264,13 @@ internal class XhtmlConverter(private val chapterPath: String) {
 
     // ------------------------------------------------------------------ listas y tablas
 
+    /** Oculto por atributo/estilo o salto de pagina impreso: no se muestra ni se lee. */
+    private fun isHidden(el: Element): Boolean {
+        val style = el.attr("style").lowercase()
+        if (el.hasAttr("hidden") || style.replace(" ", "").contains("display:none")) return true
+        return el.attr("epub:type").lowercase().contains("pagebreak") || el.attr("role") == "doc-pagebreak"
+    }
+
     private fun list(el: Element, level: Int, ordered: Boolean) {
         closeBlock()
         val saved = ctx
@@ -279,6 +286,7 @@ internal class XhtmlConverter(private val chapterPath: String) {
         for (child in el.childNodes()) {
             if (child is Element && child.localName() == "li") {
                 recordAnchor(child)
+                if (isHidden(child)) continue
                 child.attr("value").trim().toIntOrNull()?.let { counter = it }
                 closeBlock()
                 pendingMarker = if (ordered) orderedMarker(counter, type) else bullet

@@ -452,7 +452,7 @@ fun AboutScreen(
     SettingsScaffold("Acerca de", onBack) {
         Text("WolfReader ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(16.dp))
         Text(
-            "Lector de EPUB y PDF con voz natural local. Sin anuncios, sin cuentas y sin conexion.",
+            "Lector de EPUB y PDF con voz natural local. Sin anuncios y sin cuentas; solo usa internet para buscar actualizaciones.",
             style = MaterialTheme.typography.bodyLarge,
             modifier = Modifier.padding(horizontal = 16.dp),
         )

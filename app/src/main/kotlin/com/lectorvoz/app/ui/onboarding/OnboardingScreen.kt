@@ -42,7 +42,7 @@ fun OnboardingScreen(onDone: () -> Unit) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Lee tus libros en PDF y EPUB como un libro y escuchalos en voz alta, con la pantalla apagada. Todo funciona en tu dispositivo, sin cuentas ni conexion.",
+                "Lee tus libros en PDF y EPUB como un libro y escuchalos en voz alta, con la pantalla apagada. Todo funciona en tu dispositivo y sin cuentas; solo se conecta para buscar actualizaciones (puedes desactivarlo).",
                 style = MaterialTheme.typography.bodyMedium,
             )
             Spacer(Modifier.height(24.dp))

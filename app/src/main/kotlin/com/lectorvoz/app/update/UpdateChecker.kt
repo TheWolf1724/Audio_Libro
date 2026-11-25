@@ -85,7 +85,7 @@ class UpdateChecker(
         running = true
         scope.launch {
             var ok = false
-            try { ok = refresh(now) } finally {
+            try { ok = refresh(now) } catch (e: CancellationException) { manualWaiting = false; throw e } finally {
                 running = false
                 // Si el usuario pidio comprobar mientras esta seguia en vuelo, se le responde ya.
                 if (manualWaiting) { manualWaiting = false; mutableManual.value = manualResult(ok) }
@@ -119,7 +119,7 @@ class UpdateChecker(
     }
 
     /** Olvida el resultado de la ultima comprobacion manual (al salir de la pantalla). */
-    fun clearManual() { mutableManual.value = ManualResult.NONE }
+    fun clearManual() { manualWaiting = false; mutableManual.value = ManualResult.NONE }
 
     /**
      * Pide la ultima publicacion y guarda el resultado y el instante (con exito o con fallo, para
