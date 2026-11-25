@@ -401,6 +401,20 @@ class Revision3AppTest {
         assertThat(imports.running.value).isEqualTo(0)
     }
 
+    @Test
+    fun importarDeLaBibliotecaVaEnElAmbitoDeLaAppYDejaResumen() = runTest(UnconfinedTestDispatcher()) {
+        val library = FakeLibraryRepository()
+        library.results["content://x/mal.pdf"] = FakeLibraryRepository.failed("mal.pdf")
+        val imports = ImportCoordinator(backgroundScope, library)
+        imports.importLibrary(listOf(Uri.parse("content://x/uno.epub"), Uri.parse("content://x/mal.pdf")), copy = false)
+        assertThat(imports.running.value).isEqualTo(0)
+        assertThat(imports.message.value).contains("1 libro importado")
+        assertThat(imports.message.value).contains("mal.pdf")
+        assertThat(library.imported.map { it.second }).containsExactly(false, false)
+        imports.consumeMessage()
+        assertThat(imports.message.value).isNull()
+    }
+
     // ------------------------------------------------------------------ M5, B1, M6
 
     @Test
@@ -482,6 +496,30 @@ class Revision3AppTest {
         assertThat(files.created).containsExactly("01 - Primero.wav", "02 - Segundo.wav").inOrder()
         assertThat(playback.exported.map { it.second }).containsExactly(0, 1).inOrder()
         assertThat(m.state.value!!.result).contains("2 ficheros")
+    }
+
+    @Test
+    fun laEstimacionDeEspacioCrecaConElTextoYElFormato() {
+        val wav = ExportManager.requiredBytes(ExportManager.estimatePcmBytes(600_000, 1f), com.lectorvoz.tts.export.ExportFormat.WAV)
+        val m4a = ExportManager.requiredBytes(ExportManager.estimatePcmBytes(600_000, 1f), com.lectorvoz.tts.export.ExportFormat.M4A)
+        val corta = ExportManager.requiredBytes(ExportManager.estimatePcmBytes(6_000, 1f), com.lectorvoz.tts.export.ExportFormat.WAV)
+        assertThat(m4a).isGreaterThan(wav)
+        assertThat(wav).isGreaterThan(corta)
+        assertThat(ExportManager.requiredBytes(0L, com.lectorvoz.tts.export.ExportFormat.WAV)).isEqualTo(0L)
+        // Mas velocidad, menos audio.
+        assertThat(ExportManager.estimatePcmBytes(60_000, 2f)).isLessThan(ExportManager.estimatePcmBytes(60_000, 1f))
+    }
+
+    @Test
+    fun sinEspacioLaExportacionAvisaYNoEscribeNada() = runTest(UnconfinedTestDispatcher()) {
+        val playback = FakePlaybackPort()
+        val files = RecordingFiles()
+        val m = ExportManager(backgroundScope, playback, SharedBooks(BookOpener(context)), FakeSettingsRepository(), FakePronunciation(), files) { 1024L }
+        m.exportBook(epubBook(), Uri.parse("content://carpeta"))
+        waitUntil { m.state.value?.running == false }
+        assertThat(m.state.value!!.result).contains("espacio")
+        assertThat(playback.exported).isEmpty()
+        assertThat(files.created).isEmpty()
     }
 
     @Test

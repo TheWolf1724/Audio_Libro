@@ -147,4 +147,17 @@ class SettingsRepositoryTest {
         assertThat(a.librarySort).isEqualTo(LibrarySort.TITLE)
         assertThat(a.copyOnImport).isFalse()
     }
+
+    @Test
+    fun cambiarDeMotorOlvidaLaVozFijadaPorLibro() = runTest {
+        val repo = DataStoreSettingsRepository(store())
+        repo.updateOverrides(3) { it.copy(voiceId = "neural-x", speed = 1.2f) }
+        repo.updateVoice { it.copy(speed = 1.1f) }
+        assertThat(repo.overrides(3).first().voiceId).isEqualTo("neural-x")
+        val otro = if (repo.voice.first().engine == com.lectorvoz.core.model.TtsEngineType.SYSTEM) com.lectorvoz.core.model.TtsEngineType.NEURAL else com.lectorvoz.core.model.TtsEngineType.SYSTEM
+        repo.updateVoice { it.copy(engine = otro, voiceId = null) }
+        val o = repo.overrides(3).first()
+        assertThat(o.voiceId).isNull()
+        assertThat(o.speed).isEqualTo(1.2f)
+    }
 }

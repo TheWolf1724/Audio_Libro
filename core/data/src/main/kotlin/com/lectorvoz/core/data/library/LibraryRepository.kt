@@ -305,8 +305,12 @@ class RoomLibraryRepository(
 
     override suspend fun setFinished(id: Long, finished: Boolean) = dao.setFinishedAt(id, finished, if (finished) clock() else null)
 
-    override suspend fun rename(id: Long, title: String, authors: List<String>) =
-        dao.rename(id, title.trim(), authors.joinToString(NL) { it.trim() })
+    override suspend fun rename(id: Long, title: String, authors: List<String>) {
+        // Un titulo vacio dejaria el libro sin nombre en la biblioteca: se ignora el cambio.
+        val t = title.trim()
+        if (t.isEmpty()) return
+        dao.rename(id, t, authors.map { it.trim() }.filter { it.isNotEmpty() }.joinToString(NL))
+    }
 
     override suspend fun delete(id: Long) = withContext(io) {
         val book = transaction {

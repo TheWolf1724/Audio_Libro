@@ -90,6 +90,12 @@ class AudioDiskCache(
                 it.writeLong(k); it.writeLong(offset); it.writeInt(pcm.size); it.writeInt(sampleRate)
             }
         } catch (_: IOException) {
+            // Un fallo de disco puede dejar un registro de indice a medias: se descarta el indice en
+            // memoria para que la siguiente lectura lo repare (recorta al ultimo registro entero) en
+            // lugar de anadir registros desalineados detras del roto.
+            indexes.remove(base)
+            expectedPcmLen.remove(base)
+            totalBytes = -1
             return@synchronized
         }
         pcmFile.setLastModified(now())

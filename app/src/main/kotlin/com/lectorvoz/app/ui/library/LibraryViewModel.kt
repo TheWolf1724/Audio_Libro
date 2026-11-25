@@ -4,11 +4,11 @@ import android.net.Uri
 import androidx.compose.runtime.Immutable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.lectorvoz.app.books.ImportCoordinator
 import com.lectorvoz.core.data.collections.BookCollection
 import com.lectorvoz.core.data.collections.CollectionRepository
 import com.lectorvoz.core.data.library.Book
 import com.lectorvoz.core.data.library.ImportError
-import com.lectorvoz.core.data.library.ImportResult
 import com.lectorvoz.core.data.library.LibraryRepository
 import com.lectorvoz.core.data.settings.AppPrefs
 import com.lectorvoz.core.data.settings.LibrarySort
@@ -76,7 +76,11 @@ class LibraryViewModel(
     private val compute: CoroutineDispatcher = Dispatchers.Default,
     /** Estadisticas por libro (opcional: pruebas). */
     private val stats: com.lectorvoz.core.data.stats.ReadingStatsRepository? = null,
+    /** Importaciones en el ambito de la aplicacion; por defecto una propia de este ViewModel (pruebas). */
+    private val importsOrNull: ImportCoordinator? = null,
 ) : ViewModel() {
+    private val imports: ImportCoordinator = importsOrNull ?: ImportCoordinator(viewModelScope, library)
+
     fun statsFor(bookId: Long): kotlinx.coroutines.flow.Flow<com.lectorvoz.core.data.stats.BookStats> =
         stats?.forBook(bookId) ?: kotlinx.coroutines.flow.flowOf(com.lectorvoz.core.data.stats.BookStats())
 
@@ -87,7 +91,7 @@ class LibraryViewModel(
         library.continueReading,
         collections.collections,
         settings.app,
-        local,
+        combine(local, imports.running, imports.message) { l, running, msg -> l.copy(importing = running, message = l.message ?: msg) },
     ) { books, cont, cols, prefs, l -> build(books, cont, cols, prefs, l) }
         .flowOn(compute)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), LibraryUiState())
@@ -115,59 +119,24 @@ class LibraryViewModel(
 
     fun setGrid(grid: Boolean) = viewModelScope.launch { settings.updateApp { it.copy(libraryGrid = grid) } }
 
-    fun consumeMessage() = local.update { it.copy(message = null) }
-
-    /**
-     * Importa varios ficheros; al terminar deja un resumen en [LibraryUiState.message]. Cada
-     * fichero se envuelve por separado: si uno lanza, se cuenta como fallido y se sigue con los
-     * demas (el lote no se aborta), y el contador "importando" se baja SIEMPRE (el spinner no se
-     * queda colgado), tambien si la corrutina se cancela a mitad.
-     */
-    private val importJobs = HashSet<kotlinx.coroutines.Job>()
-
-    /** Cancela las importaciones en curso (los libros ya importados se quedan). */
-    fun cancelImport() {
-        val jobs = importJobs.toList()
-        jobs.forEach { it.cancel() }
-        if (jobs.isNotEmpty()) local.update { it.copy(message = "Importacion cancelada") }
+    fun consumeMessage() {
+        local.update { it.copy(message = null) }
+        imports.consumeMessage()
     }
 
+    /** Cancela las importaciones en curso (los libros ya importados se quedan). */
+    fun cancelImport() = imports.cancel()
+
+    /**
+     * Importa varios ficheros en el ambito de la aplicacion ([ImportCoordinator]): salir de la pantalla no los corta;
+     * al terminar deja un resumen en [LibraryUiState.message]. Un fichero que falla no aborta el lote.
+     */
     fun import(uris: List<Uri>) {
         if (uris.isEmpty()) return
-        val job = viewModelScope.launch {
-            local.update { it.copy(importing = it.importing + uris.size) }
-            var ok = 0
-            var dup = 0
-            var processed = 0
-            val failed = ArrayList<String>()
-            try {
-                val copy = settings.app.first().copyOnImport
-                for (u in uris) {
-                    try {
-                        when (val r = library.import(u, copy)) {
-                            is ImportResult.Imported -> ok++
-                            is ImportResult.Duplicate -> dup++
-                            is ImportResult.Failed -> failed += "${r.name}: ${errorText(r.error)}"
-                        }
-                    } catch (e: kotlinx.coroutines.CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        failed += "${u.lastPathSegment ?: u}: ${errorText(ImportError.UNREADABLE)}"
-                    } finally {
-                        processed++
-                        local.update { it.copy(importing = (it.importing - 1).coerceAtLeast(0)) }
-                    }
-                }
-                local.update { it.copy(message = importSummary(ok, dup, failed)) }
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                // Cancelado a mitad: baja el contador de los que quedaban (el actual ya lo bajo su finally).
-                val remaining = uris.size - processed
-                if (remaining > 0) local.update { it.copy(importing = (it.importing - remaining).coerceAtLeast(0)) }
-                throw e
-            }
+        viewModelScope.launch {
+            val copy = settings.app.first().copyOnImport
+            imports.importLibrary(uris, copy)
         }
-        importJobs += job
-        job.invokeOnCompletion { importJobs.remove(job) }
     }
 
     fun delete(book: Book) = viewModelScope.launch {

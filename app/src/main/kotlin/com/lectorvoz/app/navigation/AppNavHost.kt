@@ -90,7 +90,7 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
     val back: () -> Unit = { nav.safePopBackStack() }
     NavHost(navController = nav, startDestination = Routes.LIBRARY) {
         composable(Routes.LIBRARY) {
-            val vm: LibraryViewModel = viewModel(factory = viewModelFactory { initializer { LibraryViewModel(graph.library, graph.collections, graph.settings, onDelete = graph::deleteBook, stats = graph.stats) } })
+            val vm: LibraryViewModel = viewModel(factory = viewModelFactory { initializer { LibraryViewModel(graph.library, graph.collections, graph.settings, onDelete = graph::deleteBook, stats = graph.stats, importsOrNull = graph.imports) } })
             LibraryRoute(vm, graph.covers, onOpen = { nav.openReader(it.id) }, onSettings = { nav.navigate(Routes.SETTINGS) }, updates = graph.updates, installer = graph.installer.takeIf { graph.canSelfUpdate })
         }
         composable(Routes.READER, arguments = listOf(navArgument("libro") { type = NavType.LongType })) { entry ->

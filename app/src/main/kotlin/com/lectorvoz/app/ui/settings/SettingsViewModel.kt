@@ -178,7 +178,7 @@ class StatsViewModel(
             set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
         }.timeInMillis
         val last12 = (cal.clone() as java.util.Calendar).apply { add(java.util.Calendar.YEAR, -1) }.timeInMillis
-        val done = list.filter { it.finished }.mapNotNull { it.finishedAt }
+        val done = list.filter { it.finished }.mapNotNull { it.finishedAt ?: it.lastOpenedAt }
         done.count { it >= yearStart } to done.count { it >= last12 }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0 to 0)
 

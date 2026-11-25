@@ -130,6 +130,30 @@ class VoiceDownloaderTest {
     }
 
     @Test
+    fun sinEspacioAvisaAntesDeDescargarYNoDejaNada() = runTest {
+        val store = VoiceStore(MapAssets(emptyMap()), tmp.newFolder("voces"))
+        val v = voice(Sha256.of(archive))
+        val e = assertThrows(VoiceDownloadException::class.java) {
+            kotlinx.coroutines.runBlocking { VoiceDownloader(store, freeSpace = { 1024L }).install(v) }
+        }
+        assertThat(e.message).contains("espacio")
+        assertThat(ranges).isEmpty()
+        assertThat(store.isInstalled(v)).isFalse()
+        assertThat(store.root.resolve(".descargas").listFiles()!!.toList()).isEmpty()
+    }
+
+    @Test
+    fun laEstimacionDescuentaLoYaDescargado() {
+        val store = VoiceStore(MapAssets(emptyMap()), tmp.newFolder("voces"))
+        val d = VoiceDownloader(store)
+        val v = voice("0".repeat(64))
+        val full = d.requiredBytes(v, 0L)
+        val resumed = d.requiredBytes(v, archive.size.toLong() / 2)
+        assertThat(full).isGreaterThan(resumed)
+        assertThat(full).isGreaterThan(v.downloadBytes + v.installedBytes)
+    }
+
+    @Test
     fun limpiaElEspeakDeVersionesAnteriores() {
         val store = VoiceStore(MapAssets(emptyMap()), tmp.newFolder("voces"))
         store.root.resolve("espeak-ng-data/voices").mkdirs()

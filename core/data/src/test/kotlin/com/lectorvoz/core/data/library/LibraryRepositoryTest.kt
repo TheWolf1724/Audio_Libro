@@ -198,4 +198,15 @@ class LibraryRepositoryTest {
         assertThat(repo.get(book.id)!!.finishedAt).isEqualTo(1000L)
         assertThat(repo.continueReading.first()).isNull()
     }
+
+    @Test
+    fun renombrarIgnoraTituloVacioYAutoresEnBlanco() = runTest {
+        val book = (repo.import(uriFor(pdf("r.pdf"))) as ImportResult.Imported).book
+        repo.rename(book.id, "   ", listOf("X"))
+        assertThat(repo.get(book.id)!!.title).isEqualTo(book.title)
+        repo.rename(book.id, "  Nuevo ", listOf(" Ana ", "  ", "Luis"))
+        val b = repo.get(book.id)!!
+        assertThat(b.title).isEqualTo("Nuevo")
+        assertThat(b.authors).containsExactly("Ana", "Luis").inOrder()
+    }
 }

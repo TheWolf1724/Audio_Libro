@@ -187,6 +187,7 @@ class ExportManager(
     /** Exporta la parte [part] de [book] a [uri] (ACTION_CREATE_DOCUMENT) en [format]. */
     fun exportPart(book: Book, part: Int, uri: Uri, format: ExportFormat = ExportFormat.WAV) = runJob(book, wholeBook = false) { provider, parts, voice ->
         val p = parts.getOrNull(part) ?: return@runJob "Parte no valida"
+        spaceProblem(part, format)?.let { return@runJob "Error: $it." }
         _state.update { it?.copy(parts = 1, part = 0) }
         when (val r = exportOne(provider, part, uri, voice, format) { f -> _state.update { it?.copy(progress = f) } }) {
             is ExportOutcome.Done ->
@@ -214,6 +215,7 @@ class ExportManager(
             _state.update { it?.copy(part = i, progress = i.toFloat() / parts.size) }
             val name = ExportFiles.safeName("%02d - %s.${format.extension}".format(java.util.Locale.ROOT, i + 1, p.title))
             if (files.existsComplete(tree, name)) { skipped++; continue }
+            spaceProblem(i, format)?.let { return@runJob "Error en \"${p.title}\": $it. Exportadas $done partes." }
             val uri = files.create(tree, name, format.mime) ?: return@runJob "Error: no se pudo crear $name"
             when (val r = exportOne(provider, i, uri, voice, format) { f -> _state.update { it?.copy(progress = (i + (f ?: 0f)) / parts.size) } }) {
                 is ExportOutcome.Done -> if (r.durationMs <= 0L) files.delete(uri) else { files.markDone(tree, name); done++; totalMs += r.durationMs }
@@ -244,6 +246,22 @@ class ExportManager(
 
     @Volatile private var pauseReason: String? = null
 
+    /** Estimador del audio temporal (PCM) de una parte de la exportacion en curso. */
+    @Volatile private var pcmEstimate: suspend (Int) -> Long? = { null }
+
+    /**
+     * Mensaje si en el almacenamiento temporal no cabe la parte [i] en [format] (con margen); nulo si cabe o no se puede
+     * estimar. Solo se comprueba lo que se va a escribir ahora: las partes que si caben se exportan.
+     */
+    private suspend fun spaceProblem(i: Int, format: ExportFormat): String? {
+        val pcm = pcmEstimate(i) ?: return null
+        val need = requiredBytes(pcm, format)
+        val free = freeSpace()
+        if (free >= need) return null
+        Log.w(TAG, "Espacio insuficiente para la parte $i (${format.extension}): necesita ${need / (1024 * 1024)} MB, libre ${free / (1024 * 1024)} MB")
+        return "queda poco espacio libre en el movil: esta parte necesita unos ${mb(need)} MB temporales y hay ${mb(free)} MB. Libera espacio y vuelve a pulsar (se saltan las partes ya hechas)"
+    }
+
     /** Olvida el resultado de la ultima exportacion. */
     fun clearResult() {
         if (_state.value?.running != true) _state.value = null
@@ -266,17 +284,15 @@ class ExportManager(
         _state.value = ExportJobState(book.id, book.title, wholeBook = wholeBook)
         job = scope.launch {
             val result = try {
-                val free = freeSpace()
-                if (free < MIN_FREE_BYTES) {
-                    _state.update { it?.copy(running = false, progress = null, result = "Error: queda poco espacio libre en el movil (${free / (1024 * 1024)} MB). Libera al menos ${MIN_FREE_BYTES / (1024 * 1024)} MB y vuelve a intentarlo.") }
-                    return@launch
-                }
                 val voice = settings.voiceFor(book.id).first()
                 val dict = pronunciation.effective(book.id).first()
                 val lease = books.acquire(book, voice.skipPdfHeadersFooters)
                 try {
                     val parts = partsOf(book, lease.opened)
                     val inner = UtteranceProviderImpl(lease.opened.content, voice, dict, lease.opened.toc)
+                    // La estimacion se calcula parte a parte, justo antes de exportarla (no se analiza todo el libro al empezar).
+                    pcmEstimate = { i -> parts.getOrNull(i)?.let { p -> estimatePcmBytes(p.chapters.sumOf { inner.chapterLength(it) ?: 0 }, voice.speed) } }
+                    Log.i(TAG, "Exportacion de ${book.id}: ${parts.size} partes, libre ${freeSpace() / (1024 * 1024)} MB")
                     body(GroupedProvider(inner, parts.map { it.chapters }), parts, voice)
                 } finally {
                     lease.release()
@@ -297,8 +313,35 @@ class ExportManager(
     companion object {
         private const val TAG = "ExportManager"
 
-        /** Margen minimo para el audio temporal de una parte (PCM) mas su codificacion. */
-        const val MIN_FREE_BYTES = 300L * 1024 * 1024
+        /** Margen fijo pequeno por encima de la estimacion (ficheros del sistema, cache viva). */
+        const val BASE_MARGIN_BYTES = 48L * 1024 * 1024
+
+        /** Caracteres leidos por segundo a velocidad 1 (cota baja: sobreestima la duracion y por tanto el espacio). */
+        private const val CHARS_PER_SECOND = 12.0
+
+        /** Bytes de PCM por segundo en el peor caso (16 bits mono a 44,1 kHz). */
+        private const val PCM_BYTES_PER_SECOND = 44_100L * 2
+
+        /** Bytes por segundo del M4A (64 kbps). */
+        private const val M4A_BYTES_PER_SECOND = 8_000L
+
+        private const val MARGIN_FACTOR = 1.25
+
+        private fun mb(bytes: Long) = (bytes + 1024 * 1024 - 1) / (1024 * 1024)
+
+        /** PCM temporal estimado para [chars] caracteres a velocidad [speed]; 0 si no se conoce el tamano. */
+        fun estimatePcmBytes(chars: Int, speed: Float): Long {
+            if (chars <= 0) return 0L
+            val seconds = chars / (CHARS_PER_SECOND * speed.coerceIn(0.5f, 3f))
+            return (seconds * PCM_BYTES_PER_SECOND).toLong()
+        }
+
+        /** Espacio libre necesario para exportar una parte con [pcm] bytes de audio sin comprimir, con margen. */
+        fun requiredBytes(pcm: Long, format: ExportFormat): Long {
+            if (pcm <= 0L) return 0L
+            val extra = if (format == ExportFormat.M4A) pcm / PCM_BYTES_PER_SECOND * M4A_BYTES_PER_SECOND else 0L
+            return ((pcm + extra) * MARGIN_FACTOR).toLong() + BASE_MARGIN_BYTES
+        }
 
         /** Paginas por fichero en un PDF sin indice. */
         const val PDF_PAGES_PER_PART = 20

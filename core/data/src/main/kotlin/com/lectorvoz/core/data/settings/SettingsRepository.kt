@@ -194,7 +194,17 @@ class DataStoreSettingsRepository(
     }
 
     override suspend fun updateVoice(transform: (VoiceSettings) -> VoiceSettings) {
-        safeEdit { p -> writeVoice(p, SettingsRanges.sanitize(transform(readVoice(p)))) }
+        safeEdit { p ->
+            val old = readVoice(p)
+            val new = SettingsRanges.sanitize(transform(old))
+            writeVoice(p, new)
+            // La voz fijada por libro pertenece a un motor: al cambiar de motor ya no existe (un id
+            // neuronal no es una voz del sistema) y haria sonar una voz equivocada o la de por defecto.
+            if (new.engine != old.engine) {
+                p.asMap().keys.filter { it.name.startsWith("libro.") && it.name.endsWith(".voz") }
+                    .forEach { p.remove(it) }
+            }
+        }
     }
 
     override suspend fun updateApp(transform: (AppPrefs) -> AppPrefs) {

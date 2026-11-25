@@ -1,5 +1,6 @@
 package com.lectorvoz.tts.voice
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
@@ -31,7 +32,19 @@ class VoiceDownloader(
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val connectTimeoutMs: Int = 15_000,
     private val readTimeoutMs: Int = 30_000,
+    /** Espacio libre (bytes) en el volumen de [File]. */
+    private val freeSpace: (File) -> Long = { runCatching { it.usableSpace }.getOrDefault(Long.MAX_VALUE) },
 ) {
+    /**
+     * Espacio que hace falta para instalar [voice] teniendo ya [alreadyDownloaded] bytes del `.part`: lo que falta por
+     * bajar mas lo descomprimido (el comprimido y la carpeta temporal conviven hasta el final), con margen.
+     */
+    internal fun requiredBytes(voice: VoiceInfo, alreadyDownloaded: Long): Long {
+        val toDownload = (voice.downloadBytes - alreadyDownloaded).coerceAtLeast(0L)
+        val raw = toDownload + voice.installedBytes
+        return raw + raw / 10 + SPACE_MARGIN
+    }
+
     /** Instala [voice]; [onProgress] se llama desde el hilo de E/S. Idempotente. */
     suspend fun install(voice: VoiceInfo, onProgress: (DownloadProgress) -> Unit = {}) = withContext(io) {
         val source = voice.source as? VoiceSource.Download
@@ -39,6 +52,13 @@ class VoiceDownloader(
         if (store.isInstalled(voice)) return@withContext
         val downloads = File(store.root, DOWNLOAD_DIR).apply { mkdirs() }
         val part = File(downloads, "${voice.id}.tar.bz2.part")
+        val need = requiredBytes(voice, if (part.isFile) part.length() else 0L)
+        val free = freeSpace(downloads)
+        if (free < need) {
+            val mb = { b: Long -> (b + 1024 * 1024 - 1) / (1024 * 1024) }
+            Log.w("VoiceDownloader", "Espacio insuficiente para ${voice.id}: necesita ${mb(need)} MB, libre ${mb(free)} MB")
+            throw VoiceDownloadException("No hay espacio suficiente para instalar la voz: necesita unos ${mb(need)} MB libres y hay ${mb(free)} MB. Libera espacio y vuelve a intentarlo.")
+        }
         download(source.url, part, voice.downloadBytes, onProgress)
         if (!Sha256.matches(part, source.sha256)) {
             part.delete()
@@ -137,6 +157,7 @@ class VoiceDownloader(
 
     private companion object {
         const val DOWNLOAD_DIR = ".descargas"
+        const val SPACE_MARGIN = 32L * 1024 * 1024
         const val REPORT_EVERY = 256L * 1024
     }
 }
