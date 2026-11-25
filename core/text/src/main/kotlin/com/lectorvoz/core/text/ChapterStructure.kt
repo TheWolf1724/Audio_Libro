@@ -71,6 +71,11 @@ internal class ChapterStructure(
             val n = text.length
             for (i in 0..n) {
                 if (i == n || text[i] == '\n' || text[i] == '\r') {
+                    // El '\n' de un "\r\n" no abre una linea en blanco (no es fin de estrofa).
+                    if (i < n && text[i] == '\n' && i > 0 && text[i - 1] == '\r' && i == s) {
+                        s = i + 1
+                        continue
+                    }
                     val before = paras.size
                     addLine(text, s, i, paras, null)
                     if (paras.size == before && paras.isNotEmpty() && isBlank(text, s, i)) paras.last().stanzaEnd = true

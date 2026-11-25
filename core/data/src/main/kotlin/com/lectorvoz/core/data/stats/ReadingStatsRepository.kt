@@ -166,7 +166,11 @@ class RoomReadingStatsRepository(
 
     override suspend fun record(bookId: Long, kind: SessionKind, startedAt: Long, durationMs: Long, chars: Long) {
         if (durationMs < ReadingStatsRepository.MIN_SESSION_MS) return
-        sessions.insert(ReadingSessionEntity(bookId = bookId, kind = kind.name, startedAt = startedAt, durationMs = durationMs, chars = chars.coerceAtLeast(0)))
+        // Un salto (deslizador, indice) no es lectura: sin tope, 5 min de lectura con un salto de 200 000
+        // caracteres daban un "ritmo de lectura" de decenas de miles de car/min. Se acota a un ritmo
+        // imposible de superar leyendo o escuchando (150 car/s = 9 000 car/min, ~1 500 palabras/min).
+        val plausible = durationMs * MAX_CHARS_PER_SEC / 1000
+        sessions.insert(ReadingSessionEntity(bookId = bookId, kind = kind.name, startedAt = startedAt, durationMs = durationMs, chars = chars.coerceIn(0, plausible)))
     }
 
     override suspend fun clear() = sessions.clear()
@@ -175,5 +179,6 @@ class RoomReadingStatsRepository(
         const val DAY_MS = 24L * 60 * 60 * 1000
         const val STREAK_LOOKBACK_DAYS = 120
         const val STREAK_MIN_MS = 60_000L
+        const val MAX_CHARS_PER_SEC = 150L
     }
 }

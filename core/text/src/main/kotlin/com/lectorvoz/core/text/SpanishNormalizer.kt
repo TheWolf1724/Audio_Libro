@@ -125,12 +125,18 @@ class SpanishNormalizer(
             val prev = prevWord
             val prevLower = prev?.lowercase()
             if (prevLower != null && prevLower in ROMAN_CONTEXT) {
+                // "piso C", "apartado D", "planta L": en estos contextos nunca hay 50/100/500/1000,
+                // es la letra de la puerta o del apartado ("piso cien" estaba mal).
+                if (w.length == 1 && w[0] in "CDLM" && prevLower in LETTER_LABEL_CONTEXT) return false
                 out.replace(SpanishNumbers.cardinal(value.toLong()), i, e)
                 return true
             }
             if (capsSentence) return false
             val next = nextWordStart(e)?.let { readWord(it) }
             if (prev != null && isNameLike(prev) && value <= 60) {
+                // Inicial suelta tras un nombre ("Jorge L. Borges", "Edgar M. Poe"): ningun rey ni papa
+                // es L, C, D ni M; se deja como letra en vez de leerla "cincuenta".
+                if (w.length == 1 && w[0] in "CDLM") return false
                 if (w in AMBIGUOUS_ROMAN && next != null && next.length > 1 && next.all { !it.isLowerCase() }) return false
                 val g = if (isFeminineName(prev)) Gender.FEMININE else Gender.MASCULINE
                 val words = if (value <= 10) SpanishNumbers.ordinal(value, g) else SpanishNumbers.cardinal(value.toLong(), g)
@@ -416,7 +422,8 @@ class SpanishNormalizer(
         }
 
         private fun fraction(num: Long, den: Long): String {
-            val name = FRACTION_NAMES[den.toInt().takeIf { den in 2..10 } ?: 0]
+            // Solo una fraccion propia ("3/4"); "24/7", "12/5" o "10/10" no son "veinticuatro septimos".
+            val name = if (num < den) FRACTION_NAMES[den.toInt().takeIf { den in 2..10 } ?: 0] else null
             return if (name != null) {
                 SpanishNumbers.cardinal(num, Gender.MASCULINE, true) + " " + (if (num == 1L) name else name + "s")
             } else {
@@ -755,6 +762,12 @@ class SpanishNormalizer(
             "articulo", "apartado", "sección", "seccion", "fase", "lección", "leccion", "tema",
             "anexo", "apéndice", "jornada", "cuaderno", "milenio", "dinastía", "legislatura",
             "olimpiada", "edición", "edicion",
+        )
+
+        /** Contextos donde una C, D, L o M suelta es una letra de etiqueta y no un romano (100, 500, 50, 1000). */
+        private val LETTER_LABEL_CONTEXT = hashSetOf(
+            "nivel", "niveles", "rango", "piso", "planta", "temporada", "grado", "tema", "parte", "acto", "escena",
+            "apartado", "sección", "seccion", "fase", "anexo", "apéndice", "jornada", "cuaderno",
         )
 
         /** Romanos que tambien son palabras corrientes. */

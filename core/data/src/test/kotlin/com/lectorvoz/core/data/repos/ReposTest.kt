@@ -121,6 +121,17 @@ class ReposTest {
     }
 
     @Test
+    fun unSaltoNoInflaElRitmoDeLectura() = runTest {
+        val id = libro("salto")
+        val now = 10L * 24 * 3600 * 1000 + 12L * 3600 * 1000
+        val repo = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = { TimeZone.getTimeZone("UTC") })
+        // 2 minutos de lectura con un salto de 200 000 caracteres: se acota a 150 car/s (18 000).
+        repo.record(id, SessionKind.READ, now - 1000, 120_000, 200_000)
+        assertThat(repo.summary.first().readChars).isEqualTo(18_000)
+        assertThat(repo.summary.first().readCharsPerMinute).isEqualTo(9_000)
+    }
+
+    @Test
     fun rachaDeDiasSeguidosCuentaHastaHoyOHastaAyer() = runTest {
         val id = libro("racha")
         val dia = 24L * 3600 * 1000
