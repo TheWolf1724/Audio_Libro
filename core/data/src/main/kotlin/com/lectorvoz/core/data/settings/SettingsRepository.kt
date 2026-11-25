@@ -123,7 +123,10 @@ interface SettingsRepository {
         combine(reader, overrides(bookId), app) { g, o, a -> enforceAccessibility(o.applyTo(g), a) }.distinctUntilChanged()
 
     /** Los ajustes de accesibilidad activos mandan sobre los valores propios del libro. */
-    private fun enforceAccessibility(r: ReaderSettings, a: AppPrefs): ReaderSettings {
+    fun enforceAccessibility(r: ReaderSettings, a: AppPrefs): ReaderSettings = Accessibility.enforce(r, a)
+
+    object Accessibility {
+    fun enforce(r: ReaderSettings, a: AppPrefs): ReaderSettings {
         var out = r
         // Se aplican al LEER, sin tocar lo guardado: al apagarlos vuelven los valores del usuario.
         if (a.largeText) out = out.copy(fontSizeSp = maxOf(out.fontSizeSp, 24f), lineSpacing = maxOf(out.lineSpacing, 1.6f), marginHorizontalDp = minOf(out.marginHorizontalDp, 16), fontWeight = maxOf(out.fontWeight, 450))
@@ -132,6 +135,7 @@ interface SettingsRepository {
             out = out.copy(pageAnimation = PageAnimation.FADE, pageAnimationMillis = minOf(out.pageAnimationMillis, 150))
         }
         return SettingsRanges.sanitize(out)
+    }
     }
 
     /** Ajustes de voz efectivos para [bookId]. */

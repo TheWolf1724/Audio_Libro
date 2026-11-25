@@ -272,13 +272,16 @@ class SpanishNormalizer(
                 val fem = suf == "ª" || suf == "a" || suf == "as" || suf == "ra"
                 val plural = suf.endsWith("s")
                 // Grados escritos con "º" pegado ("90º", "25º"): no es un ordinal.
-                if (suf == "º" && !mOrdinal.group().startsWith(".") && value > 20) {
+                if (suf == "º" && !mOrdinal.group().startsWith(".") && value > 20 &&
+                    nextWordStart(mOrdinal.end())?.let { readWord(it) }.let { w -> w == null || !w[0].isLowerCase() || w.lowercase() in FUNCTION_WORDS }
+                ) {
                     out.replace(SpanishNumbers.cardinal(value) + " grados", start, mOrdinal.end())
                     return mOrdinal.end()
                 }
                 // Apocope ante un sustantivo masculino: "el 3.º piso" -> "tercer piso", pero "el 1.º de mayo" no.
                 val nextW = nextWordStart(mOrdinal.end())?.let { readWord(it) }
-                val apoc = suf == "er" || (!fem && !plural && nextW != null && nextW[0].isLowerCase() && nextW.lowercase() !in FUNCTION_WORDS)
+                val apoc = suf == "er" || (!fem && !plural && nextW != null && nextW[0].isLowerCase() &&
+                    nextW.lowercase() !in FUNCTION_WORDS && nextW.lowercase() !in POSTPOSED_WORDS)
                 val words = SpanishNumbers.ordinal(
                     value.toInt(),
                     if (fem) Gender.FEMININE else Gender.MASCULINE,
@@ -778,6 +781,9 @@ class SpanishNormalizer(
             "isabel", "leonor", "beatriz", "inés", "mercedes", "carmen", "pilar", "consuelo",
             "dolores", "raquel", "ester", "rut", "abigail",
         )
+
+        /** Palabras que siguen a un ordinal sin ser su sustantivo ("piso 3.º derecha"): sin apocope. */
+        private val POSTPOSED_WORDS = hashSetOf("izquierda", "derecha", "izq", "dcha", "exterior", "interior", "centro", "izquierdo", "derecho", "A", "B", "C", "D")
 
         private val FUNCTION_WORDS = hashSetOf(
             "de", "del", "por", "y", "e", "o", "u", "a", "al", "en", "con", "sin", "que", "coma",

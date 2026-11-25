@@ -114,7 +114,8 @@ class PdfContent(
     /** Alto conocido de la pagina en modo scroll (null si aun no se sabe su tamano). */
     fun knownScrollHeight(page: Int, width: Int): Int? {
         val s = sizes.getOrNull(page) ?: return null
-        return (s.height * width / s.width.coerceAtLeast(1f)).roundToInt().coerceAtLeast(1)
+        // Mismo tope que el bitmap (bitmapSize): la vista no reserva mas alto del que se dibuja.
+        return (s.height * width / s.width.coerceAtLeast(1f)).roundToInt().coerceIn(1, MAX_SCROLL_HEIGHT)
     }
 
     override suspend fun render(key: PageKey, bitmap: Bitmap, highlights: Highlights, footer: String?) {

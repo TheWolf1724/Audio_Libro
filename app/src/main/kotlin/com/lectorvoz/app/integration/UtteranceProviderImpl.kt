@@ -135,6 +135,7 @@ class UtteranceProviderImpl(
         builder = UtteranceBuilder(dictionary = dictionaryOf(entries))
         generation++
         cache.clear()
+        synchronized(lengths) { lengths.clear() } // el texto (p. ej. cabeceras de PDF) pudo cambiar de longitud
         true
     }
 

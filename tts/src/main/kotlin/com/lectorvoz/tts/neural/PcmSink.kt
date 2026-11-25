@@ -78,8 +78,13 @@ class AudioTrackSink(
             .setBufferSizeInBytes(maxOf(minBytes, wantBytes))
             .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_POWER_SAVING)
             .build()
-        t.setVolume(volume)
-        t.play()
+        try {
+            t.setVolume(volume)
+            t.play()
+        } catch (e: Throwable) {
+            t.release() // no dejar la pista sin liberar si falla al arrancar
+            throw e
+        }
         track = t
     }
 

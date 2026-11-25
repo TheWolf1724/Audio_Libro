@@ -251,7 +251,8 @@ fun VoiceSettingsContent(
         color = if (testMessage != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
         modifier = Modifier.padding(horizontal = 16.dp),
     )
-    ChoiceRow(
+    // Solo la voz natural usa una segunda voz para los dialogos.
+    if (v.engine == TtsEngineType.NEURAL) ChoiceRow(
         "Voz de los dialogos",
         listOf<String?>(null) + neural.map { it.id },
         v.dialogVoiceId,

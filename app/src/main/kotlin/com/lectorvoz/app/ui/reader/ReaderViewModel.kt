@@ -81,6 +81,8 @@ data class ReaderUiState(
     val learnedCps: Float? = null,
     val book: Book? = null,
     val settings: ReaderSettings = ReaderSettings(),
+    /** Aviso de que Accesibilidad (texto grande, dislexia, reducir movimiento) fija parte de la apariencia; nulo si no. */
+    val accessibilityNote: String? = null,
     val voice: VoiceSettings = VoiceSettings(),
     val overrides: BookOverrides = BookOverrides.NONE,
     val pageInfo: PageInfo = PageInfo(),
@@ -147,6 +149,7 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
     /** Longitudes de capitulo para el deslizador de progreso (EPUB; se calculan al usarlo). */
     private val chapterLengths = HashMap<Int, Int>()
     private var lengthsJob: Job? = null
+    private var appPrefs = com.lectorvoz.core.data.settings.AppPrefs()
 
     /** Ajustes en vista previa (deslizadores): se aplican con retardo y sin guardar. */
     private val previewSettings = MutableStateFlow<ReaderSettings?>(null)
@@ -240,6 +243,17 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
                 previewSettings.value = null
                 controller.setSettings(s)
                 _state.update { it.copy(settings = s) }
+            }
+        }
+        viewModelScope.launch {
+            graph.settings.app.collect { a ->
+                appPrefs = a
+                val forced = buildList {
+                    if (a.largeText) add("Texto grande")
+                    if (a.dyslexiaFont) add("Fuente para dislexia")
+                    if (a.reduceMotion) add("Reducir movimiento")
+                }
+                _state.update { it.copy(accessibilityNote = if (forced.isEmpty()) null else "${forced.joinToString(", ")} (Accesibilidad) fija parte de la apariencia: tamano minimo, fuente o animacion. Desactivalo en Ajustes para cambiarla.") }
             }
         }
         viewModelScope.launch {
@@ -665,7 +679,8 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         val t = chapterText(loc.chapter) ?: return null
         var s = loc.offset.coerceIn(0, t.length)
         // Empieza en una palabra entera (el desplazamiento puede caer a mitad de una).
-        while (s > 0 && s < t.length && t[s - 1].isLetterOrDigit() && t[s].isLetterOrDigit()) s--
+        var back = 0
+        while (s > 0 && s < t.length && t[s - 1].isLetterOrDigit() && t[s].isLetterOrDigit() && back++ < 30) s--
         if (s > 0 && s < t.length && t[s].isLowSurrogate()) s--
         var e = (s + 160).coerceAtMost(t.length)
         if (e < t.length && e > 0 && t[e - 1].isHighSurrogate()) e++
@@ -757,7 +772,18 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
      * pequeno retardo (no repagina a cada paso) y no se escribe en disco hasta soltar.
      */
     fun previewReader(transform: (ReaderSettings) -> ReaderSettings) {
-        previewSettings.value = SettingsRanges.sanitize(transform(previewSettings.value ?: _state.value.settings))
+        // Con la accesibilidad activa la vista previa respeta lo que fija (si no, se quedaba pegada).
+        previewSettings.value = graph.settings.enforceAccessibility(SettingsRanges.sanitize(transform(previewSettings.value ?: _state.value.settings)), appPrefs)
+    }
+
+    /** "Solo para este libro": copia los ajustes GUARDADOS (no los forzados por Accesibilidad). */
+    fun setPerBook(on: Boolean) = viewModelScope.launch {
+        if (on) {
+            val g = graph.settings.reader.first()
+            graph.settings.updateOverrides(bookId) { it.copy(fontFamily = g.fontFamily, fontSizeSp = g.fontSizeSp, readingMode = g.readingMode) }
+        } else {
+            graph.settings.updateOverrides(bookId) { it.copy(fontFamily = null, fontSizeSp = null, readingMode = null) }
+        }
     }
 
     fun updateOverrides(transform: (BookOverrides) -> BookOverrides) = viewModelScope.launch { graph.settings.updateOverrides(bookId, transform) }

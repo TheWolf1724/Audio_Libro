@@ -42,6 +42,8 @@ class SpanishNormalizerTest {
         assertThat(say("el 1.º de mayo")).isEqualTo("el primero de mayo")
         assertThat(say("giro de 90º")).isEqualTo("giro de noventa grados")
         assertThat(say("el Nº1")).contains("número")
+        assertThat(say("piso 3.º derecha")).isEqualTo("piso tercero derecha")
+        assertThat(say("el 25º aniversario")).doesNotContain("grados")
     }
 
     @Test

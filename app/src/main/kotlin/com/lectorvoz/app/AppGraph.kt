@@ -337,6 +337,8 @@ class AppGraph(
             kotlinx.coroutines.withTimeoutOrNull(3_000) { playback.state.first { it.bookId == null } }
             speech.releaseRetired()
         }
+        // Una exportacion de audio en marcha de este libro se cancela (si no, seguiria sobre un libro retirado).
+        exports.state.value?.takeIf { it.running && it.bookId == book.id }?.let { exports.cancel() }
         library.delete(book.id)
         settings.clearOverrides(book.id)
     }

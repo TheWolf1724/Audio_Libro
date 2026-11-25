@@ -84,6 +84,8 @@ fun AppearancePanel(
     onOverrides: ((BookOverrides) -> BookOverrides) -> Unit,
     modifier: Modifier = Modifier,
     onPreview: ((ReaderSettings) -> ReaderSettings) -> Unit = {},
+    onPerBook: ((Boolean) -> Unit)? = null,
+    accessibilityNote: String? = null,
 ) {
     val perBook = overrides.fontFamily != null || overrides.fontSizeSp != null || overrides.readingMode != null
     Column(modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = 24.dp).testTag("panel-apariencia")) {
@@ -98,11 +100,13 @@ fun AppearancePanel(
         SwitchRow("Aumento de contraste", settings.highContrast, { v -> onReader { it.copy(highContrast = v) } }, tag = "apariencia-contraste")
 
         SectionHeader("Texto")
+        accessibilityNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp).testTag("apariencia-nota-accesibilidad")) }
         SwitchRow(
             "Solo para este libro",
             perBook,
             { v ->
-                if (v) onOverrides { it.copy(fontFamily = settings.fontFamily, fontSizeSp = settings.fontSizeSp, readingMode = settings.readingMode) }
+                if (onPerBook != null) onPerBook(v)
+                else if (v) onOverrides { it.copy(fontFamily = settings.fontFamily, fontSizeSp = settings.fontSizeSp, readingMode = settings.readingMode) }
                 else onOverrides { it.copy(fontFamily = null, fontSizeSp = null, readingMode = null) }
             },
             summary = "Fuente, tamano y modo propios de este libro",

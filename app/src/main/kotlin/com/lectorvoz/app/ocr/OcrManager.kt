@@ -617,6 +617,7 @@ class OcrManager(
 
     /** Libera lo guardado de [bookId]: texto reconocido, audio y el recuento de paginas en memoria. */
     private suspend fun release(bookId: Long) = withContext(Dispatchers.IO) {
+        synchronized(recovered) { recovered.keys.removeAll { (it ushr 24) == bookId } }
         store.deleteBook(bookId)
         removeAudio(bookId)
         pageCounts.remove(bookId) // B10: no dejar un Int por libro procesado durante la vida del proceso.

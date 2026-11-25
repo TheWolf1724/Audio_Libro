@@ -231,7 +231,7 @@ fun ReaderScreen(
         val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = panel != ReaderPanel.APPEARANCE)
         ModalBottomSheet(onDismissRequest = { panel = ReaderPanel.NONE }, sheetState = sheet) {
             when (panel) {
-                ReaderPanel.APPEARANCE -> AppearancePanel(state.settings, state.overrides, systemDark, vm::updateReader, vm::updateOverrides, onPreview = vm::previewReader)
+                ReaderPanel.APPEARANCE -> AppearancePanel(state.settings, state.overrides, systemDark, vm::updateReader, vm::updateOverrides, onPreview = vm::previewReader, onPerBook = { vm.setPerBook(it) }, accessibilityNote = state.accessibilityNote)
                 ReaderPanel.TOC -> TocList(state.toc, state.locator.chapter) { vm.goTo(it); panel = ReaderPanel.NONE }
                 ReaderPanel.BOOKMARKS -> BookmarkList(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteBookmark, onAdd = vm::addBookmark)
                 ReaderPanel.NOTES -> NotesPanel(state, onGo = { vm.goTo(it); panel = ReaderPanel.NONE }, onDelete = vm::deleteAnnotation, onExport = { vm.annotationsMarkdown(it) }, onSave = { uri, items -> vm.saveAnnotationsTo(uri, items) }, onReassign = { vm.reassignAnnotation(it); panel = ReaderPanel.NONE })

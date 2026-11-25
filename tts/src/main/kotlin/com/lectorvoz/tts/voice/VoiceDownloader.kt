@@ -69,6 +69,11 @@ class VoiceDownloader(
         try {
             val code = conn.responseCode
             val resumed = code == HttpURLConnection.HTTP_PARTIAL
+            if (code == 416) {
+                // Rango no satisfactorio: la parte guardada no sirve. Se borra y el siguiente intento empieza de cero.
+                part.delete()
+                throw VoiceDownloadException("La descarga guardada estaba incompleta o corrupta; vuelve a intentarlo")
+            }
             if (!resumed && code != HttpURLConnection.HTTP_OK) {
                 throw VoiceDownloadException("HTTP $code al descargar $url")
             }
