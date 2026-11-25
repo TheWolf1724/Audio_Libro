@@ -30,6 +30,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import com.lectorvoz.tts.neural.PreloadStatus
+import com.lectorvoz.tts.playback.TtsConfig
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
@@ -161,12 +162,12 @@ class StatsViewModel(
     val goalMinutes: StateFlow<Int> = settings.app.map { it.dailyGoalMinutes }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    fun setGoal(minutes: Int) = viewModelScope.launch { settings.updateApp { it.copy(dailyGoalMinutes = minutes.coerceIn(0, 24 * 60)) } }
+    fun setGoal(minutes: Int) = viewModelScope.launch { if (TtsConfig.diagnostics) TtsConfig.diag("OBJETIVO diario=${minutes.coerceIn(0, 24 * 60)} min"); settings.updateApp { it.copy(dailyGoalMinutes = minutes.coerceIn(0, 24 * 60)) } }
     /** Objetivo anual de libros terminados (0 = sin objetivo). */
     val yearlyGoal: StateFlow<Int> = settings.app.map { it.yearlyBooksGoal }.distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
-    fun setYearlyGoal(books: Int) = viewModelScope.launch { settings.updateApp { it.copy(yearlyBooksGoal = books.coerceIn(0, 1000)) } }
+    fun setYearlyGoal(books: Int) = viewModelScope.launch { if (TtsConfig.diagnostics) TtsConfig.diag("OBJETIVO anual=${books.coerceIn(0, 1000)} libros"); settings.updateApp { it.copy(yearlyBooksGoal = books.coerceIn(0, 1000)) } }
 
     /** Libros terminados en lo que va de ano y en los ultimos 12 meses. */
     val booksFinished: StateFlow<Pair<Int, Int>> = (library?.books ?: kotlinx.coroutines.flow.flowOf(emptyList())).map { list ->

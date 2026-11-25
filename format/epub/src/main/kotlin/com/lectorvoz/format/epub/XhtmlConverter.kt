@@ -313,11 +313,13 @@ internal class XhtmlConverter(private val chapterPath: String) {
         ctx = saved.copy(kind = BlockKind.Paragraph, align = parseAlign(el) ?: saved.align)
         for (row in rowsOf(el)) {
             recordAnchor(row)
+            if (isHidden(row)) continue
             closeBlock()
             for (cell in row.children()) {
                 val cn = cell.localName()
                 if (cn != "td" && cn != "th") continue
                 recordAnchor(cell)
+                if (isHidden(cell)) continue
                 pendingSeparator = CELL_SEPARATOR
                 val rowCtx = ctx
                 ctx = rowCtx.copy(inlineOnly = true)

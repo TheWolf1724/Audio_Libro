@@ -258,6 +258,7 @@ class ExportManager(
         val need = requiredBytes(pcm, format)
         val free = freeSpace()
         if (free >= need) return null
+        if (com.lectorvoz.tts.playback.TtsConfig.diagnostics) com.lectorvoz.tts.playback.TtsConfig.diag("EXPORTAR aviso de espacio: parte $i necesita ${need / (1024 * 1024)} MB, libre ${free / (1024 * 1024)} MB")
         Log.w(TAG, "Espacio insuficiente para la parte $i (${format.extension}): necesita ${need / (1024 * 1024)} MB, libre ${free / (1024 * 1024)} MB")
         return "queda poco espacio libre en el movil: esta parte necesita unos ${mb(need)} MB temporales y hay ${mb(free)} MB. Libera espacio y vuelve a pulsar (se saltan las partes ya hechas)"
     }

@@ -308,7 +308,8 @@ class EpubBook private constructor(
     private fun buildToc(): List<TocEntry> {
         val raw = try {
             when {
-                pkg.nav != null -> PackageParser.parseNav(zip, pkg.nav).ifEmpty {
+                // Un nav ilegible (falta en el zip, roto) no impide usar el NCX si lo hay.
+                pkg.nav != null -> (try { PackageParser.parseNav(zip, pkg.nav) } catch (e: Exception) { emptyList() }).ifEmpty {
                     pkg.ncx?.let { PackageParser.parseNcx(zip, it) }.orEmpty()
                 }
                 pkg.ncx != null -> PackageParser.parseNcx(zip, pkg.ncx)

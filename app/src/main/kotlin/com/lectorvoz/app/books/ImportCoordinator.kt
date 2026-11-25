@@ -6,6 +6,7 @@ import com.lectorvoz.app.ui.library.LibraryViewModel
 import com.lectorvoz.core.data.library.ImportError
 import com.lectorvoz.core.data.library.ImportResult
 import com.lectorvoz.core.data.library.LibraryRepository
+import com.lectorvoz.tts.playback.TtsConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -78,6 +79,7 @@ class ImportCoordinator(
                             is ImportResult.Duplicate -> dup++
                             is ImportResult.Failed -> {
                                 Log.w(TAG, "Fallo al importar ${r.name}: ${r.error}")
+                                if (TtsConfig.diagnostics) TtsConfig.diag("IMPORTAR fallo ${r.name}: ${r.error}")
                                 failed += "${r.name}: ${LibraryViewModel.errorText(r.error)}"
                             }
                         }
@@ -93,6 +95,7 @@ class ImportCoordinator(
                 }
                 _message.value = LibraryViewModel.importSummary(ok, dup, failed)
                 Log.i(TAG, "Importacion terminada: $ok nuevos, $dup repetidos, ${failed.size} fallidos")
+                if (TtsConfig.diagnostics) TtsConfig.diag("IMPORTAR terminada: $ok nuevos, $dup repetidos, ${failed.size} fallidos (copia=$copy)")
             } finally {
                 // Cancelado a mitad: los que no llegaron a procesarse tambien dejan de contar.
                 if (left > 0) _running.update { (it - left).coerceAtLeast(0) }

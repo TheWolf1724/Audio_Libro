@@ -8,6 +8,7 @@ import com.lectorvoz.core.data.library.LibraryRepository
 import com.lectorvoz.core.data.stats.ReadingStatsRepository
 import com.lectorvoz.core.data.stats.SessionKind
 import com.lectorvoz.core.model.Locator
+import com.lectorvoz.tts.playback.TtsConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -186,6 +187,7 @@ class ListeningTracker(
         val dur = now - segStart
         val chars = segChars
         val started = segWall
+        if (TtsConfig.diagnostics) TtsConfig.diag("ESTADISTICAS escucha libro=$book dur=${dur / 1000}s chars=$chars" + if (dur < ReadingStatsRepository.MIN_SESSION_MS) " (descartada: < ${ReadingStatsRepository.MIN_SESSION_MS / 1000}s)" else "")
         scope.launch {
             try {
                 stats.record(book, SessionKind.LISTEN, started, dur, chars)

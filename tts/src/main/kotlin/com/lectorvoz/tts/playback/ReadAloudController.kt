@@ -118,6 +118,7 @@ class ReadAloudController(
             applyVolume()
         },
         onExpire = {
+            if (TtsConfig.diagnostics) TtsConfig.diag("TEMPORIZADOR agotado: pausa")
             pause()
             hub.mutableState.update { it.copy(sleepTimer = null, sleepTimerRemainingMs = null) }
         },
@@ -288,6 +289,7 @@ class ReadAloudController(
      * parada de fin de capitulo pendiente: la lectura sigue sin cortes.
      */
     fun setSleepTimer(mode: SleepTimerMode?) {
+        if (TtsConfig.diagnostics) TtsConfig.diag("TEMPORIZADOR modo=" + when (mode) { null -> "apagado"; is SleepTimerMode.Minutes -> "${mode.minutes} min"; SleepTimerMode.EndOfChapter -> "fin de capitulo" })
         sleepTimer.cancel()
         stopAtChapterEnd = false
         cancelChapterFade()
@@ -652,6 +654,7 @@ class ReadAloudController(
             return
         }
         // Temporizador "fin de capitulo": queda pausado al principio del siguiente.
+        if (TtsConfig.diagnostics) TtsConfig.diag("TEMPORIZADOR fin de capitulo: pausa")
         stopAtChapterEnd = false
         hub.mutableState.update {
             it.copy(playWhenReady = false, isPlaying = false, sleepTimer = null, sleepTimerRemainingMs = null)
