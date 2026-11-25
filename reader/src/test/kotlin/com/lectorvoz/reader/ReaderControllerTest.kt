@@ -228,4 +228,46 @@ class ReaderControllerTest {
         view.nextPage(false)
         assertThat(view.currentKey).isEqualTo(keys[2])
     }
+
+    /** Con la voz activa, una pagina sucia por otro resaltado se redibuja UNA vez, no sin parar. */
+    @Test
+    fun pagina_sucia_con_la_voz_activa_no_se_redibuja_sin_parar() {
+        val view = open(Locator(0, 0))
+        val key = view.currentKey!!
+        controller.highlight(LocatorRange(Locator(0, 0), Locator(0, 40)), HighlightKind.SENTENCE)
+        val before = controller.cache[key]!!
+        // Un resaltado que va dentro del bitmap ensucia la pagina.
+        controller.highlight(LocatorRange(Locator(0, 50), Locator(0, 90)), HighlightKind.SELECTION)
+        waitUntil { controller.bitmap(key); controller.cache[key].let { it != null && it !== before } }
+        val settled = controller.cache[key]!!
+        repeat(40) { controller.bitmap(key); shadowOf(Looper.getMainLooper()).idle(); Thread.sleep(10) }
+        assertThat(controller.cache[key]).isSameInstanceAs(settled)
+    }
+
+    private class FlakyContent(private val inner: com.lectorvoz.reader.content.EpubContent) :
+        com.lectorvoz.reader.content.PagedContent by inner {
+        @Volatile var failures = 1
+        override suspend fun render(
+            key: com.lectorvoz.reader.view.PageKey, bitmap: android.graphics.Bitmap,
+            highlights: com.lectorvoz.reader.render.Highlights, footer: String?,
+        ) {
+            if (failures > 0) { failures--; throw OutOfMemoryError("prueba") }
+            inner.render(key, bitmap, highlights, footer)
+        }
+    }
+
+    /** Tras un OOM al dibujar, la pagina actual no se queda en blanco: se reintenta una vez. */
+    @Test
+    fun tras_un_oom_la_pagina_actual_se_reintenta() {
+        val view = PageFlipView(context)
+        controller.setSettings(ReaderSettings(pageAnimation = PageAnimation.NONE))
+        controller.open(FlakyContent(com.lectorvoz.reader.content.EpubContent(FakeSource())), Locator(0, 0))
+        controller.attach(view)
+        controller.setViewport(720, 1280, 2f)
+        // El retardo del reintento va en el reloj del looper (no avanza solo).
+        waitUntil {
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(ReaderController.OOM_RETRY_MS + 1))
+            view.currentKey != null && controller.cache[view.currentKey!!] != null
+        }
+    }
 }

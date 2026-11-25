@@ -150,6 +150,9 @@ class ReaderController(
     /** Paginas cuyo dibujo fallo: no se anuncian como "cargando" para siempre. */
     private val failedRenders = HashSet<PageKey>()
 
+    /** Paginas cuyo dibujo ya se reintento una vez tras quedarse sin memoria (no hay bucle). */
+    private val oomRetried = HashSet<PageKey>()
+
     private val _pageInfo = MutableStateFlow(PageInfo())
     val pageInfo: StateFlow<PageInfo> = _pageInfo.asStateFlow()
 
@@ -261,6 +264,7 @@ class ReaderController(
         navigating = false
         navToken++
         failedRenders.clear()
+        oomRetried.clear()
         _busy.value = null
         highlights = Highlights.NONE
         _sentence.value = null
@@ -734,6 +738,7 @@ class ReaderController(
         jobs[key] = contentScope.launch {
             val self = coroutineContext.job
             var bmp: Bitmap? = null
+            var outOfMemory = false
             val ok = try {
                 withContext(renderDispatcher) {
                     c.prepare(key)
@@ -754,9 +759,21 @@ class ReaderController(
                 // Poca memoria: se suelta lo reutilizable y la pagina queda como fallida (no tumba la app).
                 Log.w(TAG, "Sin memoria al dibujar $key", e)
                 pool.clear()
+                outOfMemory = true
                 false
             }
             if (jobs[key] === self) jobs.remove(key)
+            // Sin memoria: la pagina se quedaria en blanco hasta que algo la volviera a pedir. Con la
+            // memoria ya soltada se reintenta UNA vez (si falla otra vez, se queda como fallida).
+            if (outOfMemory && key == currentKey && oomRetried.add(key)) {
+                main.postDelayed({
+                    if (!closed && content === c && key == currentKey && key !in cache) {
+                        failedRenders -= key
+                        request(key)
+                        refreshBusy()
+                    }
+                }, OOM_RETRY_MS)
+            }
             if (!ok && bmp == null) { failedRenders += key; if (key == currentKey) refreshBusy() }
             val b = bmp ?: return@launch
             if (!ok || gen != renderGen) {
@@ -766,7 +783,10 @@ class ReaderController(
                 return@launch
             }
             failedRenders -= key
-            if (hl == highlights) dirty.remove(key)
+            // El bitmap lleva solo lo "horneado" (sin frase ni palabra de la voz): comparar con el
+            // estado completo no coincidia nunca con la voz activa y la pagina quedaba sucia para
+            // siempre, redibujandose sin parar.
+            if (hl == highlights.baked()) dirty.remove(key)
             cache.put(key, b)
             if (key == currentKey) refreshBusy()
             if (key == transitionalKey) dropTransitional()
@@ -1000,6 +1020,9 @@ class ReaderController(
 
         /** Paginas antes del borde de un capitulo en que se pagina el contiguo. */
         const val PREPARE_AHEAD_PAGES = 3
+
+        /** Espera antes de reintentar una pagina que fallo por falta de memoria. */
+        const val OOM_RETRY_MS = 500L
 
         /** Cierra contenidos cuando terminan sus trabajos (no depende de ningun controlador). */
         private val CLOSER = CoroutineScope(SupervisorJob() + Dispatchers.IO)
