@@ -422,8 +422,7 @@ class SpanishNormalizer(
         }
 
         private fun fraction(num: Long, den: Long): String {
-            // Solo una fraccion propia ("3/4"); "24/7", "12/5" o "10/10" no son "veinticuatro septimos".
-            val name = if (num < den) FRACTION_NAMES[den.toInt().takeIf { den in 2..10 } ?: 0] else null
+            val name = FRACTION_NAMES[den.toInt().takeIf { den in 2..10 } ?: 0]
             return if (name != null) {
                 SpanishNumbers.cardinal(num, Gender.MASCULINE, true) + " " + (if (num == 1L) name else name + "s")
             } else {

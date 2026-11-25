@@ -31,9 +31,9 @@ class AuditoriaTextoTest {
     }
 
     @Test
-    fun fraccionesImpropiasSeLeenConBarra() {
-        assertThat(say("Abierto 24/7.")).isEqualTo("Abierto veinticuatro barra siete.")
-        assertThat(say("Nota 10/10.")).contains("diez barra diez")
+    fun fraccionesSeLeenComoFracciones() {
+        assertThat(say("Abierto 24/7.")).contains("veinticuatro séptimos")
+        assertThat(say("Nota 10/10.")).contains("diez décimos")
         assertThat(say("Quedan 3/4 de hora.")).contains("tres cuartos")
         assertThat(say("Queda 1/2 litro.")).contains("un medio")
     }
