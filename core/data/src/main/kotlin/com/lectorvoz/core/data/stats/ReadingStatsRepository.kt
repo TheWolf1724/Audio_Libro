@@ -126,7 +126,17 @@ class RoomReadingStatsRepository(
     /** Dias seguidos con actividad ([STREAK_MIN_MS] como minimo), contando desde hoy o desde ayer. */
     internal fun streak(today: Long, recent: List<ReadingSessionEntity>): Int {
         val perDay = HashMap<Long, Long>()
-        for (s in recent) perDay.merge(dayStart(s.startedAt), s.durationMs, Long::plus)
+        for (s in recent) {
+            // Una sesion que cruza la medianoche reparte su duracion entre los dias que toca.
+            var day = dayStart(s.startedAt)
+            while (true) {
+                val next = addDays(day, 1)
+                val part = overlap(s, day, next)
+                if (part > 0) perDay.merge(day, part, Long::plus)
+                if (next >= s.startedAt + s.durationMs) break
+                day = next
+            }
+        }
         fun active(day: Long) = (perDay[day] ?: 0L) >= STREAK_MIN_MS
         var day = if (active(today)) today else addDays(today, -1)
         var n = 0
@@ -142,13 +152,16 @@ class RoomReadingStatsRepository(
         (-6..0).map { i ->
             val start = addDays(today, i)
             val end = addDays(today, i + 1)
-            val inDay = recent.filter { it.startedAt in start until end }
             DayStats(
                 start,
-                inDay.filter { it.kind == SessionKind.READ.name }.sumOf { it.durationMs },
-                inDay.filter { it.kind == SessionKind.LISTEN.name }.sumOf { it.durationMs },
+                recent.filter { it.kind == SessionKind.READ.name }.sumOf { overlap(it, start, end) },
+                recent.filter { it.kind == SessionKind.LISTEN.name }.sumOf { overlap(it, start, end) },
             )
         }
+
+    /** Milisegundos de la sesion [s] que caen en [start, end) (una sesion que cruza la medianoche cuenta en ambos dias). */
+    private fun overlap(s: ReadingSessionEntity, start: Long, end: Long): Long =
+        (minOf(end, s.startedAt + s.durationMs) - maxOf(start, s.startedAt)).coerceAtLeast(0L)
 
     private fun dayStart(t: Long): Long = Calendar.getInstance(zone()).run {
         timeInMillis = t

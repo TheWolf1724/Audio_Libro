@@ -161,7 +161,7 @@ class Revision3DatosTest {
         val now = java.util.GregorianCalendar(zone).apply { clear(); set(2026, 2, 30, 12, 0) }.timeInMillis
         val stats = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = { zone })
         val day29at0030 = java.util.GregorianCalendar(zone).apply { clear(); set(2026, 2, 29, 0, 30) }.timeInMillis
-        val day28at2330 = java.util.GregorianCalendar(zone).apply { clear(); set(2026, 2, 28, 23, 30) }.timeInMillis
+        val day28at2330 = java.util.GregorianCalendar(zone).apply { clear(); set(2026, 2, 28, 23, 0) }.timeInMillis
         stats.record(1, SessionKind.LISTEN, day29at0030, 60_000, 100)
         stats.record(1, SessionKind.LISTEN, day28at2330, 120_000, 100)
         val days = stats.summary.first().lastDays
@@ -192,5 +192,17 @@ class Revision3DatosTest {
         assertThat(java.util.GregorianCalendar(zone).apply { timeInMillis = dayNy }
             .get(java.util.Calendar.DAY_OF_MONTH)).isEqualTo(14)
     }
-}
 
+    /** Una sesion que cruza la medianoche reparte su duracion entre los dos dias. */
+    @Test
+    fun sesionQueCruzaMedianocheSeReparteEntreDias() = runTest {
+        val zone = TimeZone.getTimeZone("Europe/Madrid")
+        val now = java.util.GregorianCalendar(zone).apply { clear(); set(2026, 5, 11, 12, 0) }.timeInMillis
+        val stats = RoomReadingStatsRepository(db.readingSessionDao(), db.bookDao(), clock = { now }, zone = { zone })
+        val start = java.util.GregorianCalendar(zone).apply { clear(); set(2026, 5, 10, 23, 30) }.timeInMillis
+        stats.record(1, SessionKind.LISTEN, start, 3_600_000, 100)
+        val days = stats.summary.first().lastDays
+        assertThat(days[days.size - 2].listenMs).isEqualTo(1_800_000)
+        assertThat(days.last().listenMs).isEqualTo(1_800_000)
+    }
+}

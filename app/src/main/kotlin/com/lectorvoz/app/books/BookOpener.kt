@@ -183,6 +183,9 @@ class SharedBooks(private val opener: BookOpener) {
                 // mientras seguia abierto (activar OCR con la voz fuera del libro, A1): se reaplica
                 // para que la voz, la busqueda y la exportacion no lean el texto incompleto.
                 if (force != null) reapplyForceOcr(existing.opened, force)
+                // Lo mismo con "saltar cabeceras y pies": el ajuste pudo cambiar con el libro abierto
+                // (el setter solo rehace las paginas preparadas si el valor cambia de verdad).
+                (existing.opened.content as? BookContent.Pdf)?.cleaner?.enabled = skipPdfHeaders
                 return@withLock Lease(existing)
             }
             val e = Entry(opener.open(book, skipPdfHeaders), 1)

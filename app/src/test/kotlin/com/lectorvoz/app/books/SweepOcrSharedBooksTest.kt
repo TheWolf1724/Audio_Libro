@@ -90,6 +90,19 @@ class SweepOcrSharedBooksTest {
         search.release(); voice.release(); again.release()
     }
 
+    @Test
+    fun reutilizarAplicaElAjusteDeCabecerasActual() = runTest {
+        val shared = SharedBooks(FakeOpener(context))
+        val b = book(8, format = BookFormat.PDF)
+        val first = shared.acquire(b, true)
+        val cleaner = (first.opened.content as BookContent.Pdf).cleaner
+        assertThat(cleaner.enabled).isTrue()
+        val second = shared.acquire(b, false)
+        assertThat(second.opened).isSameInstanceAs(first.opened)
+        assertThat(cleaner.enabled).isFalse()
+        first.release(); second.release()
+    }
+
     /**
      * S2-3: la preferencia "forzar OCR" (lectura suspendida de DataStore) se lee FUERA de
      * `openLock`. Si se leyera bajo el candado, una lectura lenta al reutilizar un libro

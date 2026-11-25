@@ -190,6 +190,7 @@ class AudioDiskCache(
                     RandomAccessFile(idx, "rw").use { it.setLength(whole) }
                     totalBytes = -1
                 }
+                var dropped = false
                 DataInputStream(idx.inputStream().buffered()).use { input ->
                     val records = idx.length() / RECORD
                     for (i in 0 until records) {
@@ -197,8 +198,17 @@ class AudioDiskCache(
                         val off = input.readLong()
                         val frames = input.readInt()
                         val rate = input.readInt()
-                        if (off >= 0 && frames >= 0 && off + frames * 2L <= pcmLen) map[k] = Entry(off, frames, rate)
+                        if (off >= 0 && frames >= 0 && off + frames * 2L <= pcmLen) map[k] = Entry(off, frames, rate) else dropped = true
                     }
+                }
+                if (dropped) {
+                    // El .pcm quedo mas corto que el indice (borrado o recortado por fuera): los registros que
+                    // sobran se quitan del fichero; si no, al volver a crecer el .pcm desde esa posicion,
+                    // apuntarian al audio de OTRA frase (sonaria texto distinto del resaltado).
+                    DataOutputStream(BufferedOutputStream(FileOutputStream(idx, false))).use { out ->
+                        for ((k, e) in map) { out.writeLong(k); out.writeLong(e.offset); out.writeInt(e.frames); out.writeInt(e.sampleRate) }
+                    }
+                    totalBytes = -1
                 }
             } catch (_: IOException) {
                 // Indice danado: se ignora lo que no se pudo leer.

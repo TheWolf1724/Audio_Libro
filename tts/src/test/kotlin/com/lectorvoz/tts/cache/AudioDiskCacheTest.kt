@@ -127,4 +127,19 @@ class AudioDiskCacheTest {
         val cBack = c.get("l", 0, "v", p, "C")!!
         assertThat(cBack.pcm[0]).isWithin(1e-3f).of(0.9f)
     }
+
+    @Test
+    fun siSoloSeBorraElPcmLosRegistrosViejosNoApuntanAAudioNuevo() {
+        val c = cache()
+        c.put("l", 0, "v", p, "A", FloatArray(100) { 0.5f }, 44_100)
+        c.put("l", 0, "v", p, "B", FloatArray(100) { -0.5f }, 44_100)
+        // Se pierde solo el .pcm; el .idx sigue con los dos registros.
+        tmp.root.resolve("c").walkTopDown().filter { it.isFile && it.name.endsWith(".pcm") }.forEach { it.delete() }
+        c.put("l", 0, "v", p, "C", FloatArray(300) { 0.9f }, 44_100)
+        // Instancia nueva (indice leido de disco): "A" tenia offset 0 y ahora caeria sobre el audio de "C".
+        val fresh = cache()
+        assertThat(fresh.get("l", 0, "v", p, "A")).isNull()
+        assertThat(fresh.get("l", 0, "v", p, "B")).isNull()
+        assertThat(fresh.get("l", 0, "v", p, "C")!!.pcm.size).isEqualTo(300)
+    }
 }
