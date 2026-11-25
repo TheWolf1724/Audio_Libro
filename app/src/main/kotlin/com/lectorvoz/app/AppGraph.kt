@@ -121,7 +121,7 @@ class AppGraph(
     val ocr: OcrManager = OcrManager(
         context, appScope, rawLibrary,
         openPdf = { b ->
-            val lease = books.acquire(b, skipPdfHeaders = true)
+            val lease = books.acquire(b, skipPdfHeaders = settings.voiceFor(b.id).first().skipPdfHeadersFooters)
             (lease.opened.content as? BookContent.Pdf)?.book to { lease.release() }
         },
         removeAudio = { id -> runCatching { TtsConfig.audioCache(context).removeBook(id.toString()) } },
