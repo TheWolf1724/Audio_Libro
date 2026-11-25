@@ -15,7 +15,8 @@ internal object PdfHeaderFooterFilter {
     fun signature(line: String): String {
         var t = line.trim().lowercase()
         t = DIGITS.replace(t, "#")
-        t = ROMAN_TOKEN.replace(t, "#")
+        // Solo los romanos validos ("iv", "xii"): "mil" o "civil" son palabras, no numeros de pagina.
+        t = ROMAN_TOKEN.replace(t) { m -> if (SpanishNormalizer.isRoman(m.value.uppercase())) "#" else m.value }
         return SPACES.replace(t, " ")
     }
 

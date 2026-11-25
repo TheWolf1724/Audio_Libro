@@ -102,6 +102,8 @@ data class AppPrefs(
     val onboardingDone: Boolean = false,
     /** Objetivo diario de lectura/escucha en minutos (0 = sin objetivo). */
     val dailyGoalMinutes: Int = 0,
+    /** Objetivo anual de libros terminados (0 = sin objetivo). */
+    val yearlyBooksGoal: Int = 0,
 )
 
 /** Ajustes persistentes de la app. Todos los valores salen ya saneados. */
@@ -421,6 +423,7 @@ class DataStoreSettingsRepository(
         val historyProgress = booleanPreferencesKey("app.historial.progreso")
         val onboardingDone = booleanPreferencesKey("app.bienvenida_hecha")
         val dailyGoal = androidx.datastore.preferences.core.intPreferencesKey("app.objetivo_diario_min")
+        val yearlyGoal = androidx.datastore.preferences.core.intPreferencesKey("app.objetivo_anual_libros")
     }
 
     private fun readApp(p: Preferences): AppPrefs {
@@ -444,6 +447,7 @@ class DataStoreSettingsRepository(
             historyShowProgress = p[A.historyProgress] ?: d.historyShowProgress,
             onboardingDone = p[A.onboardingDone] ?: d.onboardingDone,
             dailyGoalMinutes = (p[A.dailyGoal] ?: d.dailyGoalMinutes).coerceIn(0, 24 * 60),
+            yearlyBooksGoal = (p[A.yearlyGoal] ?: d.yearlyBooksGoal).coerceIn(0, 1000),
         )
     }
 
@@ -466,6 +470,7 @@ class DataStoreSettingsRepository(
         p[A.historyProgress] = s.historyShowProgress
         p[A.onboardingDone] = s.onboardingDone
         p[A.dailyGoal] = s.dailyGoalMinutes.coerceIn(0, 24 * 60)
+        p[A.yearlyGoal] = s.yearlyBooksGoal.coerceIn(0, 1000)
     }
 
     // ------------------------------------------------------------------ por libro

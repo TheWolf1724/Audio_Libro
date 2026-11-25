@@ -149,7 +149,12 @@ class DictionaryViewModel(
 }
 
 /** Estadisticas. */
-class StatsViewModel(private val stats: ReadingStatsRepository, private val settings: com.lectorvoz.core.data.settings.SettingsRepository) : ViewModel() {
+class StatsViewModel(
+    private val stats: ReadingStatsRepository,
+    private val settings: com.lectorvoz.core.data.settings.SettingsRepository,
+    library: com.lectorvoz.core.data.library.LibraryRepository? = null,
+    private val clock: () -> Long = System::currentTimeMillis,
+) : ViewModel() {
     val summary: StateFlow<StatsSummary> = stats.summary.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), StatsSummary())
 
     /** Objetivo diario en minutos (0 = sin objetivo). */
@@ -157,7 +162,40 @@ class StatsViewModel(private val stats: ReadingStatsRepository, private val sett
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     fun setGoal(minutes: Int) = viewModelScope.launch { settings.updateApp { it.copy(dailyGoalMinutes = minutes.coerceIn(0, 24 * 60)) } }
+    /** Objetivo anual de libros terminados (0 = sin objetivo). */
+    val yearlyGoal: StateFlow<Int> = settings.app.map { it.yearlyBooksGoal }.distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    fun setYearlyGoal(books: Int) = viewModelScope.launch { settings.updateApp { it.copy(yearlyBooksGoal = books.coerceIn(0, 1000)) } }
+
+    /** Libros terminados en lo que va de ano y en los ultimos 12 meses. */
+    val booksFinished: StateFlow<Pair<Int, Int>> = (library?.books ?: kotlinx.coroutines.flow.flowOf(emptyList())).map { list ->
+        val now = clock()
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = now }
+        val yearStart = java.util.Calendar.getInstance().apply {
+            timeInMillis = now
+            set(java.util.Calendar.DAY_OF_YEAR, 1); set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0); set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val last12 = (cal.clone() as java.util.Calendar).apply { add(java.util.Calendar.YEAR, -1) }.timeInMillis
+        val done = list.filter { it.finished }.mapNotNull { it.finishedAt }
+        done.count { it >= yearStart } to done.count { it >= last12 }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0 to 0)
+
     fun clear() = viewModelScope.launch { stats.clear() }
+
+    companion object {
+        /** Objetivo diario recomendado (min): ~10 % por encima de la media de los dias con actividad, a pasos de 5. */
+        fun recommendedDailyMinutes(lastDaysMs: List<Long>): Int {
+            val active = lastDaysMs.filter { it >= 60_000L }
+            if (active.isEmpty()) return 30
+            val avgMin = active.average() / 60_000.0
+            return (kotlin.math.ceil(avgMin * 1.1 / 5.0).toInt() * 5).coerceIn(10, 240)
+        }
+
+        /** Objetivo anual recomendado: lo terminado en 12 meses + 1 (12 si no hay datos). */
+        fun recommendedYearlyBooks(last12: Int): Int = if (last12 <= 0) 12 else (last12 + 1).coerceAtMost(500)
+    }
 }
 
 /** Estado de la pantalla de exportar. */

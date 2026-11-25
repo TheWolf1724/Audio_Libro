@@ -883,7 +883,8 @@ class ReaderViewModel(private val bookId: Long, private val graph: AppGraph) : V
         val voicePlaying = voiceHere() && graph.playback.state.value.playWhenReady
         if (book != null && !_state.value.loading && _state.value.error == null && !voicePlaying) {
             val progress = info.bookProgress.takeIf { it > 0f } ?: info.progress
-            graph.appScope.launch { graph.library.updateProgress(book.id, loc, progress) }
+            val done = if (progress >= 0.995f && info.chapter >= info.chapterCount - 1) true else null
+            graph.appScope.launch { graph.library.updateProgress(book.id, loc, progress, done) }
         }
         controller.close()
         aux?.release()

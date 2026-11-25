@@ -179,6 +179,9 @@ private fun Check(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
 fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
     val s by vm.summary.collectAsStateWithLifecycle()
     val goal by vm.goalMinutes.collectAsStateWithLifecycle()
+    val yearly by vm.yearlyGoal.collectAsStateWithLifecycle()
+    val booksYear by vm.booksFinished.collectAsStateWithLifecycle()
+    var editYearly by rememberSaveable { mutableStateOf(false) }
     var confirm by rememberSaveable { mutableStateOf(false) }
     var editGoal by rememberSaveable { mutableStateOf(false) }
     SettingsScaffold("Estadisticas", onBack) {
@@ -197,6 +200,8 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
             StatLine("Racha", if (s.streakDays > 0) "${s.streakDays} ${if (s.streakDays == 1) "dia" else "dias"} seguidos" else "sin racha")
             DailyGoal(goalMinutes = goal, todayMs = today.readMs + today.listenMs, onEdit = { editGoal = true })
         }
+        SectionHeader("Objetivo anual")
+        YearlyGoal(yearly, booksYear.first, onEdit = { editYearly = true })
         if (s.lastDays.isNotEmpty()) {
             StatLine("Media diaria (7 dias)", formatDuration(s.lastDays.sumOf { it.readMs + it.listenMs } / s.lastDays.size))
         }
@@ -226,7 +231,18 @@ fun StatsScreen(vm: StatsViewModel, onBack: () -> Unit) {
         OutlinedButton(onClick = { confirm = true }, modifier = Modifier.padding(16.dp).heightIn(min = 48.dp)) { Text("Borrar estadisticas") }
     }
     if (editGoal) {
-        GoalDialog(goal, onSet = { vm.setGoal(it); editGoal = false }, onDismiss = { editGoal = false })
+        GoalDialog(
+            title = "Objetivo diario", unit = "minutos al dia (leyendo o escuchando)", current = goal, fallback = 30, step = 5, max = 24 * 60,
+            recommended = StatsViewModel.recommendedDailyMinutes(s.lastDays.map { it.readMs + it.listenMs }),
+            onSet = { vm.setGoal(it); editGoal = false }, onDismiss = { editGoal = false },
+        )
+    }
+    if (editYearly) {
+        GoalDialog(
+            title = "Objetivo anual", unit = "libros terminados al ano", current = yearly, fallback = 12, step = 1, max = 500,
+            recommended = StatsViewModel.recommendedYearlyBooks(booksYear.second),
+            onSet = { vm.setYearlyGoal(it); editYearly = false }, onDismiss = { editYearly = false },
+        )
     }
     if (confirm) {
         AlertDialog(
@@ -262,24 +278,54 @@ private fun DailyGoal(goalMinutes: Int, todayMs: Long, onEdit: () -> Unit) {
     }
 }
 
-/** Elegir el objetivo diario (minutos): pasos de 5 min, 0 lo desactiva. */
+/** Objetivo anual de libros terminados: progreso del ano y acceso a cambiarlo (0 = sin objetivo). */
 @Composable
-private fun GoalDialog(current: Int, onSet: (Int) -> Unit, onDismiss: () -> Unit) {
-    var minutes by remember { mutableStateOf(if (current > 0) current else 30) }
+private fun YearlyGoal(goal: Int, done: Int, onEdit: () -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+        if (goal > 0) {
+            Text(
+                if (done >= goal) "Objetivo del ano cumplido: $done de $goal libros" else "Libros terminados este ano: $done de $goal",
+                style = MaterialTheme.typography.bodyLarge,
+                color = if (done >= goal) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+            )
+            androidx.compose.material3.LinearProgressIndicator(
+                progress = { (done.toFloat() / goal).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp).semantics { contentDescription = "Progreso del objetivo anual" },
+            )
+        } else {
+            Text("Libros terminados este ano: $done", style = MaterialTheme.typography.bodyLarge)
+        }
+        OutlinedButton(onClick = onEdit, modifier = Modifier.heightIn(min = 48.dp).testTag("objetivo-anual")) {
+            Text(if (goal > 0) "Cambiar objetivo anual" else "Fijar un objetivo anual")
+        }
+    }
+}
+
+/** Elegir un objetivo con pasos de [step], 0 lo desactiva; ofrece el valor [recommended] (el usuario decide). */
+@Composable
+private fun GoalDialog(
+    title: String, unit: String, current: Int, fallback: Int, step: Int, max: Int, recommended: Int,
+    onSet: (Int) -> Unit, onDismiss: () -> Unit,
+) {
+    var value by rememberSaveable { mutableStateOf(if (current > 0) current else fallback) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Objetivo diario") },
+        title = { Text(title) },
         text = {
             Column {
-                Text(if (minutes == 0) "Sin objetivo" else "$minutes minutos al dia (leyendo o escuchando)", style = MaterialTheme.typography.titleMedium)
+                Text(if (value == 0) "Sin objetivo" else "$value $unit", style = MaterialTheme.typography.titleMedium)
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { minutes = (minutes - 5).coerceAtLeast(0) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("- 5") }
-                    TextButton(onClick = { minutes = (minutes + 5).coerceAtMost(24 * 60) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("+ 5") }
-                    TextButton(onClick = { minutes = 0 }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Sin objetivo") }
+                    TextButton(onClick = { value = (value - step).coerceAtLeast(0) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("- $step") }
+                    TextButton(onClick = { value = (value + step).coerceAtMost(max) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("+ $step") }
+                    TextButton(onClick = { value = 0 }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Sin objetivo") }
                 }
+                TextButton(onClick = { value = recommended }, modifier = Modifier.heightIn(min = 48.dp).testTag("objetivo-recomendado")) {
+                    Text("Usar el recomendado: $recommended")
+                }
+                Text("Se calcula con tu ritmo reciente. Puedes poner el que quieras.", style = MaterialTheme.typography.bodySmall)
             }
         },
-        confirmButton = { TextButton(onClick = { onSet(minutes) }) { Text("Guardar") } },
+        confirmButton = { TextButton(onClick = { onSet(value) }) { Text("Guardar") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } },
     )
 }

@@ -110,6 +110,19 @@ fun LectorVozTheme(
     val systemDark = isSystemInDarkTheme()
     val key = themeKey(themeMode, systemDark)
     val theme = remember(key, highContrast) { resolveTheme(key, highContrast) }
+    // Iconos de las barras del sistema segun el tema de la APP (no el del sistema): con tema claro
+    // sobre sistema oscuro (o al reves) la hora y la bateria quedaban ilegibles.
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) {
+        androidx.compose.runtime.SideEffect {
+            var ctx = view.context
+            while (ctx is android.content.ContextWrapper && ctx !is android.app.Activity) ctx = ctx.baseContext
+            val window = (ctx as? android.app.Activity)?.window ?: return@SideEffect
+            val c = androidx.core.view.WindowCompat.getInsetsController(window, view)
+            c.isAppearanceLightStatusBars = !theme.isDark
+            c.isAppearanceLightNavigationBars = !theme.isDark
+        }
+    }
     CompositionLocalProvider(LocalReadingColors provides theme.reading) {
         MaterialTheme(colorScheme = theme.colorScheme, typography = AppTypography, content = content)
     }

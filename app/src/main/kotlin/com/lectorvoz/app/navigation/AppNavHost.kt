@@ -146,7 +146,7 @@ fun AppNavHost(graph: AppGraph, nav: NavHostController) {
             DictionaryScreen(vm, back)
         }
         composable(SettingsRoutes.STATS) {
-            val vm: StatsViewModel = viewModel(factory = viewModelFactory { initializer { StatsViewModel(graph.stats, graph.settings) } })
+            val vm: StatsViewModel = viewModel(factory = viewModelFactory { initializer { StatsViewModel(graph.stats, graph.settings, graph.library) } })
             StatsScreen(vm, back)
         }
         composable(

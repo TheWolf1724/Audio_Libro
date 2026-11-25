@@ -4,6 +4,8 @@
 <full-backup-content>
     <exclude domain="file" path="libros/" />
     <exclude domain="file" path="portadas/" />
+    <exclude domain="file" path="ocr/" />
+    <exclude domain="file" path="historial/" />
     <exclude domain="database" path="lectorvoz.db" />
     <exclude domain="database" path="lectorvoz.db-wal" />
     <exclude domain="database" path="lectorvoz.db-shm" />

@@ -380,6 +380,8 @@ class OcrManager(
                     }
                 }
             }
+            // Cancelado antes de arrancar (LAZY) el finally del trabajo no corre: se limpia aqui.
+            job.invokeOnCompletion { inFlight.remove(key, job); if (force) forcedKeys.remove(key) }
             job.start()
             // Si el trabajo compartido lo cancelaron desde fuera (OCR apagado) y este llamante sigue vivo,
             // no es una cancelacion propia: se trata como "sin resultado".

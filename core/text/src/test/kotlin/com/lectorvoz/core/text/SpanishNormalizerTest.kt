@@ -36,6 +36,15 @@ class SpanishNormalizerTest {
     }
 
     @Test
+    fun ordinalesApocopeGradosYNumero() {
+        assertThat(say("el 3.º piso")).isEqualTo("el tercer piso")
+        assertThat(say("el 1.º capítulo")).isEqualTo("el primer capítulo")
+        assertThat(say("el 1.º de mayo")).isEqualTo("el primero de mayo")
+        assertThat(say("giro de 90º")).isEqualTo("giro de noventa grados")
+        assertThat(say("el Nº1")).contains("número")
+    }
+
+    @Test
     fun decimales() {
         assertThat(say("Mide 1,5 metros.")).isEqualTo("Mide uno coma cinco metros.")
         assertThat(say("Pi es 3.14")).isEqualTo("Pi es tres punto catorce")

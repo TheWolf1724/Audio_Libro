@@ -102,7 +102,9 @@ class SpanishNormalizer(
             for (a in list) {
                 val end = i + a.key.length
                 if (!s.regionMatches(i, a.key, 0, a.key.length)) continue
-                if (a.key.last().isLetter() && end < n && s[end].isLetterOrDigit()) continue
+                if (a.key.last().isLetter() && end < n && s[end].isLetterOrDigit() &&
+                    !(a.key.last() in "ºª" && isAsciiDigit(s[end]))
+                ) continue
                 if (a.capitalAfter) {
                     val nw = nextWordStart(end) ?: continue
                     if (!s[nw].isUpperCase()) continue
@@ -269,7 +271,14 @@ class SpanishNormalizer(
                 val suf = mOrdinal.group().trimStart('.')
                 val fem = suf == "ª" || suf == "a" || suf == "as" || suf == "ra"
                 val plural = suf.endsWith("s")
-                val apoc = suf == "er"
+                // Grados escritos con "º" pegado ("90º", "25º"): no es un ordinal.
+                if (suf == "º" && !mOrdinal.group().startsWith(".") && value > 20) {
+                    out.replace(SpanishNumbers.cardinal(value) + " grados", start, mOrdinal.end())
+                    return mOrdinal.end()
+                }
+                // Apocope ante un sustantivo masculino: "el 3.º piso" -> "tercer piso", pero "el 1.º de mayo" no.
+                val nextW = nextWordStart(mOrdinal.end())?.let { readWord(it) }
+                val apoc = suf == "er" || (!fem && !plural && nextW != null && nextW[0].isLowerCase() && nextW.lowercase() !in FUNCTION_WORDS)
                 val words = SpanishNumbers.ordinal(
                     value.toInt(),
                     if (fem) Gender.FEMININE else Gender.MASCULINE,

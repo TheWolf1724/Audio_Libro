@@ -219,7 +219,7 @@ fun ReaderScreen(
                 tonalElevation = 3.dp,
             ) {
                 Row(Modifier.padding(start = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Reasignando: manten pulsada una frase", style = MaterialTheme.typography.bodyMedium)
+                    Text("Reasignando: manten pulsada una frase", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f, fill = false))
                     TextButton(onClick = { vm.reassignAnnotation(null) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("Cancelar") }
                 }
             }
@@ -454,12 +454,34 @@ private fun MiniPlayer(state: ReaderUiState, vm: ReaderViewModel) {
 @Composable
 private fun TimerButton(current: TimerChoice?, onSet: (TimerChoice?) -> Unit) {
     var open by remember { mutableStateOf(false) }
+    var custom by rememberSaveable { mutableStateOf(false) }
+    var customMin by rememberSaveable { mutableStateOf(20) }
+    if (custom) {
+        AlertDialog(
+            onDismissRequest = { custom = false },
+            title = { Text("Temporizador personalizado") },
+            text = {
+                Column {
+                    Text("$customMin minutos", style = MaterialTheme.typography.titleMedium)
+                    Row {
+                        TextButton(onClick = { customMin = (customMin - 5).coerceAtLeast(1) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("- 5") }
+                        TextButton(onClick = { customMin = (customMin + 5).coerceAtMost(600) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("+ 5") }
+                        TextButton(onClick = { customMin = (customMin - 1).coerceAtLeast(1) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("- 1") }
+                        TextButton(onClick = { customMin = (customMin + 1).coerceAtMost(600) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("+ 1") }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { custom = false; onSet(TimerChoice.Minutes(customMin)) }) { Text("Activar") } },
+            dismissButton = { TextButton(onClick = { custom = false }) { Text("Cancelar") } },
+        )
+    }
     Box {
         AppIconButton(R.drawable.ic_timer, if (current == null) "Temporizador" else "Temporizador activo", { open = true })
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            listOf(5, 10, 15, 30, 45, 60, 90).forEach { m ->
+            listOf(5, 10, 15, 30, 45, 60, 90, 120).forEach { m ->
                 DropdownMenuItem(text = { Text("$m minutos") }, onClick = { open = false; onSet(TimerChoice.Minutes(m)) })
             }
+            DropdownMenuItem(text = { Text("Otro tiempo...") }, onClick = { open = false; custom = true })
             DropdownMenuItem(text = { Text("Al final del capitulo") }, onClick = { open = false; onSet(TimerChoice.EndOfChapter) })
             if (current != null) DropdownMenuItem(text = { Text("Quitar temporizador") }, onClick = { open = false; onSet(null) })
         }
@@ -473,7 +495,7 @@ private fun TocList(toc: List<TocItem>, currentChapter: Int, onGo: (com.lectorvo
         return
     }
     LazyColumn(Modifier.fillMaxWidth().testTag("indice")) {
-        items(toc, key = { "${it.locator.chapter}-${it.locator.offset}-${it.title}" }) { t ->
+        itemsIndexed(toc, key = { i, _ -> i }) { _, t ->
             Text(
                 t.title,
                 style = if (t.locator.chapter == currentChapter) MaterialTheme.typography.titleMedium else MaterialTheme.typography.bodyLarge,

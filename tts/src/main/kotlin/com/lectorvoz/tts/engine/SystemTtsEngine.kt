@@ -209,7 +209,12 @@ class SystemTtsEngine(
             tts?.let { return@withContext it }
             val ready = CompletableDeferred<Int>()
             val created = TextToSpeech(appContext, { status -> ready.complete(status) }, enginePackage)
-            val status = withTimeoutOrNull(INIT_TIMEOUT_MS) { ready.await() }
+            val status = try {
+                withTimeoutOrNull(INIT_TIMEOUT_MS) { ready.await() }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                created.shutdown() // cancelado durante el arranque: no dejar la conexion abierta
+                throw e
+            }
             if (status != TextToSpeech.SUCCESS) {
                 created.shutdown()
                 throw SpeechEngineException("No se pudo iniciar la voz del sistema (estado $status)")
